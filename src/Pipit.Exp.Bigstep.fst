@@ -45,7 +45,7 @@ noeq type bigstep (#inner: nat): (#outer: nat) -> C.table outer inner -> exp -> 
           here: C.row inner -> streams: C.table outer inner ->
           e: exp -> vs: C.vector value outer ->
           bigstep streams e vs ->
-          bigstep (C.table_append (C.table1 here) streams) (XPre e) (C.vector_append vs (C.vector1 true))
+          bigstep (C.table_append (C.table1 here) streams) (XPre e) (C.vector_append vs (C.vector1 xpre_init))
  (* All causal expressions should evaluate to empty in the empty context, but the above
    rule for pre doesn't fit, so we add a special rule. We could add a more general rule
    that says `forall e. bigstep [] e []`, but such a rule would make the relation less
@@ -280,4 +280,70 @@ let rec bigstep_substitute (#outer #inner1 #inner2: nat) (e p: exp)
    let hBS1' = bigstep_substitute (subst e1 0 (XMu e1)) p streams1 streams2 vs1 vsp hBS1 hBSp in
    subst_subst_distribute_XMu e1 p inner1;
    BSMu str_12 (subst e1 (inner1 + 1) (lift p 0)) vs1 hBS1'
+
+let rec bigstep_substitute_as_var (#outer #inner1 #inner2: nat) (e p: exp)
+  (streams1: C.table outer inner1)
+  (streams2: C.table outer inner2)
+  (vsp vsep: C.vector value outer)
+  (hBSp: bigstep (C.table_map_append streams1 streams2) p vsp)
+  (hBSep: bigstep (C.table_map_append streams1 streams2) (subst e inner1 p) vsep):
+    Tot (bigstep (C.table_map_append streams1 (C.table_map_append (C.table_of_values vsp) streams2)) e vsep) (decreases hBSep) =
+  let str_v2  = C.table_map_append (C.table_of_values vsp) streams2 in
+  let str_1v2 = C.table_map_append streams1 str_v2 in
+  let str_12  = C.table_map_append streams1 streams2 in
+  let assumption: bigstep str_1v2 (XVar inner1) vsp =
+    C.table_index_append_inner2 streams1 str_v2 inner1;
+    C.table_index_append_inner1 (C.table_of_values vsp) streams2 0;
+    C.table_index_table_of_values vsp;
+    BSVar _ inner1
+  in
+  if e = XVar inner1
+  then begin
+    bigstep_deterministic hBSp hBSep;
+    assumption
+  end
+  else
+  match hBSep with
+  | BSVal _ v ->
+    C.table_const_const str_12 str_1v2 v;
+    BSVal _ v
+  | BSVar _ x ->
+    if x < inner1 then begin
+      C.table_index_append_inner1 streams1 streams2 x;
+      C.table_index_append_inner1 streams1 str_v2 x;
+      BSVar _ x
+    end
+    else begin
+      let x' = x + 1 in
+      C.table_index_append_inner2 streams1 streams2 x;
+      C.table_index_append_inner2 streams1 str_v2 x';
+      C.table_index_append_inner2 (C.table_of_values vsp) streams2 (x' - inner1);
+      BSVar _ x'
+    end
+  | BSPrim2 _ prim e1 e2 vs1 vs2 hBS1 hBS2 ->
+    let XPrim2 _ e1' e2' = e in
+    let hBS1' = bigstep_substitute_as_var e1' p streams1 streams2 vsp vs1 hBSp hBS1 in
+    let hBS2' = bigstep_substitute_as_var e2' p streams1 streams2 vsp vs2 hBSp hBS2 in
+    BSPrim2 _ prim e1' e2' vs1 vs2 hBS1' hBS2'
+  | BSMu _ e1 vs1 hBS1 ->
+    let XMu e1' = e in
+    subst_subst_distribute_XMu e1' p inner1;
+    let hBS1' = bigstep_substitute_as_var (subst e1' 0 (XMu e1')) p streams1 streams2 vsp vs1 hBSp hBS1 in
+    BSMu _ e1' vs1 hBS1'
+  | BSPre0 _ ->
+    let XPre e1' = e in
+    BSPre0 e1'
+  // TODO BSThen, BSPre
+  | _ -> admit ()
+
+let bigstep_substitute_XMu (#outer #inner: nat) (e: exp)
+  (streams: C.table outer inner)
+  (vs: C.vector value outer)
+  (hBSmu: bigstep streams (XMu e) vs):
+    bigstep (C.table_map_append (C.table_of_values vs) streams) e vs =
+  C.table_map_append_empty1 (C.table_map_append (C.table_of_values vs) streams);
+  C.table_map_append_empty1 streams;
+  let BSMu _ _ _ hBS' = hBSmu in
+  bigstep_substitute_as_var e (XMu e) (C.table_empty outer) streams vs vs hBSmu hBS'
+
 

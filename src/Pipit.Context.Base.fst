@@ -75,6 +75,15 @@ let row1 (v: value) : row 1 = Row [v]
 let table1 (#inner: nat) (r: row inner) : table 1 inner = Table [r]
 let table_of_values (#outer: nat) (v: vector value outer) : table outer 1 = Table (vector_map row1 v)
 
+let rec table_empty (outer: nat): table outer 0 =
+  if outer = 0
+  then Table []
+  else let Table rs = table_empty (outer - 1) in
+       Table (Row [] :: rs)
+
+let vector_index (#len: nat) (#a: Type) (vs: vector a len) (ix: nat { ix < len }) : a =
+LT.index vs ix
+
 let row_index (#inner: nat) (r: row inner) (ix: nat { ix < inner }) : value =
   let Row vs = r in
   LT.index vs ix

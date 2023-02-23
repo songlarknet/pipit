@@ -26,6 +26,8 @@ type exp =
   // µx. e[x]
   | XMu    : exp -> exp
 
+let xpre_init: value = true
+
 let rec wf (e: exp) (n: var): prop =
 match e with
 | XVal _ -> True

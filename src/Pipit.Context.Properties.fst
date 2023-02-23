@@ -110,3 +110,16 @@ let rec table_append_injective (#outer1 #outer2 #inner: nat)
   | Table (x :: t11'), Table (y :: t12') ->
     table_append_injective (Table t11') (Table #(outer1 - 1) t12') t21 t22
 
+let rec table_map_append_empty1 (#outer #inner: nat) (t: table outer inner):
+  Lemma (ensures table_map_append (table_empty outer) t == t) =
+  match t with
+  | Table [] -> ()
+  | Table (x :: t') -> table_map_append_empty1 (Table #(outer - 1) #inner t')
+
+let rec table_map_append_empty2 (#outer #inner: nat) (t: table outer inner):
+  Lemma (ensures table_map_append t (table_empty outer) == t) =
+  match t with
+  | Table [] -> ()
+  | Table (Row x :: t') ->
+    LTP.append_l_nil x;
+    table_map_append_empty2 (Table #(outer - 1) #inner t')
