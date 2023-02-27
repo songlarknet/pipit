@@ -69,7 +69,7 @@ let rec system_of_exp (e: exp) (vars: nat) (#hwf: squash (wf e vars)):
 let rec step0_ok
   (#vars: nat)
   (#state: Type)
-  (e: exp { causal e })
+  (e: exp)
   (t: xsystem vars state)
   (#hwf: squash (wf e vars))
   (#hsys: squash (system_of_exp e vars == (| state, t|)))
