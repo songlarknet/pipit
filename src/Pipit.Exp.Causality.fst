@@ -302,3 +302,12 @@ let bigstep_recursive_XMu (#outer #inner: nat) (e: exp)
     C.table_map_append_empty1 (C.table_map_append (C.table_of_values (v :: vs)) streams);
     C.table_map_append_empty1 (C.table_map_append (C.table_of_values (v' :: vs)) streams);
     bigstep_no_dep_no_difference e (C.table_empty (outer + 1)) streams vs v v' (v :: vs) hBS'
+
+
+
+let rec bigstep_monotone_inv (#outer #inner: nat)
+  (#streams: C.table (outer + 1) inner) (#e: exp { causal e }) (#vs: C.vector value outer)
+  (hBS1: bigstep (C.table_tl streams) e vs):
+    Tot (v: value & bigstep streams e (v :: vs)) (decreases hBS1) =
+  // TODO prove
+  admit ()
