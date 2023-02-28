@@ -106,7 +106,6 @@ let rec system_of_exp (e: exp) (vars: nat { wf e vars }):
 let rec stepn
   (#outer #vars: nat)
   (#state: Type)
-  (e: exp)
   (t: xsystem vars state)
   (streams: C.table (outer + 1) vars)
   (vs: C.vector value (outer + 1))
@@ -115,7 +114,7 @@ let rec stepn
   | C.Table [C.Row row], [r] -> t row None s' r
   | C.Table (C.Row row :: streams'), r :: vs' ->
     exists (s'': state).
-      stepn #(outer - 1) e t (C.Table streams') vs' s'' /\
+      stepn #(outer - 1) t (C.Table streams') vs' s'' /\
       t row (Some s'') s' r
 
 let rec system_of_exp_invariant
@@ -237,6 +236,7 @@ let rec stepn_ok
     let (| s1', () |) = stepn_ok e1 (C.row_append (C.row1 v) row) (C.table_map_append (C.table_of_values vs) streams) v vs hBS' s1 () in
     (| explicit_cast (state_of_exp e) s1', () |)
 
+#pop-options
 
 let rec step_many_ok
   (#outer: nat { outer > 0 }) (#vars: nat)
@@ -244,7 +244,7 @@ let rec step_many_ok
   (streams: C.table outer vars)
   (vs: C.vector value outer)
   (hBS: bigstep streams e vs):
-    Tot (s': state_of_exp e & u: unit { system_of_exp_invariant #(outer - 1) e streams vs hBS s' }) (decreases outer) =
+    Tot (s': state_of_exp e & u: unit { system_of_exp_invariant #(outer - 1) e streams vs hBS s' /\ stepn #(outer - 1) #vars (system_of_exp e vars) streams vs s' }) (decreases outer) =
   match streams, vs with
   | C.Table [C.Row row], [v] ->
     let (| s, () |) = step0_ok e row v hBS in
@@ -254,3 +254,12 @@ let rec step_many_ok
     let (| s, () |) = step_many_ok e (C.Table #(outer - 1) rs') vs' (bigstep_monotone #(outer - 1) hBS) in
     let (| s', () |) = stepn_ok #(outer - 1) e r (C.Table #(outer - 1) rs') v vs' hBS s () in
     (| s', () |)
+
+let system_eval_ok
+  (#outer: nat { outer > 0 }) (#vars: nat)
+  (e: exp { causal e /\ wf e vars })
+  (streams: C.table outer vars)
+  (vs: C.vector value outer)
+  (hBS: bigstep streams e vs):
+    Lemma (exists (s': state_of_exp e). stepn #(outer - 1) #vars (system_of_exp e vars) streams vs s') =
+  let (| s', () |) = step_many_ok e streams vs hBS in ()
