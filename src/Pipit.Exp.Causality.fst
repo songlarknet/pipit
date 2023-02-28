@@ -305,9 +305,16 @@ let bigstep_recursive_XMu (#outer #inner: nat) (e: exp)
 
 
 
+let rec bigstep_monotone_inv_next (#outer #inner: nat)
+  (#streams: C.table (outer + 1) inner) (#e: exp { causal e }) (#vs: C.vector value outer)
+  (hBS1: bigstep (C.table_tl streams) e vs):
+    Tot value =
+  // TODO prove
+  admit ()
+
 let rec bigstep_monotone_inv (#outer #inner: nat)
   (#streams: C.table (outer + 1) inner) (#e: exp { causal e }) (#vs: C.vector value outer)
   (hBS1: bigstep (C.table_tl streams) e vs):
-    Tot (v: value & bigstep streams e (v :: vs)) (decreases hBS1) =
+    Tot (bigstep streams e (bigstep_monotone_inv_next hBS1 :: vs)) (decreases hBS1) =
   // TODO prove
   admit ()
