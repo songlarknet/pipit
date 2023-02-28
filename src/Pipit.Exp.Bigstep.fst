@@ -147,6 +147,36 @@ let rec bigstep_monotone (#outer #inner: nat)
  | BSMu _ e1 vs1 hBS1 ->
    BSMu _ e1 (C.vector_tl vs1) (bigstep_monotone hBS1)
 
+let rec bigstep_proof_equivalence (#outer #inner: nat)
+  (#streams: C.table outer inner) (#e: exp)
+  (#vs1 #vs2: C.vector value outer)
+  (hBS1: bigstep streams e vs1) (hBS2: bigstep streams e vs2):
+    Lemma (ensures (hBS1 === hBS2)) (decreases hBS1) =
+  match hBS1 with
+  | BSVal _ _  -> ()
+  | BSVar _ _ -> ()
+
+  | BSPrim2 _ _ _ _ _ _ bs11 bs12 ->
+    let BSPrim2 _ _ _ _ _ _ bs21 bs22 = hBS2 in
+    bigstep_proof_equivalence bs11 bs21;
+    bigstep_proof_equivalence bs12 bs22
+
+  | BSPre here1' streams1' _ _ bs1 ->
+    let BSPre here2' streams2' _ _ bs2 = hBS2 in
+    bigstep_proof_equivalence bs1 bs2
+
+  | BSPre0 _ -> ()
+
+  | BSThen _ _ _ _ _ bs11 bs12 ->
+    let BSThen _ _ _ _ _ bs21 bs22 = hBS2 in
+    bigstep_proof_equivalence bs11 bs21;
+    bigstep_proof_equivalence bs12 bs22
+
+  | BSMu _ _ _ bs1 ->
+    let BSMu _ _ _ bs2 = hBS2 in
+    bigstep_proof_equivalence bs1 bs2
+
+
 (* kill? *)
 let bigstep_lookup_BSVar (#outer #inner1 #inner2: nat)
   (streams1: C.table outer inner1)

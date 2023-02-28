@@ -16,6 +16,14 @@ type row (inner: nat) =
 type table (outer inner: nat) =
  | Table: vector (row inner) outer -> table outer inner
 
+let row_elts (#inner: nat) (r: row inner)
+  : vector value inner =
+  let Row vs = r in vs
+
+let table_elts (#outer #inner: nat) (t: table outer inner)
+  : vector (row inner) outer =
+  let Table rs = t in rs
+
 let rec vector_map (#n: nat) (#a #b: Type) (f: a -> b)
   (va: vector a n)
   : vector b n =
