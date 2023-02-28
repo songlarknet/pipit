@@ -267,6 +267,12 @@ let causal_up_to_depth_subst_XMu (e: exp) (n: nat):
       causal_up_to_subst1 e (XMu e) 0 n
   end
 
+let causal_subst__causal_XMu (e: exp) (n: nat):
+  Lemma (requires causal (XMu e))
+        (ensures causal (subst e 0 (XMu e))) =
+  assert (not (direct_dependency e (XVar 0)));
+  admit ()
+
 
 let rec bigstep_means_causal_up_to_depth (#outer #inner: nat) (e: exp)
   (streams: C.table outer inner)
@@ -304,16 +310,60 @@ let bigstep_recursive_XMu (#outer #inner: nat) (e: exp)
     bigstep_no_dep_no_difference e (C.table_empty (outer + 1)) streams vs v v' (v :: vs) hBS'
 
 
+let rec bigstep_empty (inner: nat)
+  (e: exp { causal e /\ wf e inner }):
+    Tot (bigstep #inner (C.Table []) e []) (decreases e) =
+  match e with
+  | XVal v -> BSVal _ v
+  | XVar x -> BSVar _ x
+  | XPre e1 -> BSPre0 e1
+  // TODO bigstep_empty (XMu e1):
+  | XMu e -> admit ()
+  | _ -> admit ()
+
+let rec bigstep_monotone_inv' (#outer #inner: nat)
+  (#streams: C.table (outer + 1) inner) (#e: exp { causal e /\ wf e inner }) (#vs: C.vector value outer)
+  (hBS: bigstep (C.table_tl streams) e vs):
+    Tot (v': value & bigstep streams e (v' :: vs)) (decreases hBS) =
+  match hBS with
+  | BSVal _ v -> (| v, BSVal _ v |)
+  | BSVar _ x -> (| C.row_index (C.table_hd streams) x, BSVar _ x |)
+  | BSPrim2 _ p e1 e2 vs1 vs2 hBS1 hBS2 ->
+    let (| v1', hBS1' |) = bigstep_monotone_inv' hBS1 in
+    let (| v2', hBS2' |) = bigstep_monotone_inv' hBS2 in
+    (| eval_prim2 p v1' v2', BSPrim2 _ p e1 e2 (v1' :: vs1) (v2' :: vs2) hBS1' hBS2' |)
+
+  | BSPre r s e1 vs hBS1 ->
+    let (| v1', hBS1' |) = bigstep_monotone_inv' #(outer - 1) #inner #(C.table_append (C.table1 r) s) hBS1 in
+    (| v1', BSPre (C.table_hd streams) (C.table_tl streams) e1 (v1' :: vs) hBS1' |)
+
+  | BSPre0 e1 ->
+    let hBS': bigstep (C.Table []) e1 [] = bigstep_empty inner e1 in
+    (| xpre_init, BSPre (C.table_hd streams) (C.Table []) e1 [] hBS' |)
+
+  | BSMu _ e1 vs1 hBS1 ->
+    let e1' = subst e1 0 (XMu e1) in
+    subst_preserves_wf e1 (XMu e1) inner 0;
+    causal_subst__causal_XMu e1 inner;
+    let (| v1', hBS1' |) = bigstep_monotone_inv' hBS1 in
+      (| v1', BSMu _ e1 (v1' :: vs1) hBS1' |)
+  | BSThen _ e1 e2 vs1 vs2 hBS1 hBS2 ->
+    let (| v1', hBS1' |) = bigstep_monotone_inv' hBS1 in
+    let (| v2', hBS2' |) = bigstep_monotone_inv' hBS2 in
+    (| (if outer = 0 then v1' else v2'), BSThen _ e1 e2 (v1' :: vs1) (v2' :: vs2) hBS1' hBS2' |)
+
+
+
 
 let rec bigstep_monotone_inv_next (#outer #inner: nat)
-  (#streams: C.table (outer + 1) inner) (#e: exp { causal e }) (#vs: C.vector value outer)
+  (#streams: C.table (outer + 1) inner) (#e: exp { causal e /\ wf e inner }) (#vs: C.vector value outer)
   (hBS1: bigstep (C.table_tl streams) e vs):
     Tot value =
   // TODO prove
   admit ()
 
 let rec bigstep_monotone_inv (#outer #inner: nat)
-  (#streams: C.table (outer + 1) inner) (#e: exp { causal e }) (#vs: C.vector value outer)
+  (#streams: C.table (outer + 1) inner) (#e: exp { causal e /\ wf e inner }) (#vs: C.vector value outer)
   (hBS1: bigstep (C.table_tl streams) e vs):
     Tot (bigstep streams e (bigstep_monotone_inv_next hBS1 :: vs)) (decreases hBS1) =
   // TODO prove
