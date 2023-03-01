@@ -317,8 +317,8 @@ let rec bigstep_empty (inner: nat)
   | XVal v -> BSVal _ v
   | XVar x -> BSVar _ x
   | XPre e1 -> BSPre0 e1
-  // TODO bigstep_empty (XMu e1):
-  | XMu e -> admit ()
+  // TODO bigstep_empty XMu: looks pretty true, but needs stronger induction hypothesis.
+  | XMu e1 -> admit ()
   | _ -> admit ()
 
 let rec bigstep_monotone_inv' (#outer #inner: nat)
@@ -355,16 +355,14 @@ let rec bigstep_monotone_inv' (#outer #inner: nat)
 
 
 
-let rec bigstep_monotone_inv_next (#outer #inner: nat)
+let bigstep_monotone_inv_next (#outer #inner: nat)
   (#streams: C.table (outer + 1) inner) (#e: exp { causal e /\ wf e inner }) (#vs: C.vector value outer)
-  (hBS1: bigstep (C.table_tl streams) e vs):
+  (hBS: bigstep (C.table_tl streams) e vs):
     Tot value =
-  // TODO prove
-  admit ()
+  let (| v', hBS' |) = bigstep_monotone_inv' hBS in v'
 
-let rec bigstep_monotone_inv (#outer #inner: nat)
+let bigstep_monotone_inv (#outer #inner: nat)
   (#streams: C.table (outer + 1) inner) (#e: exp { causal e /\ wf e inner }) (#vs: C.vector value outer)
-  (hBS1: bigstep (C.table_tl streams) e vs):
-    Tot (bigstep streams e (bigstep_monotone_inv_next hBS1 :: vs)) (decreases hBS1) =
-  // TODO prove
-  admit ()
+  (hBS: bigstep (C.table_tl streams) e vs):
+    Tot (bigstep streams e (bigstep_monotone_inv_next hBS :: vs)) =
+  let (| v', hBS' |) = bigstep_monotone_inv' hBS in hBS'

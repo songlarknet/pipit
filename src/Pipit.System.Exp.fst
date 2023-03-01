@@ -1,5 +1,7 @@
 (* Transition systems *)
-module Pipit.System
+module Pipit.System.Exp
+
+open Pipit.System.Base
 
 open Pipit.Exp.Base
 open Pipit.Exp.Bigstep
@@ -7,65 +9,18 @@ open Pipit.Exp.Causality
 
 module C = Pipit.Context
 
-(* Step functions are relations so that we can express non-deterministic systems.
-   The recursive dependency for recursive binders XMu is easier to express as a
-   relation too. The result type is `prop`, rather than a computational boolean,
-   because composing the relations requires existential quantifiers. *)
-type stepfun (input: Type) (state: Type) (result: Type) =
-  (* Values of input variables *)
-  i: input ->
-  (* Starting state, or None for initial *)
-  s: option state ->
-  (* New state *)
-  s': state ->
-  (* Return value *)
-  r: result ->
-  prop
-
-let system_map2 (#input #state1 #state2 #value1 #value2 #result: Type) (f: value1 -> value2 -> result)
-  (t1: stepfun input state1 value1)
-  (t2: stepfun input state2 value2):
-       stepfun input (state1 * state2) result =
-  (fun i s s' r ->
-     let s1, s2 = match s with
-         | None -> None, None
-         | Some (s1, s2) -> Some s1, Some s2
-     in
-     let s1', s2' = s' in
-     exists (r1: value1) (r2: value2).
-               t1 i s1 s1' r1 /\
-               t2 i s2 s2' r2 /\
-               r == f r1 r2)
-
-let system_pre (#input #state1 #v: Type) (init: v)
-  (t1: stepfun input state1 v):
-       stepfun input (state1 * v) v =
-  (fun i s s' r ->
-      let s1, v = match s with
-      | None -> None, init
-      | Some (s1, v) -> Some s1, v
-      in
-      let s1', v' = s' in
-      t1 i s1 s1' v' /\ r == v)
-
-let system_then (#input #state1 #state2 #v: Type)
-  (t1: stepfun input state1 v)
-  (t2: stepfun input state2 v):
-       stepfun input state2 v =
-  (fun i s s' r ->
-     match s with
-     | None -> exists s1' r'. t1 i None s1' r /\ t2 i None s' r'
-     | Some _ -> t2 i s s' r)
-
-let system_mu (#input #input' #state1 #v: Type)
-  (extend: input -> v -> input')
-  (t1: stepfun input' state1 v):
-       stepfun input state1 v =
-  (fun i s s' r ->
-      t1 (extend i r) s s' r)
-
 (* A system we get from translating an expression *)
 let xsystem (input: nat) (state: Type) = stepfun (C.vector value input) state value
+
+let rec xsystem_stepn
+  (#outer #vars: nat)
+  (#state: Type)
+  (t: xsystem vars state)
+  (streams: C.table (outer + 1) vars)
+  (vs: C.vector value (outer + 1))
+  (s': state): prop =
+  let C.Table rs = streams in
+  system_stepn t (C.vector_map (fun (C.Row r) -> r) rs) vs s'
 
 
 let rec state_of_exp (e: exp): Type =
@@ -102,20 +57,6 @@ let rec system_of_exp (e: exp) (vars: nat { wf e vars }):
       system_mu #(C.vector value vars) #(C.vector value (vars + 1)) (fun i v -> v :: i) t
     in
     explicit_cast (xsystem vars (state_of_exp e)) t'
-
-let rec stepn
-  (#outer #vars: nat)
-  (#state: Type)
-  (t: xsystem vars state)
-  (streams: C.table (outer + 1) vars)
-  (vs: C.vector value (outer + 1))
-  (s': state): prop =
-  match streams, vs with
-  | C.Table [C.Row row], [r] -> t row None s' r
-  | C.Table (C.Row row :: streams'), r :: vs' ->
-    exists (s'': state).
-      stepn #(outer - 1) t (C.Table streams') vs' s'' /\
-      t row (Some s'') s' r
 
 let rec system_of_exp_invariant
   (#outer #vars: nat)
@@ -244,7 +185,7 @@ let rec step_many_ok
   (streams: C.table outer vars)
   (vs: C.vector value outer)
   (hBS: bigstep streams e vs):
-    Tot (s': state_of_exp e & u: unit { system_of_exp_invariant #(outer - 1) e streams vs hBS s' /\ stepn #(outer - 1) #vars (system_of_exp e vars) streams vs s' }) (decreases outer) =
+    Tot (s': state_of_exp e & u: unit { system_of_exp_invariant #(outer - 1) e streams vs hBS s' /\ xsystem_stepn #(outer - 1) #vars (system_of_exp e vars) streams vs s' }) (decreases outer) =
   match streams, vs with
   | C.Table [C.Row row], [v] ->
     let (| s, () |) = step0_ok e row v hBS in
@@ -255,11 +196,21 @@ let rec step_many_ok
     let (| s', () |) = stepn_ok #(outer - 1) e r (C.Table #(outer - 1) rs') v vs' hBS s () in
     (| s', () |)
 
-let system_eval_ok
+let system_eval_complete
   (#outer: nat { outer > 0 }) (#vars: nat)
   (e: exp { causal e /\ wf e vars })
   (streams: C.table outer vars)
   (vs: C.vector value outer)
   (hBS: bigstep streams e vs):
-    Lemma (exists (s': state_of_exp e). stepn #(outer - 1) #vars (system_of_exp e vars) streams vs s') =
+    Lemma (exists (s': state_of_exp e). xsystem_stepn #(outer - 1) #vars (system_of_exp e vars) streams vs s') =
   let (| s', () |) = step_many_ok e streams vs hBS in ()
+
+let system_eval_sound
+  (#outer: nat { outer > 0 }) (#vars: nat)
+  (e: exp { causal e /\ wf e vars })
+  (streams: C.table outer vars)
+  (vs: C.vector value outer)
+  (s': state_of_exp e)
+  (hwf: unit { xsystem_stepn #(outer - 1) #vars (system_of_exp e vars) streams vs s' }):
+    bigstep streams e vs =
+  admit ()

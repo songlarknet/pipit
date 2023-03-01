@@ -355,6 +355,11 @@ let rec bigstep_substitute_as_var (#outer #inner1 #inner2: nat) (e p: exp)
     let hBS1' = bigstep_substitute_as_var e1' p streams1 streams2 vsp vs1 hBSp hBS1 in
     let hBS2' = bigstep_substitute_as_var e2' p streams1 streams2 vsp vs2 hBSp hBS2 in
     BSPrim2 _ prim e1' e2' vs1 vs2 hBS1' hBS2'
+  | BSThen _ e1 e2 vs1 vs2 hBS1 hBS2 ->
+    let XThen e1' e2' = e in
+    let hBS1' = bigstep_substitute_as_var e1' p streams1 streams2 vsp vs1 hBSp hBS1 in
+    let hBS2' = bigstep_substitute_as_var e2' p streams1 streams2 vsp vs2 hBSp hBS2 in
+    BSThen _ e1' e2' vs1 vs2 hBS1' hBS2'
   | BSMu _ e1 vs1 hBS1 ->
     let XMu e1' = e in
     subst_subst_distribute_XMu e1' p inner1;
@@ -363,7 +368,7 @@ let rec bigstep_substitute_as_var (#outer #inner1 #inner2: nat) (e p: exp)
   | BSPre0 _ ->
     let XPre e1' = e in
     BSPre0 e1'
-  // TODO BSThen, BSPre
+  // TODO bigstep_substitute_as_var BSPre: looks pretty true
   | _ -> admit ()
 
 let bigstep_substitute_XMu (#outer #inner: nat) (e: exp)
