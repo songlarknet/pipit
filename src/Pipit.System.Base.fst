@@ -18,20 +18,41 @@ type stepfun (input: Type) (state: Type) (result: Type) =
   r: result ->
   prop
 
-let rec system_stepn
+let rec system_stepn'
+  (#outer: nat)
+  (#input #state #result: Type)
+  (t: stepfun input state result)
+  (inputs: C.vector input outer)
+  (vs: C.vector result outer)
+  (s': option state): prop =
+  match inputs, vs with
+  | [], [] -> s' == None
+  | (row :: inputs'), r :: vs' ->
+    match s' with
+    | Some s' ->
+        exists (s0: option state).
+        system_stepn' #(outer - 1) t inputs' vs' s0 /\
+        t row s0 s' r
+    | None -> False
+
+let system_stepn
   (#outer: nat)
   (#input #state #result: Type)
   (t: stepfun input state result)
   (inputs: C.vector input (outer + 1))
   (vs: C.vector result (outer + 1))
   (s': state): prop =
-  match inputs, vs with
-  | [row], [r] -> t row None s' r
-  | (row :: inputs'), r :: vs' ->
-    exists (s'': state).
-      system_stepn #(outer - 1) t inputs' vs' s'' /\
-      t row (Some s'') s' r
+  system_stepn' t inputs vs (Some s')
 
+let system_map (#input #state1 #value1 #result: Type) (f: value1 -> result)
+  (t1: stepfun input state1 value1):
+       stepfun input state1 result =
+  (fun i s s' r ->
+     let s1  = s in
+     let s1' = s' in
+     exists (r1: value1).
+               t1 i s1 s1' r1 /\
+               r == f r1)
 
 let system_map2 (#input #state1 #state2 #value1 #value2 #result: Type) (f: value1 -> value2 -> result)
   (t1: stepfun input state1 value1)
