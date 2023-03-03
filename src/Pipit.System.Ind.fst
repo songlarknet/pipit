@@ -4,6 +4,11 @@ open Pipit.System.Base
 
 module C = Pipit.Context
 
+let rec prop_for_all (l: list prop): prop =
+ match l with
+ | [] -> True
+ | p :: ps -> p /\ prop_for_all ps
+
 let base_case (#input #state: Type) (t: stepfun input state prop): prop =
   forall (i: input) (s': state) (r: prop).
     t i None s' r ==> r
@@ -17,12 +22,7 @@ let induct1 (#input #state: Type)
   (t: stepfun input state prop): prop =
     base_case t /\ step_case t
 
-let rec prop_for_all (l: list prop): prop =
- match l with
- | [] -> True
- | p :: ps -> p /\ prop_for_all ps
-
-let rec induct1_sound (#len: nat { len > 0 }) (#input #state: Type)
+let rec induct1_sound (#len: nat) (#input #state: Type)
   (t: stepfun input state prop)
   (inputs: C.vector input len)
   (props: C.vector prop len)
@@ -31,8 +31,8 @@ let rec induct1_sound (#len: nat { len > 0 }) (#input #state: Type)
         (requires system_stepn' t inputs props s' /\ induct1 t)
         (ensures prop_for_all props) =
  match inputs, props with
- | [i], [p] ->
-   ()
+ | [], [] -> ()
+ | [i], [p] -> ()
  | i1 :: i0 :: is, p1 :: p0 :: ps ->
    assert (len >= 2);
    eliminate exists (s0: option state) (s1: state).
@@ -41,3 +41,42 @@ let rec induct1_sound (#len: nat { len > 0 }) (#input #state: Type)
    returns prop_for_all props
    with h.
      induct1_sound #(len - 1) t (i0 :: is) (p0 :: ps) (Some s1)
+
+open Pipit.Exp.Base
+open Pipit.Exp.Bigstep
+open Pipit.Exp.Causality
+
+open Pipit.System.Exp
+
+let exp_for_all (e: exp) (vars: nat): prop =
+  forall (len: nat)
+    (inputs: C.table len vars)
+    (vs: C.vector value len)
+    (hBS: bigstep inputs e vs).
+    List.Tot.for_all (fun r -> r) vs
+
+let prop_of_bool (b: bool): prop = b == true
+
+let rec prop_for_all__prop_of_bool (bs: list bool):
+  Lemma (requires prop_for_all (C.vector_map #(List.Tot.length bs) prop_of_bool bs))
+        (ensures List.Tot.for_all (fun r -> r) bs) =
+ // TODO prop_for_all__prop_of_bool easy
+ admit ()
+
+let induct1_exp (#vars: nat) (#state: Type)
+  (e: exp { wf e vars /\ causal e }):
+  Lemma (requires induct1 (system_map prop_of_bool (system_of_exp e vars)))
+        (ensures exp_for_all e vars) =
+  introduce forall (len: nat) (inputs: C.vector (C.row vars) len) (vs: C.vector bool len) (hBS: bigstep (C.Table inputs) e vs). List.Tot.for_all (fun r -> r) vs
+  with
+  begin
+    system_eval_complete' e (C.Table inputs) vs hBS;
+    eliminate exists (s': option (state_of_exp e)). system_stepn' (system_of_exp e vars) inputs vs s'
+    returns _
+    with hEx.
+    begin
+        system_map_sem prop_of_bool (system_of_exp e vars) inputs vs s';
+        induct1_sound (system_map prop_of_bool (system_of_exp e vars)) inputs (C.vector_map prop_of_bool vs) s';
+        prop_for_all__prop_of_bool vs
+    end
+  end

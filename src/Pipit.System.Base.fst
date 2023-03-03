@@ -10,6 +10,7 @@ module C = Pipit.Context
 type stepfun (input: Type) (state: Type) (result: Type) =
   (* Values of input variables *)
   i: input ->
+  // using two different types here was a mistake makes composing step functions difficult
   (* Starting state, or None for initial *)
   s: option state ->
   (* New state *)
@@ -53,6 +54,24 @@ let system_map (#input #state1 #value1 #result: Type) (f: value1 -> result)
      exists (r1: value1).
                t1 i s1 s1' r1 /\
                r == f r1)
+
+let rec system_map_sem (#outer: nat) (#input #state1 #value1 #result: Type) (f: value1 -> result)
+  (t1: stepfun input state1 value1)
+  (inputs: C.vector input outer)
+  (vs: C.vector value1 outer)
+  (s': option state1):
+    Lemma (requires system_stepn' t1 inputs vs s')
+      (ensures system_stepn' (system_map f t1) inputs (C.vector_map f vs) s') =
+ match inputs, vs with
+ | [], [] -> ()
+ | i :: is', v :: vs' ->
+    match s' with
+    | Some s'' ->
+   eliminate exists (s0: option state1). system_stepn' #(outer - 1) t1 is' vs' s0 /\ t1 i s0 s'' v
+   returns system_stepn' (system_map f t1) inputs (C.vector_map f vs) s'
+   with hEx.
+        system_map_sem #(outer - 1) f t1 is' vs' s0
+    |  None -> false_elim ()
 
 let system_map2 (#input #state1 #state2 #value1 #value2 #result: Type) (f: value1 -> value2 -> result)
   (t1: stepfun input state1 value1)

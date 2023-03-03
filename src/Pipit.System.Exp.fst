@@ -10,7 +10,7 @@ open Pipit.Exp.Causality
 module C = Pipit.Context
 
 (* A system we get from translating an expression *)
-let xsystem (input: nat) (state: Type) = stepfun (C.vector value input) state value
+let xsystem (input: nat) (state: Type) = stepfun (C.row input) state value
 
 let rec xsystem_stepn
   (#outer #vars: nat)
@@ -20,7 +20,7 @@ let rec xsystem_stepn
   (vs: C.vector value (outer + 1))
   (s': state): prop =
   let C.Table rs = streams in
-  system_stepn t (C.vector_map (fun (C.Row r) -> r) rs) vs s'
+  system_stepn t rs vs s'
 
 
 let rec state_of_exp (e: exp): Type =
@@ -39,7 +39,7 @@ let rec system_of_exp (e: exp) (vars: nat { wf e vars }):
     xsystem vars (state_of_exp e) =
   match e with
   | XVal v -> (fun i s s' r -> r == v)
-  | XVar x -> (fun i s s' r -> r == C.vector_index i x)
+  | XVar x -> (fun i s s' r -> r == C.row_index i x)
   | XPrim2 p e1 e2 ->
     system_map2 (eval_prim2 p) (system_of_exp e1 vars) (system_of_exp e2 vars)
   | XPre e1 ->
@@ -54,7 +54,7 @@ let rec system_of_exp (e: exp) (vars: nat { wf e vars }):
       system_of_exp e1 (vars + 1)
     in
     let t': xsystem vars (state_of_exp e1) =
-      system_mu #(C.vector value vars) #(C.vector value (vars + 1)) (fun i v -> v :: i) t
+      system_mu #(C.row vars) #(C.row (vars + 1)) (fun i v -> C.row_append (C.row1 v) i) t
     in
     explicit_cast (xsystem vars (state_of_exp e)) t'
 
@@ -94,11 +94,11 @@ let rec system_of_exp_invariant
 let rec step0_ok
   (#vars: nat)
   (e: exp { causal e /\ wf e vars })
-  (row: C.vector value vars)
+  (row: C.row vars)
   (v: value)
-  (hBS: bigstep (C.Table [C.Row row]) e [v]):
-    Tot (s': state_of_exp e & u: unit { system_of_exp e vars row None s' v /\ system_of_exp_invariant #0 e (C.Table [C.Row row]) [v] hBS s' }) (decreases e) =
-  let streams = (C.Table #1 #vars [C.Row #vars row]) in
+  (hBS: bigstep (C.Table [row]) e [v]):
+    Tot (s': state_of_exp e & u: unit { system_of_exp e vars row None s' v /\ system_of_exp_invariant #0 e (C.Table [row]) [v] hBS s' }) (decreases e) =
+  let streams = (C.Table #1 #vars [row]) in
   match e with
   | XVal _ -> (| (), () |)
   | XVar x -> (| (), () |)
@@ -124,7 +124,7 @@ let rec step0_ok
 
   | XMu e1 ->
     let hBS' = bigstep_substitute_XMu e1 streams [v] hBS in
-    let (| s1', () |) = step0_ok e1 (v :: row) v hBS' in
+    let (| s1', () |) = step0_ok e1 (C.row_append (C.row1 v) row) v hBS' in
     (| explicit_cast (state_of_exp e) s1', () |)
 
 #push-options "--split_queries"
@@ -138,7 +138,7 @@ let rec stepn_ok
   (hBS: bigstep (C.table_append (C.table1 row) streams) e (v :: vs))
   (s: state_of_exp e)
   (u: unit { system_of_exp_invariant #(outer - 1) e streams vs (bigstep_monotone #outer hBS) s }):
-    Tot (s': state_of_exp e & u: unit { system_of_exp e vars (C.row_elts row) (Some s) s' v /\ system_of_exp_invariant #outer e (C.table_append (C.table1 row) streams) (v :: vs) hBS s' }) (decreases e) =
+    Tot (s': state_of_exp e & u: unit { system_of_exp e vars row (Some s) s' v /\ system_of_exp_invariant #outer e (C.table_append (C.table1 row) streams) (v :: vs) hBS s' }) (decreases e) =
   let streams' = C.table_append (C.table1 row) streams in
   match e with
   | XVal _ -> (| (), () |)
@@ -187,7 +187,7 @@ let rec step_many_ok
   (hBS: bigstep streams e vs):
     Tot (s': state_of_exp e & u: unit { system_of_exp_invariant #(outer - 1) e streams vs hBS s' /\ xsystem_stepn #(outer - 1) #vars (system_of_exp e vars) streams vs s' }) (decreases outer) =
   match streams, vs with
-  | C.Table [C.Row row], [v] ->
+  | C.Table [row], [v] ->
     let (| s, () |) = step0_ok e row v hBS in
     (| s, () |)
 
@@ -205,12 +205,22 @@ let system_eval_complete
     Lemma (exists (s': state_of_exp e). xsystem_stepn #(outer - 1) #vars (system_of_exp e vars) streams vs s') =
   let (| s', () |) = step_many_ok e streams vs hBS in ()
 
-let system_eval_sound
-  (#outer: nat { outer > 0 }) (#vars: nat)
+let system_eval_complete'
+  (#outer: nat) (#vars: nat)
   (e: exp { causal e /\ wf e vars })
   (streams: C.table outer vars)
   (vs: C.vector value outer)
-  (s': state_of_exp e)
-  (hwf: unit { xsystem_stepn #(outer - 1) #vars (system_of_exp e vars) streams vs s' }):
-    bigstep streams e vs =
-  admit ()
+  (hBS: bigstep streams e vs):
+    Lemma (exists (s': option (state_of_exp e)). system_stepn' #outer (system_of_exp e vars) (C.Table?._0 streams) vs s') =
+  match outer with
+  | 0 -> assert (system_stepn' (system_of_exp e vars) (C.Table?._0 streams) vs None)
+  | _ -> system_eval_complete e streams vs hBS
+
+// let system_eval_sound
+//   (#outer: nat { outer > 0 }) (#vars: nat)
+//   (e: exp { causal e /\ wf e vars })
+//   (streams: C.table outer vars)
+//   (vs: C.vector value outer)
+//   (s': state_of_exp e)
+//   (hwf: unit { xsystem_stepn #(outer - 1) #vars (system_of_exp e vars) streams vs s' }):
+//     bigstep streams e vs =
