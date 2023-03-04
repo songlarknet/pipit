@@ -1,7 +1,7 @@
 module Pipit.Exp.Base
 
 type prim2 =
-  | And | Or | NAnd // | ...
+  | And | Or | NAnd | Implies | Eq // | ...
 
 let value  = bool
 let var    = nat
@@ -10,7 +10,8 @@ let eval_prim2 (p: prim2) (v1 : value) (v2: value) =
   match p with
   | And  -> v1 && v2
   | Or   -> v1 || v2
-  | NAnd -> not (v1 && v2)
+  | Implies -> not v1 || v2
+  | Eq -> v1 = v2
 
 type exp =
   // v

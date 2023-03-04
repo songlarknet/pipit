@@ -42,11 +42,19 @@ let rec induct1_sound (#len: nat) (#input #state: Type)
    with h.
      induct1_sound #(len - 1) t (i0 :: is) (p0 :: ps) (Some s1)
 
+let bmc2 (#input #state: Type) (t: stepfun input state prop): prop =
+  forall (i1 i2: input) (s1 s2: state) (r1 r2: prop).
+    t i1 None s1 r1 ==>
+    t i2 (Some s1) s2 r2 ==>
+    r2
+
 open Pipit.Exp.Base
 open Pipit.Exp.Bigstep
 open Pipit.Exp.Causality
 
 open Pipit.System.Exp
+
+let exp_valid (e: exp) (vars: nat) = wf e vars /\ causal e
 
 let exp_for_all (e: exp) (vars: nat): prop =
   forall (len: nat)
@@ -63,8 +71,8 @@ let rec prop_for_all__prop_of_bool (bs: list bool):
  // TODO prop_for_all__prop_of_bool easy
  admit ()
 
-let induct1_exp (#vars: nat) (#state: Type)
-  (e: exp { wf e vars /\ causal e }):
+let induct1_exp (#vars: nat)
+  (e: exp { exp_valid e vars }):
   Lemma (requires induct1 (system_map prop_of_bool (system_of_exp e vars)))
         (ensures exp_for_all e vars) =
   introduce forall (len: nat) (inputs: C.vector (C.row vars) len) (vs: C.vector bool len) (hBS: bigstep (C.Table inputs) e vs). List.Tot.for_all (fun r -> r) vs

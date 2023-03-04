@@ -165,7 +165,6 @@ let rec stepn_ok
   | XThen e1 e2 ->
     let BSThen _ _ _ (v1 :: vs1) (v2 :: vs2) hBS1 hBS2 = hBS in
     let s2 = explicit_cast (state_of_exp e2) s in
-    // let (| s1', () |) = stepn_ok e1 row streams v1 vs1 hBS1 s1 () in
     let (| s2', () |) = stepn_ok e2 row streams v2 vs2 hBS2 s2 () in
     (| explicit_cast (state_of_exp e) s2', () |)
 
