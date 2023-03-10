@@ -2,6 +2,7 @@ module Pipit.Check.Example
 
 open Pipit.Exp.Base
 open Pipit.System.Ind
+module S = Pipit.System.Base
 
 let tt = XVal true
 let ff = XVal false
@@ -47,12 +48,13 @@ let example0_ok_t = Pipit.System.Exp.system_of_exp (example0_ok x0) 1
 let example0_ok_t' = Pipit.System.Base.system_map prop_of_bool example0_ok_t
 
 let example0_ok_base (_: unit):
-  Lemma (ensures base_case example0_ok_t') =
+  Lemma (ensures base_case' example0_ok_t) =
+  assert (base_case' example0_ok_t) by (T.compute (); T.dump "base_case");
   ()
 
 let example0_ok_step (_: unit):
-  Lemma (ensures step_case example0_ok_t') =
-  // assert (step_case example0_ok_t') by (T.compute (); T.dump "step_case");
+  Lemma (ensures step_case' example0_ok_t) =
+  assert (step_case' example0_ok_t) by (T.compute (); T.dump "step_case");
   admit ()
 
 let example0_ok_induct (_: unit):
@@ -77,7 +79,14 @@ let example1_bad_t = Pipit.System.Exp.system_of_exp (example1_bad x0) 1
 let example1_bad_t' = Pipit.System.Base.system_map prop_of_bool example1_bad_t
 
 let example1_bad_base ():
-  Lemma (ensures (base_case example1_bad_t')) = ()
+  Lemma (ensures (base_case example1_bad_t')) =
+  assert (base_case example1_bad_t') by (T.compute (); T.dump "base_case");
+  ()
+
+// let example1_bad_bmc2 ():
+//   Lemma (ensures ~ (bmc2 example1_bad_t')) =
+//   assert (~ (bmc2 example1_bad_t')) by (T.compute (); T.dump "bmc2");
+//   ()
 
 // let example1_bad_step ():
 //   Lemma (ensures ~ (bmc2 example1_bad_t')) = ()

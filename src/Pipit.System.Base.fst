@@ -7,110 +7,107 @@ module C = Pipit.Context
    The recursive dependency for recursive binders XMu is easier to express as a
    relation too. The result type is `prop`, rather than a computational boolean,
    because composing the relations requires existential quantifiers. *)
-type stepfun (input: Type) (state: Type) (result: Type) =
-  (* Values of input variables *)
-  i: input ->
-  // using two different types here was a mistake makes composing step functions difficult
-  (* Starting state, or None for initial *)
-  s: option state ->
-  (* New state *)
-  s': state ->
-  (* Return value *)
-  r: result ->
-  prop
+noeq
+type system (input: Type) (state: Type) (result: Type) = {
+  init: state -> prop;
 
-let rec system_stepn'
+  step:
+    (* Values of input variables *)
+    i: input ->
+    (* Starting state *)
+    s: state ->
+    (* New state *)
+    s': state ->
+    (* Return value *)
+    r: result ->
+    prop;
+}
+
+let rec system_stepn
   (#outer: nat)
   (#input #state #result: Type)
-  (t: stepfun input state result)
+  (t: system input state result)
   (inputs: C.vector input outer)
   (vs: C.vector result outer)
-  (s': option state): prop =
-  match inputs, vs with
-  | [], [] -> s' == None
-  | (row :: inputs'), r :: vs' ->
-    match s' with
-    | Some s' ->
-        exists (s0: option state).
-        system_stepn' #(outer - 1) t inputs' vs' s0 /\
-        t row s0 s' r
-    | None -> False
-
-let system_stepn
-  (#outer: nat)
-  (#input #state #result: Type)
-  (t: stepfun input state result)
-  (inputs: C.vector input (outer + 1))
-  (vs: C.vector result (outer + 1))
   (s': state): prop =
-  system_stepn' t inputs vs (Some s')
+  match inputs, vs with
+  | [], [] -> t.init s'
+  | (row :: inputs'), r :: vs' ->
+    exists (s0: state).
+    system_stepn #(outer - 1) t inputs' vs' s0 /\
+    t.step row s0 s' r
+
+let system_input (#input: Type): system input unit input =
+  { init = (fun s -> True);
+    step = (fun i s s' r -> r == i) }
+
+let system_const (#input #result: Type) (v: result): system input unit result =
+  { init = (fun s -> True);
+    step = (fun i s s' r -> r == v) }
 
 let system_map (#input #state1 #value1 #result: Type) (f: value1 -> result)
-  (t1: stepfun input state1 value1):
-       stepfun input state1 result =
-  (fun i s s' r ->
+  (t1: system input state1 value1):
+       system input state1 result =
+  { init = t1.init;
+    step = (fun i s s' r ->
      let s1  = s in
      let s1' = s' in
      exists (r1: value1).
-               t1 i s1 s1' r1 /\
-               r == f r1)
+       t1.step i s1 s1' r1 /\
+       r == f r1)
+  }
 
 let rec system_map_sem (#outer: nat) (#input #state1 #value1 #result: Type) (f: value1 -> result)
-  (t1: stepfun input state1 value1)
+  (t1: system input state1 value1)
   (inputs: C.vector input outer)
   (vs: C.vector value1 outer)
-  (s': option state1):
-    Lemma (requires system_stepn' t1 inputs vs s')
-      (ensures system_stepn' (system_map f t1) inputs (C.vector_map f vs) s') =
+  (s': state1):
+    Lemma (requires system_stepn t1 inputs vs s')
+      (ensures system_stepn (system_map f t1) inputs (C.vector_map f vs) s') =
  match inputs, vs with
  | [], [] -> ()
  | i :: is', v :: vs' ->
-    match s' with
-    | Some s'' ->
-   eliminate exists (s0: option state1). system_stepn' #(outer - 1) t1 is' vs' s0 /\ t1 i s0 s'' v
-   returns system_stepn' (system_map f t1) inputs (C.vector_map f vs) s'
+   eliminate exists (s0: state1). system_stepn #(outer - 1) t1 is' vs' s0 /\ t1.step i s0 s' v
+   returns system_stepn (system_map f t1) inputs (C.vector_map f vs) s'
    with hEx.
         system_map_sem #(outer - 1) f t1 is' vs' s0
-    |  None -> false_elim ()
 
 let system_map2 (#input #state1 #state2 #value1 #value2 #result: Type) (f: value1 -> value2 -> result)
-  (t1: stepfun input state1 value1)
-  (t2: stepfun input state2 value2):
-       stepfun input (state1 * state2) result =
-  (fun i s s' r ->
-     let s1, s2 = match s with
-         | None -> None, None
-         | Some (s1, s2) -> Some s1, Some s2
-     in
-     let s1', s2' = s' in
+  (t1: system input state1 value1)
+  (t2: system input state2 value2):
+       system input (state1 * state2) result =
+  {
+    init = (fun (s1, s2) -> t1.init s1 /\ t2.init s2);
+    step = (fun i (s1, s2) (s1', s2') r ->
      exists (r1: value1) (r2: value2).
-               t1 i s1 s1' r1 /\
-               t2 i s2 s2' r2 /\
+               t1.step i s1 s1' r1 /\
+               t2.step i s2 s2' r2 /\
                r == f r1 r2)
+  }
 
 let system_pre (#input #state1 #v: Type) (init: v)
-  (t1: stepfun input state1 v):
-       stepfun input (state1 * v) v =
-  (fun i s s' r ->
-      let s1, v = match s with
-      | None -> None, init
-      | Some (s1, v) -> Some s1, v
-      in
-      let s1', v' = s' in
-      t1 i s1 s1' v' /\ r == v)
+  (t1: system input state1 v):
+       system input (state1 * v) v =
+  { init = (fun (s1, v) -> t1.init s1 /\ v == init);
+    step = (fun i (s1, v) (s1', v') r ->
+      t1.step i s1 s1' v' /\ r == v)
+  }
 
 let system_then (#input #state1 #state2 #v: Type)
-  (t1: stepfun input state1 v)
-  (t2: stepfun input state2 v):
-       stepfun input state2 v =
-  (fun i s s' r ->
-     match s with
-     | None -> exists s1' r'. t1 i None s1' r /\ t2 i None s' r'
-     | Some _ -> t2 i s s' r)
+  (t1: system input state1 v)
+  (t2: system input state2 v):
+       system input (bool * state2) v =
+  { init = (fun (init,s2) -> init = true /\ t2.init s2);
+    step = (fun i (init, s2) (init', s2') r ->
+     if init
+     then exists s1 s1' r'. t1.init s1 /\ t1.step i s1 s1' r /\ t2.step i s2 s2' r'
+     else init = false /\ t2.step i s2 s2' r)
+  }
 
 let system_mu (#input #input' #state1 #v: Type)
   (extend: input -> v -> input')
-  (t1: stepfun input' state1 v):
-       stepfun input state1 v =
-  (fun i s s' r ->
-      t1 (extend i r) s s' r)
+  (t1: system input' state1 v):
+       system input state1 v =
+  { init = t1.init;
+    step = (fun i s s' r -> t1.step (extend i r) s s' r)
+  }
