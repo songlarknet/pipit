@@ -100,7 +100,30 @@ let example_let' (): Lemma (ensures base_case' example_let) =
   assert (base_case' example_let) by (tac_base (); T.dump "asdf");
   assert (step_case' example_let) by tac_nbe ()
 
-let example_requires_invariant =
+(* duplicate expressions - multiple instances of the same modal operator applied to the same arguments.
+   this one is complex enough that induction alone won't get it without extra invariants:
+   we need to tell it that the occurrences of `once` are the same.
+  *)
+let example_no_cse =
+  osystem_of_exp (
+    let open Ck in
+    let open Pipit.Exp.Base in
+    let c = XVar 0 in
+    let b = XVar 1 in
+    let a = XVar 2 in
+    (once a /\ (once a => once b) /\ (once b => once c)) => once c)
+    3
+
+let example_no_cse' (): Lemma (ensures base_case' example_no_cse) =
+  assert (base_case' example_no_cse) by tac_nbe ()
+
+(* the step case fails *)
+[@@expect_failure]
+let example_no_cse_step (): unit =
+  assert (step_case' example_no_cse) by tac_nbe ()
+
+(* common subexpression elimination lets it go through OK *)
+let example_cse =
   osystem_of_exp (
     let open Ck in
     let open Pipit.Exp.Base in
@@ -116,6 +139,6 @@ let example_requires_invariant =
             (oa /\ (oa => ob) /\ (ob => oc)) => oc))))
     3
 
-let example_requires_invariant' (): Lemma (ensures base_case' example_requires_invariant) =
-  assert (base_case' example_requires_invariant) by tac_nbe ();
-  assert (step_case' example_requires_invariant) by tac_nbe ()
+let example_cse' (): Lemma (ensures base_case' example_cse) =
+  assert (base_case' example_cse) by tac_nbe ();
+  assert (step_case' example_cse) by tac_nbe ()
