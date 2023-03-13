@@ -26,6 +26,8 @@ let (-->) (e1 e2: exp) = XThen e1 e2
 
 let mu (e: exp): exp = XMu e
 
+let let' (e1 e2: exp): exp = XLet e1 e2
+
 let lift' (e: exp) = Pipit.Exp.Subst.lift e 0
 
 let sofar (e: exp): exp =

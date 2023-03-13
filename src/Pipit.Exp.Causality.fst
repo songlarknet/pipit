@@ -18,6 +18,7 @@ let rec direct_dependency (e e': exp) : bool =
   | XThen e1 e2 -> direct_dependency e1 e' || direct_dependency e2 e'
   | XPre _ -> false
   | XMu e1 -> direct_dependency e1 (lift e' 0)
+  | XLet e1 e2 -> direct_dependency e1 e' || direct_dependency e2 (lift e' 0)
 
 let rec causal (e: exp): bool =
   match e with
@@ -27,6 +28,7 @@ let rec causal (e: exp): bool =
   | XThen e1 e2 -> causal e1 && causal e2
   | XPre e1 -> causal e1
   | XMu e1 -> causal e1 && not (direct_dependency e1 (XVar 0))
+  | XLet e1 e2 -> causal e1 && causal e2
 
 let rec causal_up_to_depth (e: exp) (n: nat): bool =
   if n = 0 then true
@@ -38,6 +40,7 @@ let rec causal_up_to_depth (e: exp) (n: nat): bool =
     | XThen e1 e2 -> causal_up_to_depth e1 n && causal_up_to_depth e2 n
     | XPre e1 -> causal_up_to_depth e1 (n - 1)
     | XMu e1 -> causal_up_to_depth e1 n && not (direct_dependency e1 (XVar 0))
+    | XLet e1 e2 -> causal_up_to_depth e1 n && causal_up_to_depth e2 n
 
 let rec lift_inj (e e': exp) (x: var):
   Lemma (ensures (e = e') == (lift e x = lift e' x)) =
@@ -50,6 +53,9 @@ let rec lift_inj (e e': exp) (x: var):
   | XThen e1 e2, XThen e1' e2' ->
     lift_inj e1 e1' x; lift_inj e2 e2' x
   | XMu e1, XMu e1' -> lift_inj e1 e1' (x + 1)
+  | XLet e1 e2, XLet e1' e2' ->
+    lift_inj e1 e1' x;
+    lift_inj e2 e2' (x + 1)
   | _, _ -> ()
 
 let rec direct_dependency_lift (e e': exp) (x: var):
@@ -71,6 +77,11 @@ let rec direct_dependency_lift (e e': exp) (x: var):
     direct_dependency_lift e1 (lift e' 0) (x + 1);
     lift_lift_commute e' x 0;
     ()
+  | XLet e1 e2 ->
+    direct_dependency_lift e1 e' x;
+    direct_dependency_lift e2 (lift e' 0) (x + 1);
+    lift_lift_commute e' x 0;
+    ()
 
 let rec direct_dependency_not_subst (x: var) (x': var { x' < x })
   (e: exp { ~ (direct_dependency e (XVar x)) })
@@ -89,6 +100,10 @@ let rec direct_dependency_not_subst (x: var) (x': var { x' < x })
   | XMu e1 ->
     direct_dependency_lift p (XVar (x - 1)) 0;
     direct_dependency_not_subst (x + 1) (x' + 1) e1 (lift p 0)
+  | XLet e1 e2 ->
+    direct_dependency_lift p (XVar (x - 1)) 0;
+    direct_dependency_not_subst x x' e1 p;
+    direct_dependency_not_subst (x + 1) (x' + 1) e2 (lift p 0)
 
 let rec direct_dependency_not_subst2 (x: var) (x': var { x < x' }) (e p: exp):
     Lemma
@@ -107,6 +122,9 @@ let rec direct_dependency_not_subst2 (x: var) (x': var { x < x' }) (e p: exp):
   | XMu e1 ->
     direct_dependency_lift p (XVar x') 0;
     direct_dependency_not_subst2 (x + 1) (x' + 1) e1 (lift p 0)
+  | XLet e1 e2 ->
+    direct_dependency_not_subst2 x x' e1 p;
+    direct_dependency_not_subst2 (x + 1) (x' + 1) e2 (lift p 0)
 
 let rec causal_up_to_depth_lift (e: exp) (x: var) (n: nat):
     Lemma (ensures causal_up_to_depth e n == causal_up_to_depth (lift e x) n) =
@@ -124,6 +142,9 @@ let rec causal_up_to_depth_lift (e: exp) (x: var) (n: nat):
     causal_up_to_depth_lift e1 (x + 1) n;
     lift_lift_commute e1 (x + 1) 0;
     direct_dependency_lift e1 (XVar 0) (x + 1)
+  | XLet e1 e2 ->
+    causal_up_to_depth_lift e1 x n;
+    causal_up_to_depth_lift e2 (x + 1) n
 
 
 let rec bigstep_no_dep_no_difference (#outer #inner1 #inner2: nat) (e: exp { ~ (direct_dependency e (XVar inner1)) })
@@ -181,6 +202,11 @@ let rec bigstep_no_dep_no_difference (#outer #inner1 #inner2: nat) (e: exp { ~ (
     direct_dependency_not_subst (inner1 + 1) 0 e1 (XMu e1);
     let hBS1' = bigstep_no_dep_no_difference e1' streams1 streams2 row v v' vs1 hBS1 in
     BSMu _ e1 vs1 hBS1'
+  | BSLet _ e1 e2 vs2 hBS2 ->
+    let e1' = subst e2 0 e1 in
+    direct_dependency_not_subst (inner1 + 1) 0 e2 e1;
+    let hBS2' = bigstep_no_dep_no_difference e1' streams1 streams2 row v v' vs2 hBS2 in
+    BSLet _ e1 e2 vs2 hBS2'
 
 
 (* I originally thought that something like the following should hold:
@@ -210,6 +236,7 @@ let rec causal_up_to_subst1 (e e': exp) (x: var) (n: nat):
       ()
     | XPre e1 -> causal_up_to_subst1 e1 e' x (n - 1)
     | XThen e1 e2 -> causal_up_to_subst1 e1 e' x n; causal_up_to_subst1 e2 e' x n
+    | XLet e1 e2 -> causal_up_to_subst1 e1 e' x n; causal_up_to_subst1 e2 (lift e' 0) (x + 1) n
     | _ -> ()
 
 let rec direct_dep_XVar__direct_dep_subst (e e': exp) (x: var):
@@ -226,6 +253,10 @@ let rec direct_dep_XVar__direct_dep_subst (e e': exp) (x: var):
     if direct_dependency e1 (XVar x)
     then direct_dep_XVar__direct_dep_subst e1 e' x
     else direct_dep_XVar__direct_dep_subst e2 e' x
+  | XLet e1 e2 ->
+    if direct_dependency e1 (XVar x)
+    then direct_dep_XVar__direct_dep_subst e1 e' x
+    else direct_dep_XVar__direct_dep_subst e2 (lift e' 0) (x + 1)
   | _ -> ()
 
 let rec direct_dep_acausal__acausal (e e': exp) (n: nat):
@@ -247,6 +278,11 @@ let rec direct_dep_acausal__acausal (e e': exp) (n: nat):
     if direct_dependency e1 e'
     then direct_dep_acausal__acausal e1 e' n
     else direct_dep_acausal__acausal e2 e' n
+  | XLet e1 e2 ->
+    causal_up_to_depth_lift e' 0 n;
+    if direct_dependency e1 e'
+    then direct_dep_acausal__acausal e1 e' n
+    else direct_dep_acausal__acausal e2 (lift e' 0) n
   | _ -> ()
 
 let causal_up_to_depth_subst_XMu (e: exp) (n: nat):
@@ -296,6 +332,9 @@ let rec bigstep_means_causal_up_to_depth (#outer #inner: nat) (e: exp)
   | BSThen _ e1 e2 vs1 vs2 hBS1 hBS2 ->
     bigstep_means_causal_up_to_depth e1 streams vs1 hBS1;
     bigstep_means_causal_up_to_depth e2 streams vs2 hBS2
+  | BSLet _ e1' e2' vs2 hBS2 ->
+  // TODO BSLet
+    admit ()
 
 
 let bigstep_recursive_XMu (#outer #inner: nat) (e: exp)
@@ -318,6 +357,7 @@ let rec bigstep_empty (inner: nat)
   | XVar x -> BSVar _ x
   | XPre e1 -> BSPre0 e1
   // TODO bigstep_empty XMu: looks pretty true, but needs stronger induction hypothesis.
+  // TODO bigstep_empty XLet
   | XMu e1 -> admit ()
   | _ -> admit ()
 
@@ -351,6 +391,7 @@ let rec bigstep_monotone_inv' (#outer #inner: nat)
     let (| v1', hBS1' |) = bigstep_monotone_inv' hBS1 in
     let (| v2', hBS2' |) = bigstep_monotone_inv' hBS2 in
     (| (if outer = 0 then v1' else v2'), BSThen _ e1 e2 (v1' :: vs1) (v2' :: vs2) hBS1' hBS2' |)
+  | BSLet _ _ _ _ _ -> admit ()
 
 
 

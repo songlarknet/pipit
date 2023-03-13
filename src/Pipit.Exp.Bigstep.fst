@@ -68,29 +68,14 @@ noeq type bigstep (#inner: nat): (#outer: nat) -> C.table outer inner -> exp -> 
          vs: C.vector value outer ->
          bigstep streams (subst e 0 (XMu e)) vs ->
          bigstep streams (XMu e) vs
-
-(* Inversion rules:
-  these look trivial, but it seems that the solver can't always figure them out
-  inside a larger expression. *)
-let invert_BSVal (#outer #inner: nat)
-  (h: C.table outer inner) (e: exp) (vs: C.vector value outer)
-  (bs: bigstep h e vs { BSVal? bs }):
-    Lemma (exists (v: value). vs == C.table_const h v) = ()
-
-let invert_BSVar (#outer #inner: nat)
-  (h: C.table outer inner) (e: exp) (vs: C.vector value outer)
-  (bs: bigstep h e vs { BSVar? bs }):
-    Lemma (exists (x: var { x < inner }). vs == C.table_index h x) = ()
-
-let invert_BSPre (#outer #inner: nat)
-  (h: C.table outer inner) (e: exp) (vs: C.vector value outer)
-  (bs: bigstep h e vs { BSPre? bs }):
-    Lemma (exists (vs': C.vector value (outer - 1)). vs == C.vector_append vs' (C.vector1 true)) = ()
-
-let invert_BSThen (#outer #inner: nat)
-  (h: C.table outer inner) (e: exp) (vs: C.vector value outer)
-  (bs: bigstep h e vs { BSThen? bs }):
-    Lemma (exists (vs1 vs2: C.vector value outer). vs == then_ vs1 vs2) = ()
+ (* Reduction for recursive expressions proceeds by unfolding the recursion one step.
+    If all recursive references are guarded by `pre` then the `pre` step will look
+    at a shorter stream history prefix, and should eventually terminate. *)
+ | BSLet: #outer: nat ->
+         streams: C.table outer inner -> e1: exp -> e2: exp ->
+         vs: C.vector value outer ->
+         bigstep streams (subst e2 0 e1) vs ->
+         bigstep streams (XLet e1 e2) vs
 
 (* Properties *)
 let rec bigstep_deterministic (#outer #inner: nat)
@@ -123,6 +108,10 @@ let rec bigstep_deterministic (#outer #inner: nat)
     let BSMu _ _ _ bs2 = hBS2 in
     bigstep_deterministic bs1 bs2
 
+  | BSLet _ _ _ _ bs1 ->
+    let BSLet _ _ _ _ bs2 = hBS2 in
+    bigstep_deterministic bs1 bs2
+
 let rec bigstep_monotone (#outer #inner: nat)
   (#streams: C.table (outer + 1) inner) (#e: exp) (#vs: C.vector value (outer + 1))
   (hBS1: bigstep streams e vs):
@@ -146,6 +135,8 @@ let rec bigstep_monotone (#outer #inner: nat)
      (bigstep_monotone hBS2)
  | BSMu _ e1 vs1 hBS1 ->
    BSMu _ e1 (C.vector_tl vs1) (bigstep_monotone hBS1)
+ | BSLet _ e1 e2 vs2 hBS2 ->
+   BSLet _ e1 e2 (C.vector_tl vs2) (bigstep_monotone hBS2)
 
 let rec bigstep_proof_equivalence (#outer #inner: nat)
   (#streams: C.table outer inner) (#e: exp)
@@ -174,6 +165,10 @@ let rec bigstep_proof_equivalence (#outer #inner: nat)
 
   | BSMu _ _ _ bs1 ->
     let BSMu _ _ _ bs2 = hBS2 in
+    bigstep_proof_equivalence bs1 bs2
+
+  | BSLet _ _ _ _ bs1 ->
+    let BSLet _ _ _ _ bs2 = hBS2 in
     bigstep_proof_equivalence bs1 bs2
 
 
@@ -240,6 +235,9 @@ let rec bigstep_weaken (#outer #inner1 #inner2: nat)
  | BSMu _ e1 vs1 hBS1 ->
    BSMu str12 e1 vs1
      (bigstep_weaken _ streams1 streams2 _ hBS1)
+ | BSLet _ e1 e2 vs2 hBS2 ->
+   BSLet str12 e1 e2 vs2
+     (bigstep_weaken _ streams1 streams2 _ hBS2)
 
 let bigstep_substitute__XVar_lt (#outer #inner1 #inner2: nat) (x: var { x < inner1 })
   (spre: C.table  outer inner1)
@@ -310,6 +308,7 @@ let rec bigstep_substitute (#outer #inner1 #inner2: nat) (e p: exp)
    let hBS1' = bigstep_substitute (subst e1 0 (XMu e1)) p streams1 streams2 vs1 vsp hBS1 hBSp in
    subst_subst_distribute_XMu e1 p inner1;
    BSMu str_12 (subst e1 (inner1 + 1) (lift p 0)) vs1 hBS1'
+ | BSLet _ e1 e2 vs2 hBS2 -> admit ()
 
 let rec bigstep_substitute_as_var (#outer #inner1 #inner2: nat) (e p: exp)
   (streams1: C.table outer inner1)
@@ -368,7 +367,7 @@ let rec bigstep_substitute_as_var (#outer #inner1 #inner2: nat) (e p: exp)
   | BSPre0 _ ->
     let XPre e1' = e in
     BSPre0 e1'
-  // TODO bigstep_substitute_as_var BSPre: looks pretty true
+  // TODO bigstep_substitute_as_var BSPre, BSLet: looks pretty true
   | _ -> admit ()
 
 let bigstep_substitute_XMu (#outer #inner: nat) (e: exp)

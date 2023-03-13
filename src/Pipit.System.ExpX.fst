@@ -17,6 +17,7 @@ let rec state_of_exp (e: exp): Type =
   | XPre e1 -> state_of_exp e1 * value
   | XThen e1 e2 -> bool * state_of_exp e2
   | XMu e1 -> state_of_exp e1
+  | XLet e1 e2 -> state_of_exp e1 * state_of_exp e2
 
 let rec values_n (n: nat): Type =
   match n with
@@ -52,6 +53,7 @@ let rec oracle_of_exp (e: exp): Type =
   | XPre e1 -> oracle_of_exp e1
   | XThen e1 e2 -> then_oracle (state_of_exp e1) value (oracle_of_exp e1) (oracle_of_exp e2)
   | XMu e1 -> oracle_of_exp e1
+  | XLet e1 e2 -> value * (oracle_of_exp e1 * oracle_of_exp e2)
 
 (* An system with "oracles", which let us draw out the quantifiers to the top level *)
 let osystem (input: Type) (oracle: Type) (state: Type) (result: Type) = system (input * oracle) state result
@@ -114,6 +116,22 @@ let osystem_mu (#input #input' #oracle #state1 #v: Type)
     step = (fun io s s' r -> t1.step (extend (fst io) r, snd io) s s' r)
   }
 
+let osystem_let (#input #input' #oracle1 #oracle2 #state1 #state2 #v1 #v2: Type)
+  (extend: input -> v1 -> input')
+  (t1: osystem input  oracle1 state1 v1)
+  (t2: osystem input' oracle2 state2 v2):
+       osystem input  (v1 * (oracle1 * oracle2)) (state1 * state2) v2 =
+  { init = (fun s -> t1.init (fst s) /\ t2.init (snd s));
+    step = (fun io s s' r ->
+      let i = fst io in
+      let o = snd io in
+      let v1 = fst o in
+      let o1 = fst (snd o) in
+      let o2 = snd (snd o) in
+      t1.step (i, o1) (fst s) (fst s') v1 /\
+      t2.step (extend i v1, o2) (snd s) (snd s') r)
+  }
+
 irreducible let unfold_attr = ()
 
 [@@unfold_attr]
@@ -131,6 +149,10 @@ let rec osystem_of_exp (e: exp) (vars: nat { wf e vars }):
   | XMu e1 ->
     let t = osystem_of_exp e1 (vars + 1) in
     osystem_mu #(values_n vars) #(values_n (vars + 1)) (fun i v -> (v, i)) t
+  | XLet e1 e2 ->
+    let t1 = osystem_of_exp e1 vars in
+    let t2 = osystem_of_exp e2 (vars + 1) in
+    osystem_let #(values_n vars) #(values_n (vars + 1)) (fun i v -> (v, i)) t1 t2
 
 module T = FStar.Tactics
 
