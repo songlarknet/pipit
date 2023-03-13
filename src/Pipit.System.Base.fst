@@ -100,8 +100,8 @@ let system_then (#input #state1 #state2 #v: Type)
   { init = (fun (init,s2) -> init = true /\ t2.init s2);
     step = (fun i (init, s2) (init', s2') r ->
      if init
-     then exists s1 s1' r'. t1.init s1 /\ t1.step i s1 s1' r /\ t2.step i s2 s2' r'
-     else init = false /\ t2.step i s2 s2' r)
+     then exists s1 s1' r'. t1.init s1 /\ t1.step i s1 s1' r /\ t2.step i s2 s2' r' /\ init' = false
+     else init' = false /\ t2.step i s2 s2' r)
   }
 
 let system_mu (#input #input' #state1 #v: Type)
