@@ -7,12 +7,12 @@ open Pipit.System.ExpX
 module T = FStar.Tactics
 
 
-module Ck = Pipit.Check.Example
+module Sg = Pipit.Sugar
 
 // always a => sometimes a
 let example_GA_FA =
   osystem_of_exp (
-    let open Ck in
+    let open Sg in
     sofar x0 => once x0) 1
 
 let example_GA_FA_base (): Lemma (ensures base_case' example_GA_FA) =
@@ -24,7 +24,7 @@ let example_GA_FA_step (): Lemma (ensures step_case' example_GA_FA) =
 // sometimes a => always a (not true)
 let example_FA_GA =
   osystem_of_exp (
-    let open Ck in
+    let open Sg in
     once x0 => sofar x0) 1
 
 let example_FA_GA_base (): Lemma (ensures base_case' example_FA_GA) =
@@ -38,7 +38,7 @@ let example_FA_GA_step (): Lemma (ensures step_case' example_FA_GA) =
 // always a => always (always a)
 let example_GA_GGA =
   osystem_of_exp (
-    let open Ck in
+    let open Sg in
     let a = x0 in
     sofar a => sofar (sofar a))
     1
@@ -50,9 +50,9 @@ let example_GA_GGA_ok (): unit =
 // sometimes a => not (always (not a))
 let example_FA_nGnA =
   osystem_of_exp (
-    let open Ck in
+    let open Sg in
     let a = x0 in
-    once a => Ck.not (sofar (Ck.not a)))
+    once a => Sg.not (sofar (Sg.not a)))
     1
 
 let example_FA_nGnA_ok (): unit =
@@ -62,7 +62,7 @@ let example_FA_nGnA_ok (): unit =
 // always a /\ always (a => b) => always b
 let example_GA_GAB__GB =
   osystem_of_exp (
-    let open Ck in
+    let open Sg in
     let a = x0 in
     let b = x1 in
     (sofar a /\ sofar (a => b)) => sofar b)
@@ -75,7 +75,7 @@ let example_GA_GAB_GB_ok (): unit =
 
 let example_FA_GAB__FB =
   osystem_of_exp (
-    let open Ck in
+    let open Sg in
     let a = x0 in
     let b = x1 in
     (sofar (a => b)) => (once a => once b))
@@ -88,11 +88,10 @@ let example_GA_GAB_FB_ok (): Lemma (ensures base_case' example_FA_GAB__FB) =
 
 let example_let =
   osystem_of_exp (
-    let open Ck in
-    let open Pipit.Exp.Base in
-    XLet (once (XVar 0)) (
-        let oa = XVar 0 in
-        let a = XVar 1 in
+    let open Sg in
+    let' (once x0) (
+        let oa = x0 in
+        let a = x1 in
         oa => once a))
     1
 
@@ -106,11 +105,10 @@ let example_let' (): Lemma (ensures base_case' example_let) =
   *)
 let example_no_cse =
   osystem_of_exp (
-    let open Ck in
-    let open Pipit.Exp.Base in
-    let c = XVar 0 in
-    let b = XVar 1 in
-    let a = XVar 2 in
+    let open Sg in
+    let c = x0 in
+    let b = x1 in
+    let a = x2 in
     (once a /\ (once a => once b) /\ (once b => once c)) => once c)
     3
 
@@ -125,20 +123,46 @@ let example_no_cse_step (): unit =
 (* common subexpression elimination lets it go through OK *)
 let example_cse =
   osystem_of_exp (
-    let open Ck in
-    let open Pipit.Exp.Base in
+    let open Sg in
     // a = 2 + 0
-    XLet (once (XVar 2)) (
+    let' (once x2) (
       // b = 1 + 1
-      XLet (once (XVar 2)) (
+      let' (once x2) (
         // c = 0 + 2
-        XLet (once (XVar 2)) (
-            let oc = XVar 0 in
-            let ob = XVar 1 in
-            let oa = XVar 2 in
+        let' (once x2) (
+            let oc = x0 in
+            let ob = x1 in
+            let oa = x2 in
             (oa /\ (oa => ob) /\ (ob => oc)) => oc))))
     3
 
 let example_cse' (): Lemma (ensures base_case' example_cse) =
   assert (base_case' example_cse) by tac_nbe ();
   assert (step_case' example_cse) by tac_nbe ()
+
+
+(* count *)
+let example_counts =
+  let open Sg in
+  osystem_of_exp (
+  let' (countsecutive x0) (
+    let c = x0 in
+    z0 <=^ c /\ (!x1 => (c =^ z0) ))) 1
+
+let example_counts' (): Lemma (ensures base_case' example_counts) =
+  assert (base_case' example_counts) by tac_nbe ();
+  assert (step_case' example_counts) by tac_nbe ()
+
+(* count_when false <= count_when e <= count_when true *)
+let example_counts_upper_bound =
+  let open Sg in
+  osystem_of_exp (
+    let' (countsecutive x0) (
+      let' (countsecutive tt) (
+        let' (countsecutive ff) (
+        let cX = x2 in let cT = x1 in let cF = x0 in
+        cF =^ z0 /\ cF <=^ cX /\ cX <=^ cT)))) 1
+
+let example_counts_upper' (): Lemma (ensures base_case' example_counts_upper_bound) =
+  assert (base_case' example_counts_upper_bound) by tac_nbe ();
+  assert (step_case' example_counts_upper_bound) by tac_nbe ()

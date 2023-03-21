@@ -4,7 +4,7 @@ module Pipit.Context.Base
 module LT = FStar.List.Tot
 module LTP = FStar.List.Tot.Properties
 
-type value = bool
+type value = int
 
 type vector (a: Type) (len: nat) = v: list a { List.length v == len }
 

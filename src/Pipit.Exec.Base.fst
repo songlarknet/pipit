@@ -40,6 +40,21 @@ let exec_map2 (#input #state1 #state2 #result1 #result2 #result3: Type)
   ; update = (fun i (s1, s2) -> (t1.update i s1, t2.update i s2))
   }
 
+let exec_ite (#input #state1 #state2 #state3 #cond #result: Type)
+  (f: cond -> bool)
+  (t1: exec input state1 cond)
+  (t2: exec input state2 result)
+  (t3: exec input state3 result):
+    exec input (state1 * state2 * state3) result =
+  { init = (t1.init, t2.init, t3.init)
+  ; eval = (fun i (s1, s2, s3) ->
+    let r1 = t1.eval i s1 in
+    let r2 = t2.eval i s2 in
+    let r3 = t3.eval i s3 in
+    if f r1 then r2 else r3)
+  ; update = (fun i (s1, s2, s3) -> (t1.update i s1, t2.update i s2, t3.update i s3))
+  }
+
 let exec_pre (#input #state1 #result1: Type) (r0: result1)
   (t1: exec input state1 result1):
     exec input (state1 * result1) result1 =
@@ -105,6 +120,7 @@ let rec state_of_exp (e: exp): Type =
   | XVal v -> unit
   | XVar x -> unit
   | XPrim2 p e1 e2 -> state_of_exp e1 * state_of_exp e2
+  | XIte ep e1 e2 -> state_of_exp ep * state_of_exp e1 * state_of_exp e2
   | XPre e1 -> state_of_exp e1 * value
   | XThen e1 e2 -> bool * state_of_exp e2
   | XMu e1 -> state_of_exp e1
@@ -118,6 +134,7 @@ let rec exec_of_exp (e: exp) (vars: nat { wf e vars }): xexec e vars =
   | XVar x -> exec_index vars x
   | XPrim2 p e1 e2 ->
     exec_map2 (eval_prim2 p) (exec_of_exp e1 vars) (exec_of_exp e2 vars)
+  | XIte ep e1 e2 -> exec_ite (fun v -> v <> 0) (exec_of_exp ep vars) (exec_of_exp e1 vars) (exec_of_exp e2 vars)
   | XPre e1 ->
     exec_pre xpre_init (exec_of_exp e1 vars)
   | XThen e1 e2 ->

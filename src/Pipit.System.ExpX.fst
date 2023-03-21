@@ -1,4 +1,4 @@
-(* Transition systems *)
+(* Improved translation to transition system *)
 module Pipit.System.ExpX
 
 open Pipit.System.Base
@@ -14,6 +14,7 @@ let rec state_of_exp (e: exp): Type =
   | XVal v -> unit
   | XVar x -> unit
   | XPrim2 p e1 e2 -> state_of_exp e1 * state_of_exp e2
+  | XIte ep e1 e2 -> state_of_exp ep * state_of_exp e1 * state_of_exp e2
   | XPre e1 -> state_of_exp e1 * value
   | XThen e1 e2 -> bool * state_of_exp e2
   | XMu e1 -> state_of_exp e1
@@ -44,12 +45,22 @@ type then_oracle (state1 value2 oracle1 oracle2: Type) = {
      then_o2: oracle2;
   }
 
+type ite_oracle (valuep value1 value2 oraclep oracle1 oracle2: Type) = {
+     ite_rp: valuep;
+     ite_r1: value1;
+     ite_r2: value2;
+     ite_op: oraclep;
+     ite_o1: oracle1;
+     ite_o2: oracle2;
+  }
+
 
 let rec oracle_of_exp (e: exp): Type =
   match e with
   | XVal v -> unit
   | XVar x -> unit
   | XPrim2 p e1 e2 -> map2_oracle value value (oracle_of_exp e1) (oracle_of_exp e2)
+  | XIte ep e1 e2 -> ite_oracle value value value (oracle_of_exp ep) (oracle_of_exp e1) (oracle_of_exp e2)
   | XPre e1 -> oracle_of_exp e1
   | XThen e1 e2 -> then_oracle (state_of_exp e1) value (oracle_of_exp e1) (oracle_of_exp e2)
   | XMu e1 -> oracle_of_exp e1
@@ -84,6 +95,20 @@ let osystem_map2 (#input #oracle1 #oracle2 #state1 #state2 #value1 #value2 #resu
                t1.step (i, o.m2_o1) (fst s) (fst s') o.m2_r1 /\
                t2.step (i, o.m2_o2) (snd s) (snd s') o.m2_r2 /\
                r == f o.m2_r1 o.m2_r2)
+  }
+
+let osystem_ite (#input #oraclep #oracle1 #oracle2 #statep #state1 #state2 #valuep #value: Type) (f: valuep -> bool)
+  (tp: osystem input oraclep statep valuep)
+  (t1: osystem input oracle1 state1 value)
+  (t2: osystem input oracle2 state2 value):
+       osystem input (ite_oracle valuep value value oraclep oracle1 oracle2) (statep * state1 * state2) value =
+   {
+    init = (fun (sp, s1, s2) -> tp.init sp /\ t1.init s1 /\ t2.init s2);
+    step = (fun (i, o) (sp, s1, s2) (sp', s1', s2') r ->
+               tp.step (i, o.ite_op) sp sp' o.ite_rp /\
+               t1.step (i, o.ite_o1) s1 s1' o.ite_r1 /\
+               t2.step (i, o.ite_o2) s2 s2' o.ite_r2 /\
+               r == (if f o.ite_rp then o.ite_r1 else o.ite_r2))
   }
 
 let osystem_pre (#input #oracle1 #state1 #v: Type) (init: v)
@@ -132,9 +157,6 @@ let osystem_let (#input #input' #oracle1 #oracle2 #state1 #state2 #v1 #v2: Type)
       t2.step (extend i v1, o2) (snd s) (snd s') r)
   }
 
-irreducible let unfold_attr = ()
-
-[@@unfold_attr]
 let rec osystem_of_exp (e: exp) (vars: nat { wf e vars }):
     xsystem e vars =
   match e with
@@ -142,6 +164,8 @@ let rec osystem_of_exp (e: exp) (vars: nat { wf e vars }):
   | XVar x -> osystem_index vars x
   | XPrim2 p e1 e2 ->
     osystem_map2 (eval_prim2 p) (osystem_of_exp e1 vars) (osystem_of_exp e2 vars)
+  | XIte ep et ef ->
+    osystem_ite (fun v -> v <> 0) (osystem_of_exp ep vars) (osystem_of_exp et vars) (osystem_of_exp ef vars)
   | XPre e1 ->
     osystem_pre xpre_init (osystem_of_exp e1 vars)
   | XThen e1 e2 ->
@@ -168,6 +192,7 @@ let rec type_is_product (ty: T.typ): T.Tac bool =
       | ["FStar"; "Pervasives"; "Native"; tt ] ->
         tt <> "option"
       | ["Pipit"; "Context"; "Base"; "row" ]
+      | ["Pipit"; "System"; "ExpX"; "ite_oracle" ]
       | ["Pipit"; "System"; "ExpX"; "then_oracle" ]
       | ["Pipit"; "System"; "ExpX"; "map2_oracle" ] ->
         true
