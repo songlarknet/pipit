@@ -4,8 +4,6 @@ module Pipit.System.ExpX
 open Pipit.System.Base
 
 open Pipit.Exp.Base
-open Pipit.Exp.Bigstep
-open Pipit.Exp.Causality
 
 module C = Pipit.Context
 

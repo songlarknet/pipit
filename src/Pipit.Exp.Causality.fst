@@ -15,6 +15,7 @@ let rec direct_dependency (e e': exp) : bool =
   | XVal _ -> false
   | XVar x' -> false
   | XPrim2 _ e1 e2 -> direct_dependency e1 e' || direct_dependency e2 e'
+  | XIte ep et ef -> direct_dependency ep e' || direct_dependency et e' || direct_dependency ef e'
   | XThen e1 e2 -> direct_dependency e1 e' || direct_dependency e2 e'
   | XPre _ -> false
   | XMu e1 -> direct_dependency e1 (lift e' 0)
@@ -25,6 +26,7 @@ let rec causal (e: exp): bool =
   | XVal _ -> true
   | XVar x' -> true
   | XPrim2 _ e1 e2 -> causal e1 && causal e2
+  | XIte ep e1 e2 -> causal ep && causal e1 && causal e2
   | XThen e1 e2 -> causal e1 && causal e2
   | XPre e1 -> causal e1
   | XMu e1 -> causal e1 && not (direct_dependency e1 (XVar 0))
@@ -37,6 +39,7 @@ let rec causal_up_to_depth (e: exp) (n: nat): bool =
     | XVal _ -> true
     | XVar x' -> true
     | XPrim2 _ e1 e2 -> causal_up_to_depth e1 n && causal_up_to_depth e2 n
+    | XIte ep e1 e2 -> causal_up_to_depth ep n && causal_up_to_depth e1 n && causal_up_to_depth e2 n
     | XThen e1 e2 -> causal_up_to_depth e1 n && causal_up_to_depth e2 n
     | XPre e1 -> causal_up_to_depth e1 (n - 1)
     | XMu e1 -> causal_up_to_depth e1 n && not (direct_dependency e1 (XVar 0))
@@ -49,6 +52,8 @@ let rec lift_inj (e e': exp) (x: var):
   | XVar _, XVar _ -> ()
   | XPrim2 p e1 e2, XPrim2 _ e1' e2' ->
     lift_inj e1 e1' x; lift_inj e2 e2' x
+  | XIte ep e1 e2, XIte ep' e1' e2' ->
+    lift_inj ep ep' x; lift_inj e1 e1' x; lift_inj e2 e2' x
   | XPre e1, XPre e1' -> lift_inj e1 e1' x
   | XThen e1 e2, XThen e1' e2' ->
     lift_inj e1 e1' x; lift_inj e2 e2' x
@@ -66,22 +71,22 @@ let rec direct_dependency_lift (e e': exp) (x: var):
   | XVar _ -> ()
   | XPrim2 p e1 e2 ->
     direct_dependency_lift e1 e' x;
-    direct_dependency_lift e2 e' x;
-    ()
+    direct_dependency_lift e2 e' x
+  | XIte ep e1 e2 ->
+    direct_dependency_lift ep e' x;
+    direct_dependency_lift e1 e' x;
+    direct_dependency_lift e2 e' x
   | XPre _ -> ()
   | XThen e1 e2 ->
     direct_dependency_lift e1 e' x;
-    direct_dependency_lift e2 e' x;
-    ()
+    direct_dependency_lift e2 e' x
   | XMu e1 ->
     direct_dependency_lift e1 (lift e' 0) (x + 1);
-    lift_lift_commute e' x 0;
-    ()
+    lift_lift_commute e' x 0
   | XLet e1 e2 ->
     direct_dependency_lift e1 e' x;
     direct_dependency_lift e2 (lift e' 0) (x + 1);
-    lift_lift_commute e' x 0;
-    ()
+    lift_lift_commute e' x 0
 
 let rec direct_dependency_not_subst (x: var) (x': var { x' < x })
   (e: exp { ~ (direct_dependency e (XVar x)) })
@@ -91,6 +96,10 @@ let rec direct_dependency_not_subst (x: var) (x': var { x' < x })
   | XVal _ -> ()
   | XVar x'' -> ()
   | XPrim2 prim e1 e2 ->
+    direct_dependency_not_subst x x' e1 p;
+    direct_dependency_not_subst x x' e2 p
+  | XIte ep e1 e2 ->
+    direct_dependency_not_subst x x' ep p;
     direct_dependency_not_subst x x' e1 p;
     direct_dependency_not_subst x x' e2 p
   | XPre _ -> ()
@@ -105,6 +114,8 @@ let rec direct_dependency_not_subst (x: var) (x': var { x' < x })
     direct_dependency_not_subst x x' e1 p;
     direct_dependency_not_subst (x + 1) (x' + 1) e2 (lift p 0)
 
+(* Shelve: proofs about causality, will need to be restated on single-element semantics *)
+(*
 let rec direct_dependency_not_subst2 (x: var) (x': var { x < x' }) (e p: exp):
     Lemma
       (requires not (direct_dependency (subst e x' p) (XVar x)))
@@ -407,3 +418,5 @@ let bigstep_monotone_inv (#outer #inner: nat)
   (hBS: bigstep (C.table_tl streams) e vs):
     Tot (bigstep streams e (bigstep_monotone_inv_next hBS :: vs)) =
   let (| v', hBS' |) = bigstep_monotone_inv' hBS in hBS'
+
+*)

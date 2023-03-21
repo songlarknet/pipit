@@ -12,6 +12,7 @@ let rec lift (e: exp) (above: var) : exp =
     else XVar x
   | XPrim2 p e1 e2 ->
     XPrim2 p (lift e1 above) (lift e2 above)
+  | XIte ep et ef -> XIte (lift ep above) (lift et above) (lift ef above)
   | XPre e ->
     XPre (lift e above)
   | XThen e1 e2 ->
@@ -33,6 +34,8 @@ let rec subst (e: exp) (x: var) (payload: exp) : exp =
     else XVar x'
   | XPrim2 p e1 e2 ->
     XPrim2 p (subst e1 x payload) (subst e2 x payload)
+  | XIte ep e1 e2 ->
+    XIte (subst ep x payload) (subst e1 x payload) (subst e2 x payload)
   | XPre e ->
     XPre (subst e x payload)
   | XThen e1 e2 ->
@@ -52,6 +55,10 @@ let rec lift_preserves_wf (e: exp) (n x: var):
  | XPrim2 _ e1 e2 ->
    lift_preserves_wf e1 n x;
    lift_preserves_wf e2 n x
+ | XIte ep e1 e2 ->
+   lift_preserves_wf ep n x;
+   lift_preserves_wf e1 n x;
+   lift_preserves_wf e2 n x
  | XPre e1 -> lift_preserves_wf e1 n x
  | XThen e1 e2 ->
    lift_preserves_wf e1 n x;
@@ -68,6 +75,10 @@ let rec subst_preserves_wf (e p: exp) (n: var) (x: var { x < n + 1 }):
   | XVal _ -> ()
   | XVar x' -> ()
   | XPrim2 _ e1 e2 ->
+    subst_preserves_wf e1 p n x;
+    subst_preserves_wf e2 p n x
+  | XIte ep e1 e2 ->
+    subst_preserves_wf ep p n x;
     subst_preserves_wf e1 p n x;
     subst_preserves_wf e2 p n x
   | XPre e1 -> subst_preserves_wf e1 p n x
@@ -90,6 +101,10 @@ let rec lift_lift_commute (e: exp) (x1: var) (x2: var { x2 <= x1 }):
   | XPrim2 _ e1 e2 ->
     lift_lift_commute e1 x1 x2;
     lift_lift_commute e2 x1 x2
+  | XIte ep e1 e2 ->
+    lift_lift_commute ep x1 x2;
+    lift_lift_commute e1 x1 x2;
+    lift_lift_commute e2 x1 x2
   | XPre e1 -> lift_lift_commute e1 x1 x2
   | XThen e1 e2 ->
     lift_lift_commute e1 x1 x2;
@@ -108,6 +123,10 @@ let rec subst_lift_id (e p: exp) (x: var):
   | XPrim2 _ e1 e2 ->
     subst_lift_id e1 p x;
     subst_lift_id e2 p x
+  | XIte ep e1 e2 ->
+    subst_lift_id ep p x;
+    subst_lift_id e1 p x;
+    subst_lift_id e2 p x
   | XPre e1 -> subst_lift_id e1 p x
   | XThen e1 e2 ->
     subst_lift_id e1 p x;
@@ -124,6 +143,10 @@ let rec lift_subst_distribute_le (e p: exp) (x1: var) (x2: var { x2 <= x1 }):
   | XVal _ -> ()
   | XVar _ -> ()
   | XPrim2 _ e1 e2 ->
+    lift_subst_distribute_le e1 p x1 x2;
+    lift_subst_distribute_le e2 p x1 x2
+  | XIte ep e1 e2 ->
+    lift_subst_distribute_le ep p x1 x2;
     lift_subst_distribute_le e1 p x1 x2;
     lift_subst_distribute_le e2 p x1 x2
   | XPre e1 -> lift_subst_distribute_le e1 p x1 x2
@@ -147,6 +170,10 @@ let rec subst_subst_distribute_le (e p1 p2: exp) (x1: var) (x2: var { x1 <= x2 }
     if x' = x2 + 1
     then subst_lift_id p2 (subst p1 x2 p2) x1
   | XPrim2 _ e1 e2 ->
+    subst_subst_distribute_le e1 p1 p2 x1 x2;
+    subst_subst_distribute_le e2 p1 p2 x1 x2
+  | XIte ep e1 e2 ->
+    subst_subst_distribute_le ep p1 p2 x1 x2;
     subst_subst_distribute_le e1 p1 p2 x1 x2;
     subst_subst_distribute_le e2 p1 p2 x1 x2
   | XPre e1 ->

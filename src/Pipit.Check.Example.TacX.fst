@@ -52,7 +52,7 @@ let example_FA_nGnA =
   osystem_of_exp (
     let open Sg in
     let a = x0 in
-    once a => Sg.not (sofar (Sg.not a)))
+    once a => !(sofar !a))
     1
 
 let example_FA_nGnA_ok (): unit =
