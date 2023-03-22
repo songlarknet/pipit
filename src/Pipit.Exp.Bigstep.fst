@@ -5,42 +5,49 @@ open Pipit.Exp.Subst
 
 module C = Pipit.Context
 
+let (+:) (#elts #vars: nat) (r: C.row vars) (t: C.table elts vars) : C.table (elts + 1) vars =
+  C.table_append (C.table1 r) t
+
 (* bigstep streams e v
 
  Bigstep semantics: in streaming history `streams`, which is a 2-dimensional table of
- `outer` elements and `inner` variables, the expression `e` evaluates to value `v`.
+ `elts` elements and `vars` variables, the expression `e` evaluates to value `v`.
  The stream history `streams` is in most-recent-first order.
  *)
-noeq type bigstep (#inner: nat): (#outer: nat) -> C.table outer inner -> exp -> value -> Type =
+noeq type bigstep (#vars: nat): (#elts: nat) -> C.table elts vars -> exp -> value -> Type =
  (* Values `v` always evaluate to the value *)
- | BSVal: #outer: nat ->
-          streams: C.table outer inner -> v: value ->
+ | BSVal: #elts: nat ->
+          streams: C.table elts vars ->
+          v: value ->
           bigstep streams (XVal v) v
+
  (* Variables `x` are looked up in the stream history *)
- | BSVar: #outer: nat ->
-          here: C.row inner ->
-          streams: C.table outer inner -> x: var { x < inner } ->
-          bigstep (C.table_append (C.table1 here) streams) (XVar x) (C.row_index here x)
+ | BSVar: #elts: nat ->
+          here: C.row vars ->
+          streams: C.table elts vars ->
+          x: var { x < vars } ->
+          bigstep (here +: streams) (XVar x) (C.row_index here x)
+
  (* Primitives are applied element-wise to the stream *)
- | BSPrim2: #outer: nat ->
-            streams: C.table outer inner -> p: prim2 -> e1: exp -> e2: exp ->
-            v1: value ->
-            v2: value ->
+ | BSPrim2: #elts: nat ->
+            streams: C.table elts vars ->
+            p: prim2 -> e1: exp -> e2: exp ->
+            v1: value -> v2: value ->
             bigstep streams e1 v1 ->
             bigstep streams e2 v2 ->
             bigstep streams (XPrim2 p e1 e2) (eval_prim2 p v1 v2)
 
- (* If-then-else looks like a regular if... *)
- | BSIteT:  #outer: nat ->
-            streams: C.table outer inner -> ep: exp -> e1: exp -> e2: exp ->
-            vp: value { vp <> 0 } ->
-            v1: value ->
+ (* If-then-else checks if the condition is nonzero *)
+ | BSIteT:  #elts: nat ->
+            streams: C.table elts vars ->
+            ep: exp -> e1: exp -> e2: exp ->
+            vp: value { vp <> 0 } -> v1: value ->
             bigstep streams ep vp ->
             bigstep streams e1 v1 ->
             bigstep streams (XIte ep e1 e2) v1
- (* If-then-else *)
- | BSIteF:  #outer: nat ->
-            streams: C.table outer inner -> ep: exp -> e1: exp -> e2: exp ->
+ | BSIteF:  #elts: nat ->
+            streams: C.table elts vars ->
+            ep: exp -> e1: exp -> e2: exp ->
             v2: value ->
             bigstep streams ep 0 ->
             bigstep streams e2 v2 ->
@@ -50,52 +57,54 @@ noeq type bigstep (#inner: nat): (#outer: nat) -> C.table outer inner -> exp -> 
  (* To compute `pre e` we evaluate `e` without the most recent element.
    // TODO: arbitrarily define `pre e = true -> ...` so that the core logic is deterministic AND total.
    *)
- | BSPre: #outer: nat ->
-          here: C.row inner -> streams: C.table outer inner ->
+ | BSPre: #elts: nat ->
+          here: C.row vars -> streams: C.table elts vars ->
           e: exp -> v: value ->
           bigstep streams e v ->
-          bigstep (C.table_append (C.table1 here) streams) (XPre e) v
+          bigstep (here +: streams) (XPre e) v
 
  (* First step of (p -> q) is p *)
- | BSThen1: here: C.row inner -> e1: exp -> e2: exp ->
-           v: value ->
-           bigstep (C.table1 here) e1 v ->
-           bigstep (C.table1 here) (XThen e1 e2) v
+ | BSThen1: here: C.row vars ->
+            e1: exp -> e2: exp ->
+            v: value ->
+            bigstep (C.table1 here) e1 v ->
+            bigstep (C.table1 here) (XThen e1 e2) v
  (* Then or (e1 -> e2) is defined using then_, which is basically `hd e1 :: tl e2` *)
- | BSThenS: #outer: nat { outer > 1 } ->
-           streams: C.table outer inner -> e1: exp -> e2: exp ->
-           v: value ->
-           bigstep streams e2 v ->
-           bigstep streams (XThen e1 e2) v
+ | BSThenS: #elts: nat { elts > 1 } ->
+            streams: C.table elts vars ->
+            e1: exp -> e2: exp ->
+            v: value ->
+            bigstep streams e2 v ->
+            bigstep streams (XThen e1 e2) v
 
  (* Reduction for recursive expressions proceeds by unfolding the recursion one step.
     If all recursive references are guarded by `pre` then the `pre` step will look
     at a shorter stream history prefix, and should eventually terminate. *)
- | BSMu: #outer: nat ->
-         streams: C.table outer inner -> e: exp ->
+ | BSMu: #elts: nat ->
+         streams: C.table elts vars -> e: exp ->
          v: value ->
          bigstep streams (subst e 0 (XMu e)) v ->
          bigstep streams (XMu e) v
  (* Reduction for recursive expressions proceeds by unfolding the recursion one step.
     If all recursive references are guarded by `pre` then the `pre` step will look
     at a shorter stream history prefix, and should eventually terminate. *)
- | BSLet: #outer: nat ->
-         streams: C.table outer inner -> e1: exp -> e2: exp ->
-         v: value ->
-         bigstep streams (subst e2 0 e1) v ->
-         bigstep streams (XLet e1 e2) v
+ | BSLet: #elts: nat ->
+          streams: C.table elts vars -> e1: exp -> e2: exp ->
+          v: value ->
+          bigstep streams (subst e2 0 e1) v ->
+          bigstep streams (XLet e1 e2) v
 
-let rec bigsteps (#outer #inner: nat) (table: C.table outer inner) (e: exp) (vs: C.vector value outer): prop =
+let rec bigsteps (#elts #vars: nat) (table: C.table elts vars) (e: exp) (vs: C.vector value elts): prop =
   match table, vs with
   | C.Table (t :: ts'), v :: vs' ->
     bigstep table e v /\
-    bigsteps (C.Table #(outer - 1) ts') e vs'
+    bigsteps (C.Table #(elts - 1) ts') e vs'
   | C.Table [], [] ->
     True
 
 (* Properties *)
-let rec bigstep_proof_equivalence (#outer #inner: nat)
-  (#streams: C.table outer inner) (#e: exp)
+let rec bigstep_proof_equivalence (#elts #vars: nat)
+  (#streams: C.table elts vars) (#e: exp)
   (#v1 #v2: value)
   (hBS1: bigstep streams e v1) (hBS2: bigstep streams e v2):
     Lemma (ensures hBS1 === hBS2) (decreases hBS1) =
@@ -136,8 +145,8 @@ let rec bigstep_proof_equivalence (#outer #inner: nat)
     let BSLet _ _ _ _ bs2 = hBS2 in
     bigstep_proof_equivalence bs1 bs2
 
-let bigstep_deterministic (#outer #inner: nat)
-  (#streams: C.table outer inner) (#e: exp)
+let bigstep_deterministic (#elts #vars: nat)
+  (#streams: C.table elts vars) (#e: exp)
   (#v1 #v2: value)
   (hBS1: bigstep streams e v1) (hBS2: bigstep streams e v2):
     Lemma (ensures (v1 = v2)) (decreases hBS1) =

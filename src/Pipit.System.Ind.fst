@@ -19,6 +19,10 @@ let step_case' (#input #state: Type) (t: system input state C.value): prop =
     t.step i0 s0 s1 r0 ==> r0 <> 0 ==>
     t.step i1 s1 s2 r1 ==> r1 <> 0
 
+let induct1' (#input #state: Type)
+  (t: system input state C.value): prop =
+    base_case' t /\ step_case' t
+
 let base_case (#input #state: Type) (t: system input state prop): prop =
   forall (i: input) (s: state) (s': state) (r: prop).
     t.init s ==> t.step i s s' r ==> r

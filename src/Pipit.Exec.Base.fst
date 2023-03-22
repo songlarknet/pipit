@@ -128,6 +128,7 @@ let rec state_of_exp (e: exp): Type =
 
 let xexec (e: exp) (vars: nat { wf e vars }) = exec (SX.values_n vars) (state_of_exp e) value
 
+inline_for_extraction
 let rec exec_of_exp (e: exp) (vars: nat { wf e vars }): xexec e vars =
   match e with
   | XVal v -> exec_const _ v
@@ -144,18 +145,19 @@ let rec exec_of_exp (e: exp) (vars: nat { wf e vars }): xexec e vars =
   | XLet e1 e2 ->
     exec_let (fun i v -> (v, i)) (exec_of_exp e1 vars) (exec_of_exp e2 (vars + 1))
 
-// module TX = Pipit.Check.Example.TacX
+// module TX = Pipit.Check.Example.SysX
 
-// let eval_x (i: bool) (st: unit * (unit * bool)): bool =
-//   let (_, (_, s)) = st in
-//   i && s
+let eval_x (i: bool) (st: unit * (unit * bool)): bool =
+  let (_, (_, s)) = st in
+  i && s
 
-// let ok (): unit =
-//   let open Pipit.Check.Example in
+// #push-options "--print_full_names"
+let ok (): unit =
+  let open Pipit.Sugar in
 
-//   assert (exists e. e == eval_x) by
-//   // assert (exists e. e == exec_of_exp (sofar x0) 1) by
-//     (FStar.Tactics.norm [nbe; primops; iota; zeta; delta]; FStar.Tactics.dump "ok")
+  // assert (exists e. e == eval_x) by
+  assert (exists e. e == exec_of_exp (sofar x0) 1) by
+    (FStar.Tactics.norm [nbe; primops; iota; zeta; delta]; FStar.Tactics.dump "ok")
 
-//     // (FStar.Tactics.compute (); FStar.Tactics.dump "ok")
-//     // (SX.tac_nbe (); FStar.Tactics.dump "ok")
+    // (FStar.Tactics.compute (); FStar.Tactics.dump "ok")
+    // (SX.tac_nbe (); FStar.Tactics.dump "ok")

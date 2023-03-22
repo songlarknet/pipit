@@ -85,6 +85,21 @@ let system_map2 (#input #state1 #state2 #value1 #value2 #result: Type) (f: value
                r == f r1 r2)
   }
 
+let system_ite (#input #statep #state1 #state2 #valuep #result: Type) (f: valuep -> bool)
+  (tp: system input statep valuep)
+  (t1: system input state1 result)
+  (t2: system input state2 result):
+       system input (statep * state1 * state2) result =
+  {
+    init = (fun (sp, s1, s2) -> tp.init sp /\ t1.init s1 /\ t2.init s2);
+    step = (fun i (sp, s1, s2) (sp', s1', s2') r ->
+     exists (rp: valuep) (r1: result) (r2: result).
+               tp.step i sp sp' rp /\
+               t1.step i s1 s1' r1 /\
+               t2.step i s2 s2' r2 /\
+               r == (if f rp then r1 else r2))
+  }
+
 let system_pre (#input #state1 #v: Type) (init: v)
   (t1: system input state1 v):
        system input (state1 * v) v =
@@ -110,4 +125,16 @@ let system_mu (#input #input' #state1 #v: Type)
        system input state1 v =
   { init = t1.init;
     step = (fun i s s' r -> t1.step (extend i r) s s' r)
+  }
+
+let system_let (#input #input' #state1 #state2 #v1 #v2: Type)
+  (extend: input -> v1 -> input')
+  (t1: system input  state1 v1)
+  (t2: system input' state2 v2):
+       system input (state1 * state2) v2 =
+  { init = (fun (s1, s2) -> t1.init s1 /\ t2.init s2);
+    step = (fun i (s1, s2) (s1', s2') r ->
+      exists (r1: v1).
+        t1.step i s1 s1' r1 /\
+        t2.step (extend i r1) s2 s2' r)
   }

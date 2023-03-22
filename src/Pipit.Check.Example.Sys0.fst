@@ -1,17 +1,18 @@
-module Pipit.Check.Example.TacX
+(* Simple system examples *)
+module Pipit.Check.Example.Sys0
 
 open Pipit.System.Base
 open Pipit.System.Ind
-open Pipit.System.ExpX
+open Pipit.System.Exp
 
 module T = FStar.Tactics
-
-
 module Sg = Pipit.Sugar
+
+let tac_nbe (): T.Tac unit = T.norm [primops; iota; delta; zeta; nbe]
 
 // always a => sometimes a
 let example_GA_FA =
-  osystem_of_exp (
+  system_of_exp (
     let open Sg in
     sofar x0 => once x0) 1
 
@@ -23,21 +24,21 @@ let example_GA_FA_step (): Lemma (ensures step_case' example_GA_FA) =
 
 // sometimes a => always a (not true)
 let example_FA_GA =
-  osystem_of_exp (
+  system_of_exp (
     let open Sg in
     once x0 => sofar x0) 1
 
 let example_FA_GA_base (): Lemma (ensures base_case' example_FA_GA) =
-  assert (base_case' example_FA_GA) by tac_base ()
+  assert (base_case' example_FA_GA) by tac_nbe ()
 
 // this is not true so we can't prove it, but unfortunately we can't automatically disprove it
 [@@expect_failure]
 let example_FA_GA_step (): Lemma (ensures step_case' example_FA_GA) =
-  assert (step_case' example_FA_GA) by tac_step ()
+  assert (step_case' example_FA_GA) by tac_nbe ()
 
 // always a => always (always a)
 let example_GA_GGA =
-  osystem_of_exp (
+  system_of_exp (
     let open Sg in
     let a = x0 in
     sofar a => sofar (sofar a))
@@ -49,7 +50,7 @@ let example_GA_GGA_ok (): unit =
 
 // sometimes a => not (always (not a))
 let example_FA_nGnA =
-  osystem_of_exp (
+  system_of_exp (
     let open Sg in
     let a = x0 in
     once a => !(sofar !a))
@@ -61,7 +62,7 @@ let example_FA_nGnA_ok (): unit =
 
 // always a /\ always (a => b) => always b
 let example_GA_GAB__GB =
-  osystem_of_exp (
+  system_of_exp (
     let open Sg in
     let a = x0 in
     let b = x1 in
@@ -74,7 +75,7 @@ let example_GA_GAB_GB_ok (): unit =
   ()
 
 let example_FA_GAB__FB =
-  osystem_of_exp (
+  system_of_exp (
     let open Sg in
     let a = x0 in
     let b = x1 in
@@ -87,7 +88,7 @@ let example_GA_GAB_FB_ok (): Lemma (ensures base_case' example_FA_GAB__FB) =
 
 
 let example_let =
-  osystem_of_exp (
+  system_of_exp (
     let open Sg in
     let' (once x0) (
         let oa = x0 in
@@ -96,7 +97,7 @@ let example_let =
     1
 
 let example_let' (): Lemma (ensures base_case' example_let) =
-  assert (base_case' example_let) by (tac_base (); T.dump "asdf");
+  assert (base_case' example_let) by (tac_nbe (); T.dump "asdf");
   assert (step_case' example_let) by tac_nbe ()
 
 (* duplicate expressions - multiple instances of the same modal operator applied to the same arguments.
@@ -104,7 +105,7 @@ let example_let' (): Lemma (ensures base_case' example_let) =
    we need to tell it that the occurrences of `once` are the same.
   *)
 let example_no_cse =
-  osystem_of_exp (
+  system_of_exp (
     let open Sg in
     let c = x0 in
     let b = x1 in
@@ -122,7 +123,7 @@ let example_no_cse_step (): unit =
 
 (* common subexpression elimination lets it go through OK *)
 let example_cse =
-  osystem_of_exp (
+  system_of_exp (
     let open Sg in
     // a = 2 + 0
     let' (once x2) (
@@ -144,7 +145,7 @@ let example_cse' (): Lemma (ensures base_case' example_cse) =
 (* count *)
 let example_counts =
   let open Sg in
-  osystem_of_exp (
+  system_of_exp (
   let' (countsecutive x0) (
     let c = x0 in
     z0 <=^ c /\ (!x1 => (c =^ z0) ))) 1
@@ -156,7 +157,7 @@ let example_counts' (): Lemma (ensures base_case' example_counts) =
 (* count_when false <= count_when e <= count_when true *)
 let example_counts_upper_bound =
   let open Sg in
-  osystem_of_exp (
+  system_of_exp (
     let' (countsecutive x0) (
       let' (countsecutive tt) (
         let' (countsecutive ff) (

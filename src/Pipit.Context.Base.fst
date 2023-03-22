@@ -141,11 +141,11 @@ let table_take_snoc (#outer #inner: nat) (t: table outer inner):
     Some (| (), Table t', r' |)
 
 let vector_init (#len: nat) (#a: Type) (vs: vector a (len + 1)):
-    vs': vector a len =
+    vector a len =
   let Some (| (), vs', _ |) = vector_take_snoc vs in
   vs'
 
 let table_init (#outer: nat) (#inner: nat) (t: table (outer + 1) inner):
-    t': table outer inner =
+    table outer inner =
   let Some (| (), t', _ |) = table_take_snoc t in
   t'

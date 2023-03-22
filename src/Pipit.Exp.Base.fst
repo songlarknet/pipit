@@ -13,13 +13,13 @@ let value_of_bool (b: bool): value = if b then 1 else 0
 
 let eval_prim2 (p: prim2) (v1 : value) (v2: value): value =
   match p with
-  | AndB  -> value_of_bool (bool_of_value v1 && bool_of_value v2)
-  | OrB   -> value_of_bool (bool_of_value v1 || bool_of_value v2)
+  | AndB     -> value_of_bool (bool_of_value v1 && bool_of_value v2)
+  | OrB      -> value_of_bool (bool_of_value v1 || bool_of_value v2)
   | ImpliesB -> if bool_of_value v1 then v2 else 1
-  | EqZ -> value_of_bool (v1 = v2)
-  | AddZ -> v1 + v2
-  | SubZ -> v1 - v2
-  | LeZ -> value_of_bool (v1 <= v2)
+  | EqZ      -> value_of_bool (v1 = v2)
+  | AddZ     -> v1 + v2
+  | SubZ     -> v1 - v2
+  | LeZ      -> value_of_bool (v1 <= v2)
 
 type exp =
   // v
@@ -28,7 +28,7 @@ type exp =
   | XVar   : var -> exp
   // f(e,...)
   | XPrim2 : prim2 -> exp -> exp -> exp
-  // if ep then et else ef
+  // if p then e else e'
   | XIte   : exp -> exp -> exp -> exp
   // pre e
   | XPre   : exp -> exp
@@ -39,7 +39,6 @@ type exp =
   // let x = e in e[x]
   | XLet   : exp -> exp -> exp
 
-let xpre_init: value = 0
 
 let rec wf (e: exp) (n: var): prop =
 match e with
@@ -75,3 +74,6 @@ let rec wf_weaken (e: exp) (n: var) (n': var { n <= n' }):
   | XLet e1 e2 ->
     wf_weaken e1 n n';
     wf_weaken e2 (n + 1) (n' + 1)
+
+
+let xpre_init: value = 0
