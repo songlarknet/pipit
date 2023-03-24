@@ -104,16 +104,26 @@ let exec_let (#input1 #input2 #state1 #state2 #result1 #result2: Type)
 
 // let rec exec_map
 open Pipit.Exp.Base
-module SX = Pipit.System.ExpX
 module C = Pipit.Context
 
+let rec values_n (n: nat): Type =
+  match n with
+  | 0 -> unit
+  | n -> value * values_n (n - 1)
+
+let rec values_index (n: nat) (index: nat { index < n }) (values: values_n n): value =
+  match index, values with
+  | 0, (v, rest) -> v
+  | index, (v, rest) -> values_index (n - 1) (index - 1) rest
+
+let values_cons (n: nat) (v: value) (values: values_n n): values_n (n + 1) = (v, values)
+
 let exec_index (vars: nat) (x: nat { x < vars }):
-       exec (SX.values_n vars) unit value =
+       exec (values_n vars) unit value =
   { init = ()
-  ; eval = (fun i s -> SX.values_index vars x i)
+  ; eval = (fun i s -> values_index vars x i)
   ; update = (fun i s -> ())
   }
-
 
 let rec state_of_exp (e: exp): Type =
   match e with
@@ -126,9 +136,9 @@ let rec state_of_exp (e: exp): Type =
   | XMu e1 -> state_of_exp e1
   | XLet e1 e2 -> state_of_exp e1 * state_of_exp e2
 
-let xexec (e: exp) (vars: nat { wf e vars }) = exec (SX.values_n vars) (state_of_exp e) value
+let xexec (e: exp) (vars: nat { wf e vars }) = exec (values_n vars) (state_of_exp e) value
 
-inline_for_extraction
+noextract inline_for_extraction
 let rec exec_of_exp (e: exp) (vars: nat { wf e vars }): xexec e vars =
   match e with
   | XVal v -> exec_const _ v
@@ -141,23 +151,6 @@ let rec exec_of_exp (e: exp) (vars: nat { wf e vars }): xexec e vars =
   | XThen e1 e2 ->
     exec_then (exec_of_exp e1 vars) (exec_of_exp e2 vars)
   | XMu e1 ->
-    exec_mu xpre_init (fun i v -> (v, i)) (exec_of_exp e1 (vars + 1))
+    exec_mu xpre_init (fun i v -> values_cons _ v i) (exec_of_exp e1 (vars + 1))
   | XLet e1 e2 ->
-    exec_let (fun i v -> (v, i)) (exec_of_exp e1 vars) (exec_of_exp e2 (vars + 1))
-
-// module TX = Pipit.Check.Example.SysX
-
-let eval_x (i: bool) (st: unit * (unit * bool)): bool =
-  let (_, (_, s)) = st in
-  i && s
-
-// #push-options "--print_full_names"
-let ok (): unit =
-  let open Pipit.Sugar in
-
-  // assert (exists e. e == eval_x) by
-  assert (exists e. e == exec_of_exp (sofar x0) 1) by
-    (FStar.Tactics.norm [nbe; primops; iota; zeta; delta]; FStar.Tactics.dump "ok")
-
-    // (FStar.Tactics.compute (); FStar.Tactics.dump "ok")
-    // (SX.tac_nbe (); FStar.Tactics.dump "ok")
+    exec_let (fun i v -> values_cons _ v i) (exec_of_exp e1 vars) (exec_of_exp e2 (vars + 1))

@@ -1,5 +1,5 @@
-(* Top-level example *)
-module Pipit.Check.Example.Top
+(* Checking a simple example *)
+module Example.Check.Simple
 
 open Pipit.Exp.Base
 

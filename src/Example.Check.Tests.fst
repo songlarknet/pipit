@@ -1,5 +1,5 @@
-(* Simple system examples *)
-module Pipit.Check.Example.Sys0
+(* Simple system examples to test the translation and proofs *)
+module Example.Check.Tests
 
 open Pipit.System.Base
 open Pipit.System.Ind

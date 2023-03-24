@@ -34,6 +34,6 @@ let mk_step (#input #state #result: Type) (t: X.exec input state result) (inp: i
 
 module Tac = FStar.Tactics
 
-let tac_post () =
-  Tac.norm [nbe; delta; primops; iota; zeta; delta_fully ["Pipit.System.ExpX.values_index"]];
+let tac_extract () =
+  Tac.norm [nbe; delta; primops; iota; zeta];
   Tac.trefl ()
