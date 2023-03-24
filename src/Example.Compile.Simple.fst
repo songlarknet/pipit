@@ -4,7 +4,7 @@ module Example.Compile.Simple
 
 module Simple = Example.Check.Simple
 
-module XB = Pipit.Exec.Base
+module XX = Pipit.Exec.Exp
 module XL = Pipit.Exec.LowStar
 
 module Tac = FStar.Tactics
@@ -18,11 +18,11 @@ let expr = (Simple.count_when (Pipit.Exp.XVar 0))
 (* Define the state type so it shows up as a type definition in the C code.
    The "postprocess_with" annotation ensures that the state_of_exp is inlined into the type and simplified to a regular type *)
 [@@(Tac.postprocess_with XL.tac_extract)]
-let state = XB.state_of_exp expr
+let state = XX.state_of_exp expr
 
 (* Translate the expression to a transition system. *)
 noextract
-let system: XB.exec (int * unit) state int = XB.exec_of_exp expr 1
+let system: Pipit.Exec.Base.exec (int * unit) state int = XX.exec_of_exp expr 1
 
 (* Define the reset function, which takes a pointer to the internal state and
    initialises it. *)

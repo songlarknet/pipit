@@ -1,20 +1,18 @@
-(* Shitty C translation *)
+(* Simple, inefficient integration with C. *)
 module Pipit.Exec.LowStar
-
-// open Pipit.Exp.Base
 
 module X = Pipit.Exec.Base
 
-open LowStar.BufferOps
-
 module B = LowStar.Buffer
-module HS = FStar.HyperStack
-module G = FStar.Ghost
-module L = FStar.List.Tot
-module U32 = FStar.UInt32
-module MO = LowStar.Modifies
+module Tac = FStar.Tactics
 
+open LowStar.BufferOps
 open FStar.HyperStack.ST
+
+(* Tactic for normalizing *)
+let tac_extract () =
+  Tac.norm [nbe; delta; primops; iota; zeta];
+  Tac.trefl ()
 
 inline_for_extraction
 let mk_reset (#input #state #result: Type) (t: X.exec input state result) (stref: B.pointer state): ST unit
@@ -32,8 +30,3 @@ let mk_step (#input #state #result: Type) (t: X.exec input state result) (inp: i
   stref *= st';
   res
 
-module Tac = FStar.Tactics
-
-let tac_extract () =
-  Tac.norm [nbe; delta; primops; iota; zeta];
-  Tac.trefl ()

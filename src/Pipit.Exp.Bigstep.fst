@@ -1,3 +1,12 @@
+(* Bigstep semantics for expressions.
+   This is a bit different from the standard "reactive step" operational
+   semantics. The reactive step semantics operate under a single environment and
+   allow an expression e to step to a new expression e', producing a value. In
+   contrast, the bigstep relation here takes a stream of environments, and
+   fully evaluates an expression to a value.
+   The bigstep semantics feels a lot more functional (applicative), while the
+   reactive step semantics better matches the actual streaming execution mode.
+*)
 module Pipit.Exp.Bigstep
 
 open Pipit.Exp.Base
@@ -5,6 +14,7 @@ open Pipit.Exp.Subst
 
 module C = Pipit.Context
 
+(* Cons a single row element to a table (a stream of rows) *)
 let (+:) (#elts #vars: nat) (r: C.row vars) (t: C.table elts vars) : C.table (elts + 1) vars =
   C.table_append (C.table1 r) t
 
@@ -21,7 +31,7 @@ noeq type bigstep (#vars: nat): (#elts: nat) -> C.table elts vars -> exp -> valu
           v: value ->
           bigstep streams (XVal v) v
 
- (* Variables `x` are looked up in the stream history *)
+ (* Variables `x` are looked up in the most recent row in the stream history *)
  | BSVar: #elts: nat ->
           here: C.row vars ->
           streams: C.table elts vars ->
@@ -69,7 +79,7 @@ noeq type bigstep (#vars: nat): (#elts: nat) -> C.table elts vars -> exp -> valu
             v: value ->
             bigstep (C.table1 here) e1 v ->
             bigstep (C.table1 here) (XThen e1 e2) v
- (* Then or (e1 -> e2) is defined using then_, which is basically `hd e1 :: tl e2` *)
+ (* Subsequent steps of (p -> q) are q *)
  | BSThenS: #elts: nat { elts > 1 } ->
             streams: C.table elts vars ->
             e1: exp -> e2: exp ->
@@ -85,19 +95,22 @@ noeq type bigstep (#vars: nat): (#elts: nat) -> C.table elts vars -> exp -> valu
          v: value ->
          bigstep streams (subst e 0 (XMu e)) v ->
          bigstep streams (XMu e) v
- (* Reduction for recursive expressions proceeds by unfolding the recursion one step.
-    If all recursive references are guarded by `pre` then the `pre` step will look
-    at a shorter stream history prefix, and should eventually terminate. *)
+ (* Let expressions are performed by substituting into the expression.
+    We could also evaluate the definition e1 to a stream of values, and add each
+    of these to the stream contexts - but this is a bit easier, and later we can
+    prove that they're equivalent. *)
  | BSLet: #elts: nat ->
           streams: C.table elts vars -> e1: exp -> e2: exp ->
           v: value ->
           bigstep streams (subst e2 0 e1) v ->
           bigstep streams (XLet e1 e2) v
 
-let rec bigsteps (#elts #vars: nat) (table: C.table elts vars) (e: exp) (vs: C.vector value elts): prop =
-  match table, vs with
+(* Under streaming history `streams`, evaluate expression `e` at each step to
+   produce stream of values `vs` *)
+let rec bigsteps (#elts #vars: nat) (streams: C.table elts vars) (e: exp) (vs: C.vector value elts): prop =
+  match streams, vs with
   | C.Table (t :: ts'), v :: vs' ->
-    bigstep table e v /\
+    bigstep streams e v /\
     bigsteps (C.Table #(elts - 1) ts') e vs'
   | C.Table [], [] ->
     True
