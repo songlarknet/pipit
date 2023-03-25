@@ -13,8 +13,9 @@ let value_of_bool (b: bool): value = if b then 1 else 0
 
 let eval_prim2 (p: prim2) (v1 : value) (v2: value): value =
   match p with
-  | AndB     -> value_of_bool (bool_of_value v1 && bool_of_value v2)
-  | OrB      -> value_of_bool (bool_of_value v1 || bool_of_value v2)
+  // XXX: krml does not like to translate short-circuiting (&&) and (||) to C
+  | AndB     -> if bool_of_value v1 then v2 else 0  // value_of_bool (bool_of_value v1 && bool_of_value v2)
+  | OrB      -> if bool_of_value v1 then v1 else v2 // value_of_bool (bool_of_value v1 || bool_of_value v2)
   | ImpliesB -> if bool_of_value v1 then v2 else 1
   | EqZ      -> value_of_bool (v1 = v2)
   | AddZ     -> v1 + v2

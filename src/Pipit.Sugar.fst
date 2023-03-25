@@ -26,9 +26,13 @@ let (=>) = XPrim2 ImpliesB
 let (=^) = XPrim2 EqZ
 let (+^) = XPrim2 AddZ
 let (-^) = XPrim2 SubZ
-let (<=^)  = XPrim2 LeZ
+let (<=^) = XPrim2 LeZ
+let (>=^) (a b: exp)  = b <=^ a
+let (<^) (a b: exp) = (a +^ z1) <=^ b
+let (>^) (a b: exp) = (b +^ z1) <=^ a
 
 let (!) (e1: exp) = e1 =^ ff
+let (<>^) (a b: exp) = !(a =^ b)
 
 let negate (e1: exp) = z0 -^ e1
 

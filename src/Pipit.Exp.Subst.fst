@@ -22,6 +22,26 @@ let rec lift (e: exp) (above: var) : exp =
   | XLet e1 e2 ->
     XLet (lift e1 above) (lift e2 (above + 1))
 
+(* Lifting de Bruijn indices, bookkeeping used by substitution *)
+let rec lift_by (e: exp) (above by_: var) : exp =
+  match e with
+  | XVal v -> XVal v
+  | XVar x ->
+    if x >= above
+    then XVar (x + by_)
+    else XVar x
+  | XPrim2 p e1 e2 ->
+    XPrim2 p (lift_by e1 above by_) (lift_by e2 above by_)
+  | XIte ep et ef -> XIte (lift_by ep above by_) (lift_by et above by_) (lift_by ef above by_)
+  | XPre e ->
+    XPre (lift_by e above by_)
+  | XThen e1 e2 ->
+    XThen (lift_by e1 above by_) (lift_by e2 above by_)
+  | XMu e ->
+    XMu (lift_by e (above + 1) by_)
+  | XLet e1 e2 ->
+    XLet (lift_by e1 above by_) (lift_by e2 (above + 1) by_)
+
 (* Substitution *)
 let rec subst (e: exp) (x: var) (payload: exp) : exp =
   match e with
