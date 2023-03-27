@@ -150,7 +150,7 @@ let pump (estop_ok level_low: exp) (mk_prop: bool) =
     countsecutive' pump_try'
   in
   let nok_stuck (count_en': exp) =
-    (count_en' >=^ z stuck_time)
+    once (count_en' >=^ z stuck_time)
   in
   let pump_en (pump_try' nok_stuck': exp) =
     pump_try' /\ !nok_stuck'

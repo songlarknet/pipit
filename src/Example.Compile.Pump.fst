@@ -53,4 +53,5 @@ let step (inp: input) (stref: B.pointer state): ST output
     (requires (fun h -> B.live h stref))
     (ensures (fun h _ h' -> B.live h' stref)) =
   let res = XL.mk_step system (Exp.value_of_bool inp.estop_ok, (Exp.value_of_bool inp.level_low, ())) stref in
-  { pump_en = (res % Pump.pump_flag) <> 0; nok_stuck = (res % Pump.stuck_flag) <> 0 }
+  // How to check bits on `int` type?
+  { pump_en = (res % 2) >= 1; nok_stuck = (res % 4) >= 2 }
