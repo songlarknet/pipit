@@ -28,7 +28,7 @@ let min (a b: exp) =
  let open Sugar in
  (ite (a <=^ b) a b)
  // XXX: introducing let-binding here breaks proof - why?
- // let' a (let' (lift' b) (
+ // XLet a (XLet (lift' b) (
  //    ite (x1 <=^ x0) x1 x0))
 
 (* We need to limit integers so they don't overflow.
@@ -160,9 +160,9 @@ let controller (estop level_low: exp) (mk_prop: bool) =
     (estop' => !sol_en') /\
     (!level_low' => !sol_en')
   in
-  let' sol_try (
-    let' (nok_stuck x0) (
-      let' (sol_en x1 x0) (
+  XLet sol_try (
+    XLet (nok_stuck x0) (
+      XLet (sol_en x1 x0) (
         if mk_prop
         then prop (lift_by estop 0 3) (lift_by level_low 0 3) x0
         else result x0 x1)))
