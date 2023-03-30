@@ -74,8 +74,8 @@ let lastn (n: int) (p: exp) =
 let settle_time: int = 100
 let stuck_time:  int = 6000
 
-let pump_flag:   int = 1
-let stuck_flag:  int = 2
+let solenoid_flag: int = 1
+let stuck_flag:    int = 2
 
 (*
   node pump(
@@ -141,45 +141,40 @@ let stuck_flag:  int = 2
     --          not level_low => not pump_en;
   tel
 *)
-let pump (estop_ok level_low: exp) (mk_prop: bool) =
+let controller (estop level_low: exp) (mk_prop: bool) =
   let open Sugar in
-  let pump_try =
-    lastn settle_time (estop_ok /\ level_low)
+  let sol_try =
+    lastn settle_time (!estop /\ level_low)
   in
-  let count_en (pump_try': exp) =
-    countsecutive' pump_try'
+  let nok_stuck (sol_try': exp) =
+    once (lastn stuck_time sol_try')
   in
-  let nok_stuck (count_en': exp) =
-    once (count_en' >=^ z stuck_time)
+  let sol_en (sol_try' nok_stuck': exp) =
+    sol_try' /\ !nok_stuck'
   in
-  let pump_en (pump_try' nok_stuck': exp) =
-    pump_try' /\ !nok_stuck'
-  in
-  let result (pump_en' nok_stuck': exp) =
-    (ite pump_en'   (z  pump_flag) z0) +^
+  let result (sol_en' nok_stuck': exp) =
+    (ite sol_en'    (z solenoid_flag) z0) +^
     (ite nok_stuck' (z stuck_flag) z0)
   in
-  let prop (estop_ok' level_low' count_en' pump_en': exp) =
-    // (count_en' >=^ z stuck_time) /\
-    (!estop_ok' => !pump_en') /\
-    (!level_low' => !pump_en')
+  let prop (estop' level_low' sol_en': exp) =
+    (estop' => !sol_en') /\
+    (!level_low' => !sol_en')
   in
-  let' pump_try (
-    let' (count_en x0) (
-      let' (nok_stuck x0) (
-        let' (pump_en x2 x0) (
-          if mk_prop
-          then prop (lift_by estop_ok 0 4) (lift_by level_low 0 4) x2 x0
-          else result x0 x1))))
+  let' sol_try (
+    let' (nok_stuck x0) (
+      let' (sol_en x1 x0) (
+        if mk_prop
+        then prop (lift_by estop 0 3) (lift_by level_low 0 3) x0
+        else result x0 x1)))
 
-let pump_prop_x = pump (XVar 1) (XVar 0) true
-let pump_prop_n = 2
+let controller_prop_x = controller (XVar 1) (XVar 0) true
+let controller_prop_n = 2
 
-let pump_prop =
-  assert_norm (wf pump_prop_x pump_prop_n);
-  system_of_exp pump_prop_x pump_prop_n
+let controller_prop =
+  assert_norm (wf controller_prop_x controller_prop_n);
+  system_of_exp controller_prop_x controller_prop_n
 
-let pump_prop_prove (): Lemma (ensures induct1' pump_prop) =
-  assert (base_case' pump_prop) by tac_nbe ();
-  assert (step_case' pump_prop) by tac_nbe ();
+let controller_prop_prove (): Lemma (ensures induct1' controller_prop) =
+  assert (base_case' controller_prop) by tac_nbe ();
+  assert (step_case' controller_prop) by tac_nbe ();
   ()
