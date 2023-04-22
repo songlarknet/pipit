@@ -71,7 +71,7 @@ let lastn (n: int) (p: exp) =
  let open Sugar in
  countsecutive' p >=^ z n
 
-let settle_time: int = 100
+let settle_time: int = 1000
 let stuck_time:  int = 6000
 
 let solenoid_flag: int = 1

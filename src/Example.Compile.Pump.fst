@@ -12,7 +12,7 @@ module Tac = FStar.Tactics
 module B   = LowStar.Buffer
 open FStar.HyperStack.ST
 
-(* We will translate the "count_when" node with a variable as input.
+(* We will translate the controller node with variables as input.
    We do not want the expression's internal representation to show up in the
    C code, so we mark it as noextract. *)
 noextract
@@ -58,5 +58,4 @@ let step (inp: input) (stref: B.pointer state): ST output
     (requires (fun h -> B.live h stref))
     (ensures (fun h _ h' -> B.live h' stref)) =
   let res = XL.mk_step system (Exp.value_of_bool inp.estop, (Exp.value_of_bool inp.level_low, ())) stref in
-  // How to check bits on `int` type?
   { sol_en = has_bit res Pump.solenoid_flag; nok_stuck = has_bit res Pump.stuck_flag }
