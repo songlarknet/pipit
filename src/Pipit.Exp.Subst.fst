@@ -1,118 +1,9 @@
+(* TODO update to typed exprs*)
 module Pipit.Exp.Subst
 
 open Pipit.Exp.Base
 
-(* Lifting de Bruijn indices, bookkeeping used by substitution *)
-let rec lift (e: exp) (above: var) : exp =
-  match e with
-  | XVal v -> XVal v
-  | XVar x ->
-    if x >= above
-    then XVar (x + 1)
-    else XVar x
-  | XPrim2 p e1 e2 ->
-    XPrim2 p (lift e1 above) (lift e2 above)
-  | XIte ep et ef -> XIte (lift ep above) (lift et above) (lift ef above)
-  | XPre e ->
-    XPre (lift e above)
-  | XThen e1 e2 ->
-    XThen (lift e1 above) (lift e2 above)
-  | XMu e ->
-    XMu (lift e (above + 1))
-  | XLet e1 e2 ->
-    XLet (lift e1 above) (lift e2 (above + 1))
-
-(* Lifting de Bruijn indices, bookkeeping used by substitution *)
-let rec lift_by (e: exp) (above by_: var) : exp =
-  match e with
-  | XVal v -> XVal v
-  | XVar x ->
-    if x >= above
-    then XVar (x + by_)
-    else XVar x
-  | XPrim2 p e1 e2 ->
-    XPrim2 p (lift_by e1 above by_) (lift_by e2 above by_)
-  | XIte ep et ef -> XIte (lift_by ep above by_) (lift_by et above by_) (lift_by ef above by_)
-  | XPre e ->
-    XPre (lift_by e above by_)
-  | XThen e1 e2 ->
-    XThen (lift_by e1 above by_) (lift_by e2 above by_)
-  | XMu e ->
-    XMu (lift_by e (above + 1) by_)
-  | XLet e1 e2 ->
-    XLet (lift_by e1 above by_) (lift_by e2 (above + 1) by_)
-
-(* Substitution *)
-let rec subst (e: exp) (x: var) (payload: exp) : exp =
-  match e with
-  | XVal v -> XVal v
-  | XVar x' ->
-    if x' = x
-    then payload
-    else if x' > x
-    then XVar (x' - 1)
-    else XVar x'
-  | XPrim2 p e1 e2 ->
-    XPrim2 p (subst e1 x payload) (subst e2 x payload)
-  | XIte ep e1 e2 ->
-    XIte (subst ep x payload) (subst e1 x payload) (subst e2 x payload)
-  | XPre e ->
-    XPre (subst e x payload)
-  | XThen e1 e2 ->
-    XThen (subst e1 x payload) (subst e2 x payload)
-  | XMu e ->
-    XMu (subst e (x + 1) (lift payload 0))
-  | XLet e1 e2 ->
-    XLet (subst e1 x payload) (subst e2 (x + 1) (lift payload 0))
-
-(* Properties *)
-let rec lift_preserves_wf (e: exp) (n x: var):
-  Lemma (requires wf e n)
-        (ensures wf (lift e x) (n + 1)) =
- match e with
- | XVal _ -> ()
- | XVar x' -> ()
- | XPrim2 _ e1 e2 ->
-   lift_preserves_wf e1 n x;
-   lift_preserves_wf e2 n x
- | XIte ep e1 e2 ->
-   lift_preserves_wf ep n x;
-   lift_preserves_wf e1 n x;
-   lift_preserves_wf e2 n x
- | XPre e1 -> lift_preserves_wf e1 n x
- | XThen e1 e2 ->
-   lift_preserves_wf e1 n x;
-   lift_preserves_wf e2 n x
- | XMu e1 -> lift_preserves_wf e1 (n + 1) (x + 1)
- | XLet e1 e2 ->
-   lift_preserves_wf e1 n x;
-   lift_preserves_wf e2 (n + 1) (x + 1)
-
-let rec subst_preserves_wf (e p: exp) (n: var) (x: var { x < n + 1 }):
-  Lemma (requires wf e (n + 1) /\ wf p n)
-        (ensures wf (subst e x p) n) =
-  match e with
-  | XVal _ -> ()
-  | XVar x' -> ()
-  | XPrim2 _ e1 e2 ->
-    subst_preserves_wf e1 p n x;
-    subst_preserves_wf e2 p n x
-  | XIte ep e1 e2 ->
-    subst_preserves_wf ep p n x;
-    subst_preserves_wf e1 p n x;
-    subst_preserves_wf e2 p n x
-  | XPre e1 -> subst_preserves_wf e1 p n x
-  | XThen e1 e2 ->
-    subst_preserves_wf e1 p n x;
-    subst_preserves_wf e2 p n x
-  | XMu e1 ->
-    lift_preserves_wf p n 0;
-    subst_preserves_wf e1 (lift p 0) (n + 1) (x + 1)
-  | XLet e1 e2 ->
-    lift_preserves_wf p n 0;
-    subst_preserves_wf e1 p n x;
-    subst_preserves_wf e2 (lift p 0) (n + 1) (x + 1)
-
+(*
 let rec lift_lift_commute (e: exp) (x1: var) (x2: var { x2 <= x1 }):
   Lemma (ensures lift (lift e x1) x2 == lift (lift e x2) (x1 + 1)) =
   match e with
@@ -215,3 +106,5 @@ let subst_subst_distribute_XMu (e p: exp) (x: var):
   Lemma (ensures subst (subst e 0 (XMu e)) x p ==
                  subst (subst e (x + 1) (lift p 0)) 0 (XMu (subst e (x + 1) (lift p 0)))) =
  subst_subst_distribute_le e (XMu e) p 0 x
+
+*)
