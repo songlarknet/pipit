@@ -20,7 +20,7 @@ module C = Pipit.Context
  The stream history `streams` is in most-recent-first order.
  *)
 noeq
-type bigstep (#c: C.closed): (#a: Type) -> list (C.row c) -> exp c a -> a -> Type =
+type bigstep (#c: C.context): (#a: Type) -> list (C.row c) -> exp c a -> a -> Type =
  (* Values `v` always evaluate to the value *)
  | BSVal:
           streams: list (C.row c) ->

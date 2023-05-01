@@ -3,54 +3,116 @@ module Pipit.System.Exp
 
 
 open Pipit.System.Base
+open Pipit.System.Det
 
 open Pipit.Exp.Base
-open Pipit.Exp.Bigstep
-open Pipit.Exp.Causality
+// open Pipit.Exp.Bigstep
+// open Pipit.Exp.Causality
 
 module C = Pipit.Context
 
 (* A system we get from translating an expression *)
-let xsystem (input: nat) (state: Type) = system (C.row input) state value
+let xsystem (c: C.context) (state: Type) (value: Type) = system (C.row c) state value
+(* Same, but deterministic *)
+let xdsystem (c: C.context) (state: Type) (value: Type) = dsystem (C.row c) state value
 
 let xsystem_stepn
-  (#outer #vars: nat)
-  (#state: Type)
-  (t: xsystem vars state)
-  (streams: C.table outer vars)
-  (vs: C.vector value outer)
+  (#c: C.context)
+  (#state #value: Type)
+  (t: xsystem c state value)
+  (streams: list (C.row c & value))
   (s': state): prop =
-  let C.Table rs = streams in
-  system_stepn t rs vs s'
+  system_stepn t streams s'
 
-
-let rec state_of_exp (e: exp): Type =
+let rec state_of_exp (e: exp 'c 'a): Tot Type (decreases e) =
   match e with
   | XVal v -> unit
+  | XBVar x -> unit
   | XVar x -> unit
-  | XPrim2 p e1 e2 -> state_of_exp e1 * state_of_exp e2
-  | XIte ep e1 e2 -> state_of_exp ep * state_of_exp e1 * state_of_exp e2
-  | XPre e1 -> state_of_exp e1 * value
-  | XThen e1 e2 -> bool * state_of_exp e2
+  | XApp f e -> state_of_exp f & state_of_exp e
+  | XFby v e1 -> state_of_exp e1 & 'a
+  | XThen e1 e2 -> bool & state_of_exp e1 & state_of_exp e2
   | XMu e1 -> state_of_exp e1
-  | XLet e1 e2 -> state_of_exp e1 * state_of_exp e2
+  | XLet b e1 e2 -> state_of_exp e1 & state_of_exp e2
+  // Contracts do not expose their body, so we only need state of assume, guarantee and arg
+  | XContract assm guar body arg ->
+    state_of_exp assm &
+    state_of_exp guar &
+    state_of_exp arg
+  | XCheck name e1 e2 -> (xprop & state_of_exp e1) & state_of_exp e2
 
-let rec system_of_exp (e: exp) (vars: nat { wf e vars }):
-    xsystem vars (state_of_exp e) =
+let sem_freevars = (#a: Type) -> (x: C.var a) -> a
+
+let rec dsystem_of_exp (e: exp 'c 'a)
+    (fv: sem_freevars):
+    Tot (option (xdsystem 'c (state_of_exp e) 'a)) (decreases e) =
   match e with
-  | XVal v -> system_const v
-  | XVar x -> system_map (fun i -> C.row_index i x) system_input
-  | XPrim2 p e1 e2 ->
-    system_map2 (eval_prim2 p) (system_of_exp e1 vars) (system_of_exp e2 vars)
-  | XIte ep e1 e2 ->
-    system_ite (fun v -> v <> 0) (system_of_exp ep vars) (system_of_exp e1 vars) (system_of_exp e2 vars)
-  | XPre e1 ->
-    system_pre xpre_init (system_of_exp e1 vars)
+  | XVal v -> Some (dsystem_const v)
+  | XBVar x -> Some (dsystem_map (fun i -> C.row_index 'c i x) dsystem_input)
+  | XVar x -> Some (dsystem_const (fv x))
+  | XApp e1 e2 ->
+    (match dsystem_of_exp e1 fv, dsystem_of_exp e2 fv with
+     | Some t1, Some t2 ->
+       let t': xdsystem 'c (state_of_exp (XApp e1 e2)) 'a = dsystem_ap2 t1 t2 in
+       Some t'
+     | _ -> None)
+  | XFby v e1 ->
+    (match dsystem_of_exp e1 fv with
+     | Some t -> Some (dsystem_pre v t)
+     | _ -> None)
   | XThen e1 e2 ->
-    system_then (system_of_exp e1 vars) (system_of_exp e2 vars)
-  | XMu e1 ->
-    let t = system_of_exp e1 (vars + 1) in
-    system_mu #(C.row vars) #(C.row (vars + 1)) (fun i v -> C.row_append (C.row1 v) i) t
-  | XLet e1 e2 ->
-    system_let (fun i v -> C.row_append (C.row1 v) i) (system_of_exp e1 vars) (system_of_exp e2 (vars + 1))
+    (match dsystem_of_exp e1 fv, dsystem_of_exp e2 fv with
+     | Some t1, Some t2 ->
+        Some (dsystem_then t1 t2)
+     | _ -> None)
+  | XLet b e1 e2 ->
+    (match dsystem_of_exp e1 fv, dsystem_of_exp e2 fv with
+     | Some t1, Some t2 ->
+        Some (dsystem_let (fun i v -> (v, i)) t1 t2)
+     | _ -> None)
+  | XCheck name e1 e2 ->
+    (match dsystem_of_exp e1 fv, dsystem_of_exp e2 fv with
+     | Some t1, Some t2 ->
+        let t1' = dsystem_check name t1 in
+        let t': xdsystem 'c (state_of_exp (XCheck name e1 e2)) 'a = dsystem_let (fun i v -> i) t1' t2 in
+        Some t'
+     | _ -> None)
 
+
+  | XMu e1 -> None
+  | XContract assm guar body arg -> None
+
+let rec system_of_exp (e: exp 'c 'a)
+    (fv: sem_freevars):
+    Tot (xsystem 'c (state_of_exp e) 'a) (decreases e) =
+  match dsystem_of_exp e fv with
+  | Some d -> system_of_dsystem d
+  | None ->
+    match e with
+    | XVal v -> system_const v
+    | XBVar x -> system_map (fun i -> C.row_index 'c i x) system_input
+    | XVar x -> system_const (fv x)
+    | XApp e1 e2 ->
+      let t1 = system_of_exp e1 fv in
+      let t2 = system_of_exp e2 fv in
+      let t': xsystem 'c (state_of_exp (XApp e1 e2)) 'a = system_ap2 t1 t2 in
+      t'
+    | XFby v e1 ->
+      system_pre v (system_of_exp e1 fv)
+    | XThen e1 e2 ->
+      system_then (system_of_exp e1 fv) (system_of_exp e2 fv)
+    | XMu e1 ->
+      let t = system_of_exp e1 fv in
+      system_mu #(C.row 'c) #('a & C.row 'c) (fun i v -> (v, i)) t
+    | XLet b e1 e2 ->
+      system_let (fun i v -> (v, i)) (system_of_exp e1 fv) (system_of_exp e2 fv)
+    | XContract assm guar body arg ->
+      system_contract_instance (fun i b -> (b, ())) (fun i a b -> (a, (b, ())))
+        (system_bool_holds (system_of_exp assm fv))
+        (system_bool_holds (system_of_exp guar fv))
+        (system_of_exp arg fv)
+    | XCheck name e1 e2 ->
+      let t1 = system_check name (system_of_exp e1 fv) in
+      let t2 = system_of_exp e2 fv in
+      let t': xsystem 'c (state_of_exp (XCheck name e1 e2)) 'a = system_let (fun i v -> i) t1 t2 in
+      t'

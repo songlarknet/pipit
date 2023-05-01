@@ -10,65 +10,56 @@ let rec prop_for_all (l: list prop): prop =
  | [] -> True
  | p :: ps -> p /\ prop_for_all ps
 
-let base_case' (#input #state: Type) (t: system input state C.value): prop =
-  forall (i: input) (s: state) (s': state) (r: C.value).
-    t.init s ==> t.step i s s' r ==> r <> 0
+let all_checks_hold (#input #state #value: Type) (t: system input state value) (s: state): prop =
+  prop_for_all (List.Tot.map (fun (n, i) -> i s) t.chck)
 
-let step_case' (#input #state: Type) (t: system input state C.value): prop =
-  forall (i0 i1: input) (s0: state) (s1 s2: state) (r0 r1: C.value).
-    t.step i0 s0 s1 r0 ==> r0 <> 0 ==>
-    t.step i1 s1 s2 r1 ==> r1 <> 0
+let base_case (#input #state #value: Type) (t: system input state value): prop =
+  forall (i: input) (s: state) (s': state) (r: value).
+    t.init s ==> t.step i s s' r ==>
+    all_checks_hold t s'
 
-let induct1' (#input #state: Type)
-  (t: system input state C.value): prop =
-    base_case' t /\ step_case' t
+let step_case (#input #state #value: Type) (t: system input state value): prop =
+  forall (i0 i1: input) (s0: state) (s1 s2: state) (r0 r1: value).
+    t.step i0 s0 s1 r0 ==> all_checks_hold t s1 ==>
+    t.step i1 s1 s2 r1 ==> all_checks_hold t s2
 
-let base_case (#input #state: Type) (t: system input state prop): prop =
-  forall (i: input) (s: state) (s': state) (r: prop).
-    t.init s ==> t.step i s s' r ==> r
-
-let step_case (#input #state: Type) (t: system input state prop): prop =
-  forall (i0 i1: input) (s0: state) (s1 s2: state) (r0 r1: prop).
-    t.step i0 s0 s1 r0 ==> r0 ==>
-    t.step i1 s1 s2 r1 ==> r1
-
-let induct1 (#input #state: Type)
-  (t: system input state prop): prop =
+let induct1 (#input #state #value: Type)
+  (t: system input state value): prop =
     base_case t /\ step_case t
 
-let rec induct1_sound (#len: nat) (#input #state: Type)
-  (t: system input state prop)
-  (inputs: C.vector input len)
-  (props: C.vector prop len)
-  (s': state):
-    Lemma
-        (requires system_stepn t inputs props s' /\ induct1 t)
-        (ensures prop_for_all props) =
- match inputs, props with
- | [], [] -> ()
- | [i], [p] -> ()
- | i1 :: i0 :: is, p1 :: p0 :: ps ->
-   assert (len >= 2);
-   eliminate exists (s0: state) (s1: state).
-     system_stepn #(len - 2) t is ps s0 /\
-     t.step i0 s0 s1 p0
-   returns prop_for_all props
-   with h.
-     induct1_sound #(len - 1) t (i0 :: is) (p0 :: ps) s1
+// let rec induct1_sound (#len: nat) (#input #state: Type)
+//   (t: system input state prop)
+//   (inputs: C.vector input len)
+//   (props: C.vector prop len)
+//   (s': state):
+//     Lemma
+//         (requires system_stepn t inputs props s' /\ induct1 t)
+//         (ensures prop_for_all props) =
+//  match inputs, props with
+//  | [], [] -> ()
+//  | [i], [p] -> ()
+//  | i1 :: i0 :: is, p1 :: p0 :: ps ->
+//    assert (len >= 2);
+//    eliminate exists (s0: state) (s1: state).
+//      system_stepn #(len - 2) t is ps s0 /\
+//      t.step i0 s0 s1 p0
+//    returns prop_for_all props
+//    with h.
+//      induct1_sound #(len - 1) t (i0 :: is) (p0 :: ps) s1
 
-let bmc2' (#input #state: Type) (t: system input state C.value): prop =
-  forall (i1 i2: input) (s0 s1 s2: state) (r1 r2: C.value).
-    t.init s0 ==>
-    t.step i1 s0 s1 r1 ==>
-    t.step i2 s1 s2 r2 ==>
-    r2 <> 0
+// let bmc2' (#input #state: Type) (t: system input state C.value): prop =
+//   forall (i1 i2: input) (s0 s1 s2: state) (r1 r2: C.value).
+//     t.init s0 ==>
+//     t.step i1 s0 s1 r1 ==>
+//     t.step i2 s1 s2 r2 ==>
+//     r2 <> 0
 
-let bmc2 (#input #state: Type) (t: system input state prop): prop =
-  forall (i1 i2: input) (s0 s1 s2: state) (r1 r2: prop).
-    t.init s0 ==>
-    t.step i1 s0 s1 r1 ==>
-    t.step i2 s1 s2 r2 ==>
-    r2
+// let bmc2 (#input #state: Type) (t: system input state prop): prop =
+//   forall (i1 i2: input) (s0 s1 s2: state) (r1 r2: prop).
+//     t.init s0 ==>
+//     t.step i1 s0 s1 r1 ==>
+//     t.step i2 s1 s2 r2 ==>
+//     r2
 
 (* Shelved: proof that properties proved for transition systems apply to original expression *)
 // open Pipit.Exp.Base
