@@ -1,4 +1,4 @@
-(* Reactive step semantics, similar to other Lustre semantics. *)
+(* Reactive step semantics, similar to other Lustre semantics. TODO update to typed exprs*)
 module Pipit.Exp.ReactiveStep
 
 open Pipit.Exp.Base

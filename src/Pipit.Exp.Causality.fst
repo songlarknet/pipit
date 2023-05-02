@@ -1,3 +1,4 @@
+(*TODO update to typed exprs*)
 module Pipit.Exp.Causality
 
 open Pipit.Exp.Base
@@ -6,6 +7,7 @@ open Pipit.Exp.Bigstep
 
 module C = Pipit.Context
 
+(*
 (* Causality: does expression `e` have a dependency on the most-recent value of expression `e'`?
     *)
 let rec direct_dependency (e e': exp) : bool =
@@ -113,6 +115,7 @@ let rec direct_dependency_not_subst (x: var) (x': var { x' < x })
     direct_dependency_lift p (XVar (x - 1)) 0;
     direct_dependency_not_subst x x' e1 p;
     direct_dependency_not_subst (x + 1) (x' + 1) e2 (lift p 0)
+*)
 
 (* Shelve: proofs about causality, will need to be restated on single-element semantics *)
 (*

@@ -10,13 +10,9 @@
 module Pipit.Exp.Bigstep
 
 open Pipit.Exp.Base
-open Pipit.Exp.Subst
+open Pipit.Inhabited
 
 module C = Pipit.Context
-
-(* Cons a single row element to a table (a stream of rows) *)
-let (+:) (#elts #vars: nat) (r: C.row vars) (t: C.table elts vars) : C.table (elts + 1) vars =
-  C.table_append (C.table1 r) t
 
 (* bigstep streams e v
 
@@ -24,122 +20,139 @@ let (+:) (#elts #vars: nat) (r: C.row vars) (t: C.table elts vars) : C.table (el
  `elts` elements and `vars` variables, the expression `e` evaluates to value `v`.
  The stream history `streams` is in most-recent-first order.
  *)
-noeq type bigstep (#vars: nat): (#elts: nat) -> C.table elts vars -> exp -> value -> Type =
+noeq
+type bigstep (#c: C.context): (#a: Type) -> list (C.row c) -> exp c a -> a -> Type =
  (* Values `v` always evaluate to the value *)
- | BSVal: #elts: nat ->
-          streams: C.table elts vars ->
-          v: value ->
+ | BSVal:
+          streams: list (C.row c) ->
+          v: 'a ->
           bigstep streams (XVal v) v
 
  (* Variables `x` are looked up in the most recent row in the stream history *)
- | BSVar: #elts: nat ->
-          here: C.row vars ->
-          streams: C.table elts vars ->
-          x: var { x < vars } ->
-          bigstep (here +: streams) (XVar x) (C.row_index here x)
+ | BSVar: latest: C.row c ->
+          prefix: list (C.row c) ->
+          x: C.index { C.has_index c x } ->
+          bigstep (latest :: prefix) (XBVar x) (C.row_index c latest x)
 
- (* Primitives are applied element-wise to the stream *)
- | BSPrim2: #elts: nat ->
-            streams: C.table elts vars ->
-            p: prim2 -> e1: exp -> e2: exp ->
-            v1: value -> v2: value ->
-            bigstep streams e1 v1 ->
-            bigstep streams e2 v2 ->
-            bigstep streams (XPrim2 p e1 e2) (eval_prim2 p v1 v2)
+ (* Element-wise application *)
+ | BSApp: streams: list (C.row c) ->
+          f: exp c ('a -> 'b)        ->
+          e: exp c  'a             ->
+          f_v: ('a -> 'b)            ->
+          e_v:  'a                 ->
+          bigstep streams f f_v   ->
+          bigstep streams e e_v   ->
+          bigstep streams (XApp f e) (f_v e_v)
 
- (* If-then-else checks if the condition is nonzero *)
- | BSIteT:  #elts: nat ->
-            streams: C.table elts vars ->
-            ep: exp -> e1: exp -> e2: exp ->
-            vp: value { vp <> 0 } -> v1: value ->
-            bigstep streams ep vp ->
-            bigstep streams e1 v1 ->
-            bigstep streams (XIte ep e1 e2) v1
- | BSIteF:  #elts: nat ->
-            streams: C.table elts vars ->
-            ep: exp -> e1: exp -> e2: exp ->
-            v2: value ->
-            bigstep streams ep 0 ->
-            bigstep streams e2 v2 ->
-            bigstep streams (XIte ep e1 e2) v2
-
-
- (* To compute `pre e` we evaluate `e` without the most recent element.
-   // TODO: arbitrarily define `pre e = true -> ...` so that the core logic is deterministic AND total.
-   *)
- | BSPre: #elts: nat ->
-          here: C.row vars -> streams: C.table elts vars ->
-          e: exp -> v: value ->
-          bigstep streams e v ->
-          bigstep (here +: streams) (XPre e) v
+ (* To compute `pre e` we evaluate `e` without the most recent element. *)
+ | BSFby1: start: list (C.row c) { List.Tot.length start <= 1 }
+                                    ->
+           v0: 'a                    ->
+           e: exp c 'a               ->
+           bigstep start (XFby v0 e) v0
+ (* To compute `pre e` we evaluate `e` without the most recent element. *)
+ | BSFbyS: latest: C.row c          ->
+           prefix: list (C.row c) { List.Tot.length prefix > 1 }
+                                    ->
+           v0: 'a                    ->
+           v': 'a                    ->
+           e: exp c 'a               ->
+           bigstep           prefix           e  v' ->
+           bigstep (latest :: prefix) (XFby v0 e) v'
 
  (* First step of (p -> q) is p *)
- | BSThen1: here: C.row vars ->
-            e1: exp -> e2: exp ->
-            v: value ->
-            bigstep (C.table1 here) e1 v ->
-            bigstep (C.table1 here) (XThen e1 e2) v
+ | BSThen1: start: list (C.row c) { List.Tot.length start <= 1 }
+                                    ->
+            e1: exp c 'a             ->
+            e2: exp c 'a             ->
+            v: 'a                    ->
+            bigstep start        e1     v ->
+            bigstep start (XThen e1 e2) v
  (* Subsequent steps of (p -> q) are q *)
- | BSThenS: #elts: nat { elts > 1 } ->
-            streams: C.table elts vars ->
-            e1: exp -> e2: exp ->
-            v: value ->
-            bigstep streams e2 v ->
+ | BSThenS: streams: list (C.row c) { List.Tot.length streams > 1 }
+                                    ->
+            e1: exp c 'a             ->
+            e2: exp c 'a             ->
+            v: 'a                    ->
+            bigstep streams           e2  v ->
             bigstep streams (XThen e1 e2) v
 
  (* Reduction for recursive expressions proceeds by unfolding the recursion one step.
     If all recursive references are guarded by `pre` then the `pre` step will look
     at a shorter stream history prefix, and should eventually terminate. *)
- | BSMu: #elts: nat ->
-         streams: C.table elts vars -> e: exp ->
-         v: value ->
-         bigstep streams (subst e 0 (XMu e)) v ->
+ | BSMu: (i: inhabited 'a) ->
+         streams: list (C.row c)    ->
+         e: exp (C.close1 c 'a) 'a ->
+         v: 'a                       ->
+         bigstep streams (subst_index1 e (XMu e)) v ->
          bigstep streams (XMu e) v
+
  (* Let expressions are performed by substituting into the expression.
     We could also evaluate the definition e1 to a stream of values, and add each
     of these to the stream contexts - but this is a bit easier, and later we can
     prove that they're equivalent. *)
- | BSLet: #elts: nat ->
-          streams: C.table elts vars -> e1: exp -> e2: exp ->
-          v: value ->
-          bigstep streams (subst e2 0 e1) v ->
-          bigstep streams (XLet e1 e2) v
+ | BSLet: streams: list (C.row c)   ->
+          e1: exp c 'b               ->
+          e2: exp (C.close1 c 'b) 'a
+                                    ->
+          v: 'a                      ->
+          bigstep streams (subst_index1 e2 e1) v
+                                    ->
+          bigstep streams (XLet 'b e1 e2) v
+
+ | BSContract:
+          streams: list (C.row c)   ->
+          ea: exp ['b]    xprop ->
+          eg: exp ['a; 'b] xprop ->
+          eb: exp ['b]    'a     ->
+          earg: exp c                     'b     ->
+          v:                              'a     ->
+          bigstep streams
+            (subst_index1 (weaken c eb) earg)
+            v                                  ->
+          bigstep streams (XContract ea eg eb earg) v
+
+ | BSCheck:
+          streams: list (C.row c)   ->
+          name:    string                       ->
+          eprop:   exp c                  xprop ->
+          e:       exp c                  'a     ->
+          v:                              'a     ->
+          bigstep streams e v                   ->
+          bigstep streams (XCheck name eprop e) v
+
 
 (* Under streaming history `streams`, evaluate expression `e` at each step to
    produce stream of values `vs` *)
-let rec bigsteps (#elts #vars: nat) (streams: C.table elts vars) (e: exp) (vs: C.vector value elts): prop =
+let rec bigsteps (streams: list (C.row 'c)) (e: exp 'c 'a) (vs: list 'a { List.Tot.length vs == List.Tot.length streams }): prop =
   match streams, vs with
-  | C.Table (t :: ts'), v :: vs' ->
-    bigstep streams e v /\
-    bigsteps (C.Table #(elts - 1) ts') e vs'
-  | C.Table [], [] ->
+  | (t :: ts'), (v :: vs') ->
+    squash (bigstep streams e v) /\ bigsteps ts' e vs'
+  | [], [] ->
     True
 
+//TODO clean
+#push-options "--split_queries always"
 (* Properties *)
-let rec bigstep_proof_equivalence (#elts #vars: nat)
-  (#streams: C.table elts vars) (#e: exp)
-  (#v1 #v2: value)
+let rec bigstep_proof_equivalence
+  (#streams: list (C.row 'c))
+  (#e: exp 'c 'a)
+  (#v1 #v2: 'a)
   (hBS1: bigstep streams e v1) (hBS2: bigstep streams e v2):
     Lemma (ensures hBS1 === hBS2) (decreases hBS1) =
   match hBS1 with
   | BSVal _ _  -> ()
   | BSVar _ _ _ -> ()
 
-  | BSPrim2 _ _ _ _ _ _ bs11 bs12 ->
-    let BSPrim2 _ _ _ _ _ _ bs21 bs22 = hBS2 in
+  | BSApp _ _ _ _ _ bs11 bs12 ->
+    let BSApp _ _ _ _ _ bs21 bs22 = hBS2 in
     bigstep_proof_equivalence bs11 bs21;
     bigstep_proof_equivalence bs12 bs22
 
-  | BSIteT _ _ _ _ _ _ bs11 bs12
-  | BSIteF _ _ _ _ _ bs11 bs12 ->
-    (match hBS2 with
-      | BSIteT _ _ _ _ _ _ bs21 bs22
-      | BSIteF _ _ _ _ _ bs21 bs22 ->
-        bigstep_proof_equivalence bs11 bs21;
-        bigstep_proof_equivalence bs12 bs22)
-
-  | BSPre here1' streams1' _ _ bs1 ->
-    let BSPre here2' streams2' _ _ bs2 = hBS2 in
+  | BSFby1 _ _ _ ->
+    ()
+  | BSFbyS _ _ _ _ _ bs1 ->
+    let BSFbyS _ _ _ _ _ bs2 = hBS2 in
     bigstep_proof_equivalence bs1 bs2
 
   | BSThen1 _ _ _ _ bs12 ->
@@ -150,19 +163,28 @@ let rec bigstep_proof_equivalence (#elts #vars: nat)
     let BSThenS _ _ _ _ bs22 = hBS2 in
     bigstep_proof_equivalence bs12 bs22
 
-  | BSMu _ _ _ bs1 ->
-    let BSMu _ _ _ bs2 = hBS2 in
+  | BSMu _ _ _ _ bs1 ->
+    let BSMu _ _ _ _ bs2 = hBS2 in
     bigstep_proof_equivalence bs1 bs2
 
   | BSLet _ _ _ _ bs1 ->
     let BSLet _ _ _ _ bs2 = hBS2 in
     bigstep_proof_equivalence bs1 bs2
 
-let bigstep_deterministic (#elts #vars: nat)
-  (#streams: C.table elts vars) (#e: exp)
-  (#v1 #v2: value)
+  | BSContract _ _ _ _ _ _ bs1 ->
+    let BSContract _ _ _ _ _ _ bs2 = hBS2 in
+    bigstep_proof_equivalence bs1 bs2
+
+  | BSCheck _ _ _ _ _ bs1 ->
+    let BSCheck _ _ _ _ _ bs2 = hBS2 in
+    bigstep_proof_equivalence bs1 bs2
+
+let bigstep_deterministic
+  (#streams: list (C.row 'c))
+  (#e: exp 'c 'a)
+  (#v1 #v2: 'a)
   (hBS1: bigstep streams e v1) (hBS2: bigstep streams e v2):
-    Lemma (ensures (v1 = v2)) (decreases hBS1) =
+    Lemma (ensures (v1 == v2)) (decreases hBS1) =
   bigstep_proof_equivalence hBS1 hBS2
 
 (* Shelve: disable proofs. monotone will require causality  *)
