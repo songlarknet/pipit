@@ -31,7 +31,7 @@ let rec state_of_exp (e: exp 'c 'a): Tot Type (decreases e) =
   | XVar x -> unit
   | XApp f e -> state_of_exp f & state_of_exp e
   | XFby v e1 -> state_of_exp e1 & 'a
-  | XThen e1 e2 -> bool & state_of_exp e1 & state_of_exp e2
+  | XThen e1 e2 -> system_then_state (state_of_exp e1) (state_of_exp e2)
   | XMu _ e1 -> state_of_exp e1
   | XLet b e1 e2 -> state_of_exp e1 & state_of_exp e2
   // Contracts do not expose their body, so we only need state of assume, guarantee and arg
@@ -79,7 +79,12 @@ let rec dsystem_of_exp (e: exp 'c 'a)
      | _ -> None)
 
 
-  | XMu _ e1 -> None
+  | XMu _ e1 ->
+    (match dsystem_of_exp e1 fv with
+    | Some t1 ->
+      let t' = dsystem_mu_causal #(C.row 'c) #('a & C.row 'c) (fun i v -> (v, i)) t1 in
+      Some t'
+    | _ -> None)
   | XContract assm guar body arg -> None
 
 let rec system_of_exp (e: exp 'c 'a)

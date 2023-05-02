@@ -2,14 +2,13 @@
 module Example.Check.Pump
 
 open Pipit.Exp.Base
-open Pipit.Exp.Subst
 
 open Pipit.System.Base
 open Pipit.System.Ind
 open Pipit.System.Exp
 
 module T = FStar.Tactics
-module Sugar = Pipit.Sugar
+module Sugar = Pipit.SugarX4
 
 let tac_nbe (): T.Tac unit = T.norm [primops; iota; delta; zeta; nbe]
 
@@ -24,12 +23,9 @@ let tac_nbe (): T.Tac unit = T.norm [primops; iota; delta; zeta; nbe]
      m = if a <= b then a else b;
    tel
 *)
-let min (a b: exp) =
+let min (a b: Sugar.s int) =
  let open Sugar in
- (ite (a <=^ b) a b)
- // XXX: introducing let-binding here breaks proof - why?
- // XLet a (XLet (lift' b) (
- //    ite (x1 <=^ x0) x1 x0))
+ (if_then_else (a <=^ b) a b)
 
 (* We need to limit integers so they don't overflow.
    This isn't yet checked by the proofs. *)
@@ -48,13 +44,12 @@ let count_max = 65535
         else 0;
    tel
 *)
-let countsecutive' (p: exp) =
+let countsecutive' (p: Sugar.s bool) =
  let open Sugar in
- mu' (
-    let count = XVar 0 in
-    let p' = lift' p in
-    // simplified to make C code a little bit simpler, as pre is 0-initialised
-    ite p' (pre (min (count +^ z1) (z count_max))) z0)
+ rec' (fun count ->
+   if_then_else p
+   (fby 1 (min (count +^ z1) (z count_max)))
+   z0)
 
 (*
    node lastn(
@@ -67,9 +62,9 @@ let countsecutive' (p: exp) =
      ok = countsecutive(p) >= n;
    tel
 *)
-let lastn (n: int) (p: exp) =
+let lastn (n: int) (p: Sugar.s bool) =
  let open Sugar in
- countsecutive' p >=^ z n
+ let' (countsecutive p) (fun c -> c >=^ z n)
 
 let settle_time: int = 1000
 let stuck_time:  int = 6000
@@ -141,40 +136,37 @@ let stuck_flag:    int = 2
     --          not level_low => not pump_en;
   tel
 *)
-let controller (estop level_low: exp) (mk_prop: bool) =
+let controller (estop level_low: Sugar.s bool) =
   let open Sugar in
-  let sol_try =
-    lastn settle_time (!estop /\ level_low)
-  in
-  let nok_stuck (sol_try': exp) =
-    once (lastn stuck_time sol_try')
-  in
-  let sol_en (sol_try' nok_stuck': exp) =
-    sol_try' /\ !nok_stuck'
-  in
-  let result (sol_en' nok_stuck': exp) =
-    (ite sol_en'    (z solenoid_flag) z0) +^
-    (ite nok_stuck' (z stuck_flag) z0)
-  in
-  let prop (estop' level_low' sol_en': exp) =
-    (estop' => !sol_en') /\
-    (!level_low' => !sol_en')
-  in
-  XLet sol_try (
-    XLet (nok_stuck x0) (
-      XLet (sol_en x1 x0) (
-        if mk_prop
-        then prop (lift_by estop 0 3) (lift_by level_low 0 3) x0
-        else result x0 x1)))
+  // XXX: nesting is not working properly, for some reason inlining lastn helps
+  let' (lastn settle_time (not_ estop /\ level_low)) (fun sol_try ->
+  let' (once (lastn stuck_time sol_try)) (fun nok_stuck ->
+  let' (sol_try /\ not_ nok_stuck) (fun sol_en ->
+  let'
+    ((ite sol_en    (z solenoid_flag) z0) +^
+     (ite nok_stuck (z stuck_flag) z0)) (fun result ->
+  check' "ESTOP OK" (estop => not_ sol_try) (
+  check' "LEVEL HIGH OK"   (not_ level_low => not_ sol_try) (
+    result))))))
 
-let controller_prop_x = controller (XVar 1) (XVar 0) true
-let controller_prop_n = 2
+let controller' (estop level_low: Sugar.s bool) =
+  let open Sugar in
+  let' (countsecutive' (not_ estop /\ level_low)) (fun sol_try_c ->
+  let' (sol_try_c >=^ z settle_time) (fun sol_try ->
+  let' (countsecutive' sol_try) (fun nok_stuck_c ->
+  let' (once (nok_stuck_c >=^ z stuck_time)) (fun nok_stuck ->
+  let' (sol_try /\ not_ nok_stuck) (fun sol_en ->
+  let'
+    ((ite sol_en    (z solenoid_flag) z0) +^
+     (ite nok_stuck (z stuck_flag) z0)) (fun result ->
+  check' "ESTOP OK" (estop => not_ sol_try) (
+  check' "LEVEL HIGH OK"   (not_ level_low => not_ sol_try) (
+    result))))))))
 
 let controller_prop =
-  assert_norm (wf controller_prop_x controller_prop_n);
-  system_of_exp controller_prop_x controller_prop_n
+  system_of_exp (Sugar.run2 controller')
 
-let controller_prop_prove (): Lemma (ensures induct1' controller_prop) =
-  assert (base_case' controller_prop) by tac_nbe ();
-  assert (step_case' controller_prop) by tac_nbe ();
+let controller_prop_prove (fv: sem_freevars): Lemma (ensures induct1 (controller_prop fv)) =
+  assert (base_case (controller_prop fv)) by (tac_nbe (); T.dump "base");
+  assert (step_case (controller_prop fv)) by (tac_nbe (); T.dump "step");
   ()

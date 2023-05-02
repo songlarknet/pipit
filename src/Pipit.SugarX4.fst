@@ -40,6 +40,15 @@ let run1 (f: s 'a -> s 'b) : exp ['a] 'b =
   let (b,  s) = f (m_pure a) s in
   close1 b ax
 
+let run2 (f: s 'a -> s 'b -> s 'c) : exp ['a; 'b] 'c =
+  let s       = { fresh = 0 } in
+  let (ax, s) = fresh' 'a s in
+  let (bx, s) = fresh' 'b s in
+  let a       = XVar ax in
+  let b       = XVar bx in
+  let (c,  s) = f (m_pure a) (m_pure b) s in
+  close1 (close1 c ax) bx
+
 let let'
   (e: s 'a)
   (f: s 'a -> s 'b):
@@ -113,7 +122,7 @@ let liftA3
   f <$> a <*> b <*> c
 
 let tt: s bool = pure true
-let ff: s bool = pure true
+let ff: s bool = pure false
 
 let z (i: int): s int = pure i
 let z0 = z 0
@@ -124,9 +133,9 @@ let (/\) = liftA2 (fun x y -> if x then y else false)
 let (\/) = liftA2 (fun x y -> if x then true else y)
 let (=>) = liftA2 (fun x y -> if x then y else true)
 
-let not = liftA1 not
 let op_Negation = liftA1 not
 let (!^) = liftA1 not
+let not_ = liftA1 not
 
 (* Arithmetic operators, "^" suffix means "lifted" but unfortunately boolean operators such as /\^ do not parse *)
 let (=^) (#t: eqtype) (a b: s t): s bool = liftA2 (fun x y -> x = y) a b
