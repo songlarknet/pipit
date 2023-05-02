@@ -10,6 +10,7 @@
 module Pipit.Exp.Bigstep
 
 open Pipit.Exp.Base
+open Pipit.Inhabited
 
 module C = Pipit.Context
 
@@ -79,8 +80,9 @@ type bigstep (#c: C.context): (#a: Type) -> list (C.row c) -> exp c a -> a -> Ty
  (* Reduction for recursive expressions proceeds by unfolding the recursion one step.
     If all recursive references are guarded by `pre` then the `pre` step will look
     at a shorter stream history prefix, and should eventually terminate. *)
- | BSMu: streams: list (C.row c)    ->
-         e: exp (C.bind_index1 c 'a) 'a ->
+ | BSMu: (i: inhabited 'a) ->
+         streams: list (C.row c)    ->
+         e: exp (C.close1 c 'a) 'a ->
          v: 'a                       ->
          bigstep streams (subst_index1 e (XMu e)) v ->
          bigstep streams (XMu e) v
@@ -91,7 +93,7 @@ type bigstep (#c: C.context): (#a: Type) -> list (C.row c) -> exp c a -> a -> Ty
     prove that they're equivalent. *)
  | BSLet: streams: list (C.row c)   ->
           e1: exp c 'b               ->
-          e2: exp (C.bind_index1 c 'b) 'a
+          e2: exp (C.close1 c 'b) 'a
                                     ->
           v: 'a                      ->
           bigstep streams (subst_index1 e2 e1) v
@@ -100,13 +102,13 @@ type bigstep (#c: C.context): (#a: Type) -> list (C.row c) -> exp c a -> a -> Ty
 
  | BSContract:
           streams: list (C.row c)   ->
-          ea: exp (C.from_indices ['b])    xprop ->
-          eg: exp (C.from_indices ['a; 'b]) xprop ->
-          eb: exp (C.from_indices ['b])    'a     ->
+          ea: exp ['b]    xprop ->
+          eg: exp ['a; 'b] xprop ->
+          eb: exp ['b]    'a     ->
           earg: exp c                     'b     ->
           v:                              'a     ->
           bigstep streams
-            (subst_index1 (weaken_closed c eb) earg)
+            (subst_index1 (weaken c eb) earg)
             v                                  ->
           bigstep streams (XContract ea eg eb earg) v
 
@@ -130,7 +132,7 @@ let rec bigsteps (streams: list (C.row 'c)) (e: exp 'c 'a) (vs: list 'a { List.T
     True
 
 //TODO clean
-#push-options "--split_queries"
+#push-options "--split_queries always"
 (* Properties *)
 let rec bigstep_proof_equivalence
   (#streams: list (C.row 'c))
@@ -161,8 +163,8 @@ let rec bigstep_proof_equivalence
     let BSThenS _ _ _ _ bs22 = hBS2 in
     bigstep_proof_equivalence bs12 bs22
 
-  | BSMu _ _ _ bs1 ->
-    let BSMu _ _ _ bs2 = hBS2 in
+  | BSMu _ _ _ _ bs1 ->
+    let BSMu _ _ _ _ bs2 = hBS2 in
     bigstep_proof_equivalence bs1 bs2
 
   | BSLet _ _ _ _ bs1 ->

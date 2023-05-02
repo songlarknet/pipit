@@ -28,40 +28,24 @@ let exec_map (#input #state1 #result1 #result2: Type)
   ; update = (fun i s -> t1.update i s)
   }
 
-let exec_map2 (#input #state1 #state2 #result1 #result2 #result3: Type)
-  (f: result1 -> result2 -> result3)
-  (t1: exec input state1 result1)
-  (t2: exec input state2 result2):
-    exec input (state1 * state2) result3 =
-  { init = (t1.init, t2.init)
-  ; eval = (fun i (s1, s2) ->
-    let r1 = t1.eval i s1 in
-    let r2 = t2.eval i s2 in
-    f r1 r2)
-  ; update = (fun i (s1, s2) -> (t1.update i s1, t2.update i s2))
-  }
-
-let exec_ite (#input #state1 #state2 #state3 #cond #result: Type)
-  (f: cond -> bool)
-  (t1: exec input state1 cond)
-  (t2: exec input state2 result)
-  (t3: exec input state3 result):
-    exec input (state1 * state2 * state3) result =
-  { init = (t1.init, t2.init, t3.init)
-  ; eval = (fun i (s1, s2, s3) ->
-    let r1 = t1.eval i s1 in
-    let r2 = t2.eval i s2 in
-    let r3 = t3.eval i s3 in
-    if f r1 then r2 else r3)
-  ; update = (fun i (s1, s2, s3) -> (t1.update i s1, t2.update i s2, t3.update i s3))
+let exec_ap2 (#input #state1 #state2 #result1 #result2: Type)
+  (t1: exec input state1 (result1 -> result2))
+  (t2: exec input state2 result1):
+    exec input (state1 & state2) result2 =
+  { init   = (t1.init, t2.init)
+  ; eval   = (fun i s ->
+    let f  = t1.eval i (fst s) in
+    let r2 = t2.eval i (snd s) in
+    f r2)
+  ; update = (fun i s -> (t1.update i (fst s), t2.update i (snd s)))
   }
 
 let exec_pre (#input #state1 #result1: Type) (r0: result1)
   (t1: exec input state1 result1):
     exec input (state1 * result1) result1 =
   { init = (t1.init, r0)
-  ; eval = (fun i (s1, v1) -> v1)
-  ; update = (fun i (s1, _) -> (t1.update i s1, t1.eval i s1))
+  ; eval = (fun i s -> snd s)
+  ; update = (fun i s -> (t1.update i (fst s), t1.eval i (fst s)))
   }
 
 let exec_then (#input #state1 #state2 #result: Type)
@@ -69,11 +53,11 @@ let exec_then (#input #state1 #state2 #result: Type)
   (t2: exec input state2 result):
     exec input (bool * state2) result =
   { init = (true, t2.init)
-  ; eval = (fun i (iflag, s2) ->
-    if iflag
+  ; eval = (fun i s ->
+    if fst s
     then t1.eval i t1.init
-    else t2.eval i s2)
-  ; update = (fun i (_, s2) -> (false, t2.update i s2))
+    else t2.eval i (snd s))
+  ; update = (fun i s -> (false, t2.update i (snd s)))
   }
 
 let exec_mu (#input #input' #state1 #result1: Type) (bottom: result1)
@@ -93,10 +77,10 @@ let exec_let (#input1 #input2 #state1 #state2 #result1 #result2: Type)
   (t2: exec input2 state2 result2):
     exec input1 (state1 * state2) result2 =
   { init = (t1.init, t2.init)
-  ; eval = (fun i (s1, s2) ->
-    let v = t1.eval i s1 in
-    t2.eval (extend i v) s2)
-  ; update = (fun i (s1, s2) ->
-    let v = t1.eval i s1 in
-    (t1.update i s1, t2.update (extend i v) s2))
+  ; eval = (fun i s ->
+    let v = t1.eval i (fst s) in
+    t2.eval (extend i v) (snd s))
+  ; update = (fun i s ->
+    let v = t1.eval i (fst s) in
+    (t1.update i (fst s), t2.update (extend i v) (snd s)))
   }

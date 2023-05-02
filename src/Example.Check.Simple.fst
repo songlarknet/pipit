@@ -47,23 +47,23 @@ let count_when__0_prop (e: s bool): s unit =
 let sys =
   system_of_exp (run (count_when__0_prop ff))
 
-#push-options "--print_full_names --print_bound_var_types"
-let prove (fv: sem_freevars): Lemma (ensures base_case (sys fv)) =
-  assert (base_case (sys fv)) by (T.norm [primops; iota; delta; zeta; nbe]; T.dump "")
-  // assert (base_case (sys fv)) by (tac_nbe (); T.dump "")
+// #push-options "--print_full_names --print_bound_var_types"
+// let prove (fv: sem_freevars): Lemma (ensures base_case (sys fv)) =
+//   assert (base_case (sys fv)) by (T.norm [primops; iota; delta; zeta; nbe]; T.dump "")
+//   // assert (base_case (sys fv)) by (tac_nbe (); T.dump "")
 
 
 
-let doit (): unit =
-  let xe = run (count_when_prop (fresh bool)) in
+// let doit (): unit =
+//   let xe = run (count_when_prop (fresh bool)) in
 
-  assert (xe == Exp.XVal ()) by (T.norm [primops; iota; delta; zeta; nbe]; T.norm [delta_fully ["Pipit.SugarX3.STREAM?.reflect"]]; T.dump "")
-  // by (tac_nbe (); T.dump "")
+//   assert (xe == Exp.XVal ()) by (T.norm [primops; iota; delta; zeta; nbe]; T.norm [delta_fully ["Pipit.SugarX3.STREAM?.reflect"]]; T.dump "")
+//   // by (tac_nbe (); T.dump "")
 
 
 let sdf (): unit =
-  let xe = run (fun () -> 1) in
-  let xy = run (fun () -> 1) in
+  let xe = run z1 in
+  let xy = run z1 in
   assert (xe == xy) by (T.norm [primops; iota; delta; nbe]; T.dump "")
   // by (tac_nbe (); T.dump "")
 

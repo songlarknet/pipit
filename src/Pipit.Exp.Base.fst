@@ -1,5 +1,6 @@
 module Pipit.Exp.Base
 module C = Pipit.Context
+open Pipit.Inhabited
 
 (* TODO: restrict "properties" to booleans for now to avoid universe stuff *)
 type xprop = bool
@@ -19,7 +20,7 @@ type exp (c: C.context) 'a =
   // e -> e'
   | XThen  : exp c 'a -> exp c 'a -> exp c 'a
   // µx. e[x]
-  | XMu    : exp ('a :: c) 'a -> exp c 'a
+  | XMu    : {| inhabited 'a |} -> exp ('a :: c) 'a -> exp c 'a
   // let x = e in e[x]
   | XLet   : (b: Type) -> exp c b -> exp (b :: c) 'a -> exp c 'a
 
@@ -51,7 +52,7 @@ let rec open1' (#c: C.context) (e: exp c 'a) (n: C.index { C.has_index c n }) (x
   | XApp f e -> XApp (open1' f n x) (open1' e n x)
   | XFby v e -> XFby v (open1' e n x)
   | XThen e1 e2 -> XThen (open1' e1 n x) (open1' e2 n x)
-  | XMu e -> XMu (open1' e (n + 1) x)
+  | XMu _ e -> XMu (open1' e (n + 1) x)
   | XLet b e1 e2 ->
     let e1' = open1' e1 n x in
     let e2' = open1' e2 (n + 1) x in
@@ -78,7 +79,7 @@ let rec close1' (#c: C.context) (e: exp c 'a) (x: C.var 'b) (n: C.index { n <= L
   | XApp f e -> XApp (close1' f x n) (close1' e x n)
   | XFby v e -> XFby v (close1' e x n)
   | XThen e1 e2 -> XThen (close1' e1 x n) (close1' e2 x n)
-  | XMu e -> XMu (close1' e x (n + 1))
+  | XMu _ e -> XMu (close1' e x (n + 1))
   | XLet b e1 e2 -> XLet b (close1' e1 x n) (close1' e2 x (n + 1))
   | XContract a g b arg -> XContract a g b (close1' arg x n)
   | XCheck name e1 e2 -> XCheck name (close1' e1 x n) (close1' e2 x n)
@@ -98,7 +99,7 @@ let rec lift1' (#c: C.context) (e: exp c 'a) (n: C.index { n <= List.Tot.length 
   | XApp f e -> XApp (lift1' f n t) (lift1' e n t)
   | XFby v e -> XFby v (lift1' e n t)
   | XThen e1 e2 -> XThen (lift1' e1 n t) (lift1' e2 n t)
-  | XMu e1 ->
+  | XMu _ e1 ->
     let e1': exp (C.lift1 (C.lift1 c 0 'a) (n + 1) t) 'a = lift1' e1 (n + 1) t in
     let e1'': exp (C.lift1 (C.lift1 c n t) 0 'a) 'a = e1' in
     XMu e1''
@@ -123,7 +124,7 @@ let rec subst_index1' (#c: C.context) (e: exp c 'a) (i: C.index { C.has_index c 
   | XApp f e -> XApp (subst_index1' f i payload) (subst_index1' e i payload)
   | XFby v e -> XFby v (subst_index1' e i payload)
   | XThen e1 e2 -> XThen (subst_index1' e1 i payload) (subst_index1' e2 i payload)
-  | XMu e1 ->
+  | XMu _ e1 ->
     let e1': exp (C.drop1 (C.lift1 c 0 'a) (i + 1)) 'a = subst_index1' e1 (i + 1) (lift1 payload 'a) in
     let e1'': exp (C.lift1 (C.drop1 c i) 0 'a) 'a = e1' in
     XMu e1''
@@ -145,7 +146,7 @@ let rec weaken (#c c': C.context) (e: exp c 'a): Tot (exp (C.append c c') 'a) (d
   | XApp f e -> XApp (weaken c' f) (weaken c' e)
   | XFby v e -> XFby v (weaken c' e)
   | XThen e1 e2 -> XThen (weaken c' e1) (weaken c' e2)
-  | XMu e1 ->
+  | XMu _ e1 ->
     let e1': exp (C.append (C.lift1 c 0 'a) c') 'a = weaken c' e1 in
     let e1'': exp (C.lift1 (C.append c c') 0 'a) 'a = e1' in
     XMu e1''

@@ -3,54 +3,72 @@ module Pipit.Exec.Exp
 
 open Pipit.Exec.Base
 open Pipit.Exp.Base
+open Pipit.Inhabited
 
 module C = Pipit.Context
 
-let rec values_n (n: nat): Type =
-  match n with
-  | 0 -> unit
-  | n -> value * values_n (n - 1)
+let row_cons (#c: C.context) (v: 'a) (values: C.row c): C.row (C.lift1 c 0 'a) = (v, values)
 
-let rec values_index (n: nat) (index: nat { index < n }) (values: values_n n): value =
-  match index, values with
-  | 0, (v, rest) -> v
-  | index, (v, rest) -> values_index (n - 1) (index - 1) rest
-
-let values_cons (n: nat) (v: value) (values: values_n n): values_n (n + 1) = (v, values)
-
-let exec_index (vars: nat) (x: nat { x < vars }):
-       exec (values_n vars) unit value =
+let exec_index (c: C.context) (ix: C.index { C.has_index c ix }):
+       exec (C.row c) unit (List.Tot.index c ix) =
   { init = ()
-  ; eval = (fun i s -> values_index vars x i)
+  ; eval = (fun i s -> C.row_index c i ix)
   ; update = (fun i s -> ())
   }
 
-let rec state_of_exp (e: exp): Type =
+let rec state_of_exp (e: exp 'c 'a): Tot Type (decreases e) =
   match e with
   | XVal v -> unit
+  | XBVar x -> unit
   | XVar x -> unit
-  | XPrim2 p e1 e2 -> state_of_exp e1 * state_of_exp e2
-  | XIte ep e1 e2 -> state_of_exp ep * state_of_exp e1 * state_of_exp e2
-  | XPre e1 -> state_of_exp e1 * value
-  | XThen e1 e2 -> bool * state_of_exp e2
-  | XMu e1 -> state_of_exp e1
-  | XLet e1 e2 -> state_of_exp e1 * state_of_exp e2
+  | XApp f e -> state_of_exp f & state_of_exp e
+  | XFby v e -> state_of_exp e & 'a
+  | XThen e1 e2 -> bool & state_of_exp e2
+  | XMu _ e1 -> state_of_exp e1
+  | XLet b e1 e2 -> state_of_exp e1 & state_of_exp e2
+  | XContract assm guar body arg -> unit
+  | XCheck p e1 e2 -> state_of_exp e2
 
-let xexec (e: exp) (vars: nat { wf e vars }) = exec (values_n vars) (state_of_exp e) value
+let xexec (e: exp 'c 'a) = exec (C.row 'c) (state_of_exp e) 'a
+
+let rec extractable (e: exp 'c 'a): Tot prop (decreases e) =
+  match e with
+  | XVal v -> True
+  | XBVar i -> True
+  | XVar x -> False
+  | XApp e1 e2 -> extractable e1 /\ extractable e2
+  | XFby v e1 -> extractable e1
+  | XThen e1 e2 -> extractable e1 /\ extractable e2
+  | XMu _ e1 ->
+    extractable e1
+  | XLet b e1 e2 -> extractable e1 /\ extractable e2
+  | XContract assm guar body arg -> False
+  | XCheck p e1 e2 -> extractable e2
+
+let extractable_XApp (e1: exp 'c ('b -> 'a)) (e2: exp 'c 'b):
+  Lemma (requires (extractable (XApp e1 e2)))
+        (ensures (extractable e1)) =
+        assert_norm (extractable (XApp e1 e2) ==> extractable e1)
 
 noextract inline_for_extraction
-let rec exec_of_exp (e: exp) (vars: nat { wf e vars }): xexec e vars =
+let rec exec_of_exp (e: exp 'c 'a { extractable e }): Tot (xexec e) (decreases e) =
   match e with
   | XVal v -> exec_const _ v
-  | XVar x -> exec_index vars x
-  | XPrim2 p e1 e2 ->
-    exec_map2 (eval_prim2 p) (exec_of_exp e1 vars) (exec_of_exp e2 vars)
-  | XIte ep e1 e2 -> exec_ite (fun v -> v <> 0) (exec_of_exp ep vars) (exec_of_exp e1 vars) (exec_of_exp e2 vars)
-  | XPre e1 ->
-    exec_pre xpre_init (exec_of_exp e1 vars)
+  | XBVar i -> exec_index 'c i
+  // | XVar x ->
+  | XApp e1 e2 ->
+    extractable_XApp e1 e2;
+    let t1 = exec_of_exp e1 in
+    let t2 = exec_of_exp e2 in
+    let t': xexec (XApp e1 e2) = exec_ap2 t1 t2 in
+    t'
+  | XFby v e1 ->
+    exec_pre v (exec_of_exp e1)
   | XThen e1 e2 ->
-    exec_then (exec_of_exp e1 vars) (exec_of_exp e2 vars)
-  | XMu e1 ->
-    exec_mu xpre_init (fun i v -> values_cons _ v i) (exec_of_exp e1 (vars + 1))
-  | XLet e1 e2 ->
-    exec_let (fun i v -> values_cons _ v i) (exec_of_exp e1 vars) (exec_of_exp e2 (vars + 1))
+    exec_then (exec_of_exp e1) (exec_of_exp e2)
+  | XMu i e1 ->
+    exec_mu i.get_inhabited (fun i v -> row_cons v i) (exec_of_exp e1)
+  | XLet b e1 e2 ->
+    exec_let (fun i v -> row_cons v i) (exec_of_exp e1) (exec_of_exp e2)
+  // | XContract assm guar body arg ->
+  | XCheck p e1 e2 -> exec_of_exp e2

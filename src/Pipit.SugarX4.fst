@@ -2,6 +2,7 @@
 module Pipit.SugarX4
 
 open Pipit.Exp.Base
+open Pipit.Inhabited
 
 module C = Pipit.Context
 
@@ -29,6 +30,16 @@ let fresh (t: Type): s t =
     let (x, s') = fresh' t s in
     (XVar x, s'))
 
+let run (e: s 'a) : exp [] 'a =
+  let (a, _) = e { fresh = 0 } in
+  a
+
+let run1 (f: s 'a -> s 'b) : exp ['a] 'b =
+  let (ax, s) = fresh' 'a { fresh = 0 } in
+  let a       = XVar ax in
+  let (b,  s) = f (m_pure a) s in
+  close1 b ax
+
 let let'
   (e: s 'a)
   (f: s 'a -> s 'b):
@@ -41,6 +52,7 @@ let let'
     (XLet 'a e (close1 e' xvar), s))
 
 let rec'
+  {| inhabited 'a |}
   (f: s 'a -> s 'a):
     s 'a =
   (fun s ->
@@ -132,10 +144,17 @@ let (>=^) = liftA2 (>=)
 let (<^) = liftA2 (<)
 let (>^) = liftA2 (>)
 
+let tup = liftA2 (fun a b -> (a,b))
+
 let negate = liftA1 (fun x -> -x)
 
+// assume
+// [@ "tac_opaque"]
+let if_then_else_impl (p: bool) (x y: 'a): 'a =
+  if p then x else y
+
 (* if-then-else *)
-let ite = liftA3 (fun x y z -> if x then y else z)
+let ite = liftA3 if_then_else_impl // (fun x y z -> if x then y else z)
 let if_then_else = ite
 
 (* itialised delay *)
