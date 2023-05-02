@@ -144,8 +144,9 @@ let sys =
   system_of_exp (run (veh_speed_estimate (Sugar.m_pure (Exp.XVar (Pipit.Context.Var 100)))))
 
 
-// let prove (fv: sem_freevars): Lemma (ensures base_case (sys fv)) =
-//   assert (base_case (sys fv)) by (T.norm [primops; iota; delta; zeta; nbe]; T.dump "")
+let prove (fv: sem_freevars): Lemma (ensures base_case (sys fv)) =
+  assert (base_case (sys fv)) by (T.norm [primops; iota; delta; zeta; nbe]; T.dump "");
+  assert (step_case (sys fv)) by (T.norm [primops; iota; delta; zeta; nbe]; T.dump "")
 
 let dsys': dsystem inputs (bool & speed & speed & prop) estimate =
   {
@@ -179,6 +180,6 @@ let dsys': dsystem inputs (bool & speed & speed & prop) estimate =
 
 let sys' = system_of_dsystem dsys'
 
-let prove (): Lemma (ensures induct1 sys') =
+let prove' (): Lemma (ensures induct1 sys') =
   assert (base_case sys') by (T.norm [primops; iota; delta; zeta; nbe]; T.dump "");
   assert (step_case sys') by (T.norm [primops; iota; delta; zeta; nbe]; T.dump "")

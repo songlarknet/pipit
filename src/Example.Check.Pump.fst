@@ -69,8 +69,9 @@ let lastn (n: int) (p: Sugar.s bool) =
 let settle_time: int = 1000
 let stuck_time:  int = 6000
 
-let solenoid_flag: int = 1
-let stuck_flag:    int = 2
+let pair a b =
+  let open Sugar in
+  (fun a b -> (a, b)) <$> a <*> b
 
 (*
   node pump(
@@ -142,9 +143,7 @@ let controller (estop level_low: Sugar.s bool) =
   let' (lastn settle_time (not_ estop /\ level_low)) (fun sol_try ->
   let' (once (lastn stuck_time sol_try)) (fun nok_stuck ->
   let' (sol_try /\ not_ nok_stuck) (fun sol_en ->
-  let'
-    ((ite sol_en    (z solenoid_flag) z0) +^
-     (ite nok_stuck (z stuck_flag) z0)) (fun result ->
+  let' (pair sol_en nok_stuck) (fun result ->
   check' "ESTOP OK" (estop => not_ sol_try) (
   check' "LEVEL HIGH OK"   (not_ level_low => not_ sol_try) (
     result))))))
@@ -156,9 +155,7 @@ let controller' (estop level_low: Sugar.s bool) =
   let' (countsecutive' sol_try) (fun nok_stuck_c ->
   let' (once (nok_stuck_c >=^ z stuck_time)) (fun nok_stuck ->
   let' (sol_try /\ not_ nok_stuck) (fun sol_en ->
-  let'
-    ((ite sol_en    (z solenoid_flag) z0) +^
-     (ite nok_stuck (z stuck_flag) z0)) (fun result ->
+  let' (pair sol_en nok_stuck) (fun result ->
   check' "ESTOP OK" (estop => not_ sol_try) (
   check' "LEVEL HIGH OK"   (not_ level_low => not_ sol_try) (
     result))))))))

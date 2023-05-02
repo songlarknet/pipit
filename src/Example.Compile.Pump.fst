@@ -30,11 +30,6 @@ type input = {
   level_low: bool;
 }
 
-type output = {
-  sol_en:   bool;
-  nok_stuck: bool;
-}
-
 (* Translate the expression to a transition system. *)
 noextract
 let system: Pipit.Exec.Exp.xexec expr =
@@ -46,11 +41,6 @@ let system: Pipit.Exec.Exp.xexec expr =
    initialises it. *)
 [@@(Tac.postprocess_with XL.tac_extract)]
 let reset = XL.mk_reset system
-
-noextract
-let has_bit (i: int) (b: nat { b > 0 }) =
-  let open FStar.Mul in
-  (i % (b * 2)) >= b
 
 (* Define the step function, which takes two input integers and a pointer to the
    internal state, and returns the result as a bitfield. We parse the bitfield
@@ -66,11 +56,9 @@ let has_bit (i: int) (b: nat { b > 0 }) =
 //   { sol_en = has_bit res Pump.solenoid_flag; nok_stuck = has_bit res Pump.stuck_flag }
 
 [@@(Tac.postprocess_with XL.tac_extract)]
-let step_run (inp: input) = XL.mk_step system (inp.estop, (inp.level_low, ()))
+let step (inp: input) = XL.mk_step system (inp.estop, (inp.level_low, ()))
 
-// let step inp s // : ST int
-//     // (requires (fun h -> B.live h stref))
-//     // (ensures (fun h _ h' -> B.live h' stref)) =
-//     =
-//   step_run inp s
-  // admit () // { sol_en = has_bit res Pump.solenoid_flag; nok_stuck = has_bit res Pump.stuck_flag }
+// let step' (inp: input) (stref: B.pointer state): ST _
+//     (requires (fun h -> B.live h stref))
+//     (ensures (fun h _ h' -> B.live h' stref)) =
+//   step inp stref
