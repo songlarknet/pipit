@@ -9,7 +9,7 @@ type var (t: Type) =
   | Var: (v: nat) -> var t
 let index  = nat
 
-(* HACK: assume that all fresh name allocation doesn't reuse names!
+(* HACK: AXIOM: assume that all fresh name allocation doesn't reuse names!
    We can't use decidable equality on two variables of different type variables
    (x: var 'a) and (x': var 'b) because equality on Type isn't decidable.
  *)
@@ -61,9 +61,7 @@ let drop1 (l: list 'a) (i: nat { i < List.length l }): list 'a =
 let lift1 (l: list 'a) (i: nat { i <= List.length l }) (v: 'a): (l': list 'a { List.length l' == List.length l + 1 }) =
   let open List in
   let (pre, post) = splitAt i l in
-  List.lemma_splitAt_snd_length i l;
-  // TODO
-  assume (List.length pre + List.length post = List.length l);
+  Pipit.List.lemma_splitAt_length i l;
   List.Tot.Properties.append_length pre (v :: post);
   pre @ v :: post
 
@@ -79,14 +77,52 @@ let open1 (c: context { has_index c 0 }): context = open1' c 0
 let close1' (c: context) (t: Type) (i: index { i <= List.length c }): context = lift1 c i t
 let close1 (c: context) (t: Type): context = close1' c t 0
 
-let open_preserves_opt_index_lemma (c: context) (n: index { has_index c n }) (i: index { i <> n }): Lemma (opt_index c i == opt_index (open1' c n) (index_drop i n 1)) =
-  admit ()
+let rec lemma_open_preserves_opt_index (c: context) (n: index { has_index c n }) (i: index { i <> n }): Lemma (opt_index c i == opt_index (open1' c n) (index_drop i n 1)) =
+  match c with
+  | [] -> ()
+  | _ :: c' ->
+    if n > 0 && i > 0
+    then lemma_open_preserves_opt_index c' (n - 1) (i - 1)
+    else ()
 
-let close_preserves_opt_index_lemma (c: context) (t: Type) (n: index { n <= List.length c }) (i: index): Lemma (opt_index c i == opt_index (close1' c t n) (index_lift i n 1)) =
-  admit ()
+let rec lemma_close_preserves_opt_index (c: context) (t: Type) (n: index { n <= List.length c }) (i: index): Lemma (opt_index c i == opt_index (close1' c t n) (index_lift i n 1)) =
+  match c with
+  | [] -> ()
+  | _ :: c' ->
+    if n > 0 && i > 0
+    then lemma_close_preserves_opt_index c' t (n - 1) (i - 1)
+    else ()
 
-let close_contains_lemma (c: context) (t: Type) (n: index { n <= List.length c }): Lemma (opt_index (close1' c t n) n == Some t) =
-  admit ()
+let rec lemma_close_contains (c: context) (t: Type) (n: index { n <= List.length c }): Lemma (opt_index (close1' c t n) n == Some t) =
+  match c with
+  | [] -> ()
+  | _ :: c' ->
+    if n > 0
+    then lemma_close_contains c' t (n - 1)
+    else ()
 
-let append_preserves_opt_index_lemma (c c': context) (n: index { has_index c n }): Lemma (opt_index c n == opt_index (append c c') n) =
-  admit ()
+let rec lemma_append_preserves_opt_index (c c': context) (n: index { has_index c n }): Lemma (opt_index c n == opt_index (append c c') n) =
+  match c with
+  | [] -> ()
+  | _ :: c1' ->
+    if n > 0
+    then lemma_append_preserves_opt_index c1' c' (n - 1)
+    else ()
+
+let rec lemma_lift_lift_commute (c: context) (i1: index { has_index c i1 }) (i2: index { i2 <= i1 }) (t1 t2: Type):
+  Lemma (ensures lift1 (lift1 c i1 t1) i2 t2 == lift1 (lift1 c i2 t2) (i1 + 1) t1) =
+  match c with
+  | [] -> ()
+  | _ :: c' ->
+    if i2 > 0
+    then lemma_lift_lift_commute c' (i1 - 1) (i2 - 1) t1 t2
+    else ()
+
+let rec lemma_drop_lift_eq (c: context) (i: index { i <= List.length c }) (t: Type):
+  Lemma (ensures drop1 (lift1 c i t) i == c) =
+  match c with
+  | [] -> ()
+  | _ :: c' ->
+    if i > 0
+    then lemma_drop_lift_eq c' (i - 1) t
+    else ()
