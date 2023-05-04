@@ -28,12 +28,13 @@ type exp (c: C.context) 'a =
   // Contracts for hiding implementation:
   //   (λx. { assumes } body { λr. guarantees })(arg)
   // TODO: assumes and guarantees should probably be in context c, so they can be CSEd with the main expression. body should be separate to allow separate codegen
-  | XContract:
-           (assumes: exp ['b] xprop) ->
-           (guarantees: exp ['a; 'b] xprop) ->
-           (body: exp ['b] 'a) ->
-           (arg: exp c 'b) ->
-           exp c 'a
+  // | XContract:
+  //          (assumes: exp ['b] xprop) ->
+  //          (guarantees: exp ['a; 'b] xprop) ->
+  //          (body: exp ['b] 'a) ->
+  //          (arg: exp c 'b) ->
+  //          exp c 'a
+
   // check "" e in e
   | XCheck : string -> exp c xprop -> exp c 'a -> exp c 'a
 
@@ -57,8 +58,6 @@ let rec open1' (#c: C.context) (e: exp c 'a) (n: C.index { C.has_index c n }) (x
     let e1' = open1' e1 n x in
     let e2' = open1' e2 (n + 1) x in
     XLet b e1' e2'
-  | XContract a g b arg  ->
-    XContract a g b (open1' arg n x)
   | XCheck name e1 e2 -> XCheck name (open1' e1 n x) (open1' e2 n x)
 
 let rec close1' (#c: C.context) (e: exp c 'a) (x: C.var 'b) (n: C.index { n <= List.Tot.length c }): Tot (exp (C.close1' c 'b n) 'a) (decreases e) =
@@ -68,10 +67,9 @@ let rec close1' (#c: C.context) (e: exp c 'a) (x: C.var 'b) (n: C.index { n <= L
     C.close_preserves_opt_index_lemma c 'b n i;
     XBVar (C.index_lift i n 1)
   | XVar x' ->
-    if C.Var?.v x = C.Var?.v x'
+    if C.var_eq x x'
     then
-      (C.cheat_variables_assume_global x x';
-      C.close_contains_lemma c 'b n;
+      (C.close_contains_lemma c 'b n;
       XBVar n)
     else
       (// C.close_preserves_opt_var_lemma c x n x';
@@ -81,7 +79,6 @@ let rec close1' (#c: C.context) (e: exp c 'a) (x: C.var 'b) (n: C.index { n <= L
   | XThen e1 e2 -> XThen (close1' e1 x n) (close1' e2 x n)
   | XMu _ e -> XMu (close1' e x (n + 1))
   | XLet b e1 e2 -> XLet b (close1' e1 x n) (close1' e2 x (n + 1))
-  | XContract a g b arg -> XContract a g b (close1' arg x n)
   | XCheck name e1 e2 -> XCheck name (close1' e1 x n) (close1' e2 x n)
 
 let open1 (e: exp 'c 'a { C.has_index 'c 0 }) x = open1' e 0 x
@@ -104,8 +101,6 @@ let rec lift1' (#c: C.context) (e: exp c 'a) (n: C.index { n <= List.Tot.length 
     let e1'': exp (C.lift1 (C.lift1 c n t) 0 'a) 'a = e1' in
     XMu e1''
   | XLet b e1 e2 -> XLet b (lift1' e1 n t) (lift1' e2 (n + 1) t)
-  | XContract a g b arg ->
-    XContract a g b (lift1' arg n t)
   | XCheck name e1 e2 -> XCheck name (lift1' e1 n t) (lift1' e2 n t)
 
 let lift1 (#c: C.context) (e: exp c 'a) (t: Type): exp (C.lift1 c 0 t) 'a =
@@ -129,8 +124,6 @@ let rec subst_index1' (#c: C.context) (e: exp c 'a) (i: C.index { C.has_index c 
     let e1'': exp (C.lift1 (C.drop1 c i) 0 'a) 'a = e1' in
     XMu e1''
   | XLet b e1 e2 -> XLet b (subst_index1' e1 i payload) (subst_index1' e2 (i + 1) (lift1 payload b))
-  | XContract a g b arg ->
-    XContract a g b (subst_index1' arg i payload)
   | XCheck name e1 e2 -> XCheck name (subst_index1' e1 i payload) (subst_index1' e2 i payload)
 
 let subst_index1 (#c: C.context { C.has_index c 0 }) (e: exp c 'a) (payload: exp (C.drop1 c 0) (C.get_index c 0)): Tot (exp (C.drop1 c 0) 'a) (decreases e) =
@@ -151,6 +144,4 @@ let rec weaken (#c c': C.context) (e: exp c 'a): Tot (exp (C.append c c') 'a) (d
     let e1'': exp (C.lift1 (C.append c c') 0 'a) 'a = e1' in
     XMu e1''
   | XLet b e1 e2 -> XLet b (weaken c' e1) (weaken c' e2)
-  | XContract a g b arg ->
-    XContract a g b (weaken c' arg)
   | XCheck name e1 e2 -> XCheck name (weaken c' e1) (weaken c' e2)

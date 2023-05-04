@@ -100,17 +100,17 @@ type bigstep (#c: C.context): (#a: Type) -> list (C.row c) -> exp c a -> a -> Ty
                                     ->
           bigstep streams (XLet 'b e1 e2) v
 
- | BSContract:
-          streams: list (C.row c)   ->
-          ea: exp ['b]    xprop ->
-          eg: exp ['a; 'b] xprop ->
-          eb: exp ['b]    'a     ->
-          earg: exp c                     'b     ->
-          v:                              'a     ->
-          bigstep streams
-            (subst_index1 (weaken c eb) earg)
-            v                                  ->
-          bigstep streams (XContract ea eg eb earg) v
+ // | BSContract:
+ //          streams: list (C.row c)   ->
+ //          ea: exp ['b]    xprop ->
+ //          eg: exp ['a; 'b] xprop ->
+ //          eb: exp ['b]    'a     ->
+ //          earg: exp c                     'b     ->
+ //          v:                              'a     ->
+ //          bigstep streams
+ //            (subst_index1 (weaken c eb) earg)
+ //            v                                  ->
+ //          bigstep streams (XContract ea eg eb earg) v
 
  | BSCheck:
           streams: list (C.row c)   ->
@@ -169,10 +169,6 @@ let rec bigstep_proof_equivalence
 
   | BSLet _ _ _ _ bs1 ->
     let BSLet _ _ _ _ bs2 = hBS2 in
-    bigstep_proof_equivalence bs1 bs2
-
-  | BSContract _ _ _ _ _ _ bs1 ->
-    let BSContract _ _ _ _ _ _ bs2 = hBS2 in
     bigstep_proof_equivalence bs1 bs2
 
   | BSCheck _ _ _ _ _ bs1 ->

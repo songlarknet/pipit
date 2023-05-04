@@ -9,6 +9,20 @@ type var (t: Type) =
   | Var: (v: nat) -> var t
 let index  = nat
 
+(* HACK: assume that all fresh name allocation doesn't reuse names!
+   We can't use decidable equality on two variables of different type variables
+   (x: var 'a) and (x': var 'b) because equality on Type isn't decidable.
+ *)
+let axiom_variables_assume_global (x: var 'a) (x': var 'b { Var?.v x = Var?.v x' }): Lemma ('a == 'b) =
+  admit ()
+
+let var_eq (x: var 'a) (x': var 'b):
+  (eq: bool { eq <==> x === x' }) =
+  if Var?.v x = Var?.v x'
+  then (axiom_variables_assume_global x x'; true)
+  else false
+
+
 type context = list Type
 
 let has_index (c: context) (i: index) = i < List.length c
@@ -71,41 +85,8 @@ let open_preserves_opt_index_lemma (c: context) (n: index { has_index c n }) (i:
 let close_preserves_opt_index_lemma (c: context) (t: Type) (n: index { n <= List.length c }) (i: index): Lemma (opt_index c i == opt_index (close1' c t n) (index_lift i n 1)) =
   admit ()
 
-let cheat_variables_assume_global (x: var 'a) (x': var 'b { Var?.v x = Var?.v x' }): Lemma ('a == 'b) =
-  admit ()
-
 let close_contains_lemma (c: context) (t: Type) (n: index { n <= List.length c }): Lemma (opt_index (close1' c t n) n == Some t) =
   admit ()
 
 let append_preserves_opt_index_lemma (c c': context) (n: index { has_index c n }): Lemma (opt_index c n == opt_index (append c c') n) =
   admit ()
-
-(*
-let append_preserves_opt_index_lemma (c c': context) (n: index { has_index c n }): Lemma (opt_index c n == opt_index (append_closed c c') n) =
-  admit ()
-
-let open_preserves_opt_index_lemma (c: context) (x: var { fresh c x }) (n: index { has_index c n }) (i: index { i <> n }): Lemma (opt_index c i == opt_index (open1' c x n) (index_drop i n 1)) =
-  admit ()
-
-let open_preserves_opt_var_lemma (c: context) (x: var { fresh c x }) (n: index { has_index c n }) (x': var { x <> x' }): Lemma (opt_var c x' == opt_var (open1' c x n) x') =
-  admit ()
-
-let open_contains_opt_var_lemma (c: context) (x: var { fresh c x }) (n: index { has_index c n }): Lemma (opt_index c n == opt_var (open1' c x n) x) =
-  admit ()
-
-let close_preserves_opt_index_lemma (c: context) (x: var { has_var c x }) (n: index { n <= List.length c }) (i: index): Lemma (opt_index c i == opt_index (close1' c x n) (index_lift i n 1)) =
-  admit ()
-
-let close_preserves_opt_var_lemma (c: context) (x: var { has_var c x }) (n: index { n <= List.length c }) (x': var { x <> x' }): Lemma (opt_var c x' == opt_var (close1' c x n) x') =
-  admit ()
-
-let close_opt_var_contains_lemma (c: context) (x: var { has_var c x }) (n: index { n <= List.length c }): Lemma (opt_index (close1' c x n) n == opt_var c x) =
-  admit ()
-
-let bind_index_preserves_opt_index_lemma (c: context) (n: index { n <= List.length c }) (i: index) (t: Type): Lemma (opt_index (bind_index1' c n t) (index_lift i n 1) == opt_index c i) =
-  admit ()
-
-let drop_index_preserves_opt_index_lemma (c: context) (n: index { has_index c n }) (i: index { i <> n }): Lemma (opt_index c i == opt_index (drop_index1 c n) (index_drop i n 1)) =
-  admit ()
-
-*)
