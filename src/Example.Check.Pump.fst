@@ -137,27 +137,27 @@ let pair a b =
     --          not level_low => not pump_en;
   tel
 *)
-let controller (estop level_low: Sugar.s bool) =
-  let open Sugar in
-  // XXX: nesting is not working properly, for some reason inlining lastn helps
-  let' (lastn settle_time (not_ estop /\ level_low)) (fun sol_try ->
-  let' (once (lastn stuck_time sol_try)) (fun nok_stuck ->
-  let' (sol_try /\ not_ nok_stuck) (fun sol_en ->
-  let' (pair sol_en nok_stuck) (fun result ->
-  check' "ESTOP OK" (estop => not_ sol_try) (
-  check' "LEVEL HIGH OK"   (not_ level_low => not_ sol_try) (
-    result))))))
+// let controller (estop level_low: Sugar.s bool) =
+//   let open Sugar in
+//   // XXX: nesting is not working properly, for some reason inlining lastn helps
+//   let' (lastn settle_time (not_ estop /\ level_low)) (fun sol_try ->
+//   let' (once (lastn stuck_time sol_try)) (fun nok_stuck ->
+//   let' (sol_try /\ not_ nok_stuck) (fun sol_en ->
+//   let' (pair sol_en nok_stuck) (fun result ->
+//   check' "ESTOP OK" (estop => not_ sol_try) (
+//   check' "LEVEL HIGH OK"   (not_ level_low => not_ sol_try) (
+//     result))))))
 
 let controller' (estop level_low: Sugar.s bool) =
   let open Sugar in
-  let' (countsecutive' (not_ estop /\ level_low)) (fun sol_try_c ->
-  let' (sol_try_c >=^ z settle_time) (fun sol_try ->
-  let' (countsecutive' sol_try) (fun nok_stuck_c ->
-  let' (once (nok_stuck_c >=^ z stuck_time)) (fun nok_stuck ->
-  let' (sol_try /\ not_ nok_stuck) (fun sol_en ->
-  let' (pair sol_en nok_stuck) (fun result ->
-  check' "ESTOP OK" (estop => not_ sol_try) (
-  check' "LEVEL HIGH OK"   (not_ level_low => not_ sol_try) (
+  let' (countsecutive' (not_ estop /\ level_low)) (fun sol_try_c   ->
+  let' (sol_try_c >=^ z settle_time)             (fun sol_try     ->
+  let' (countsecutive' sol_try)                  (fun nok_stuck_c ->
+  let' (once (nok_stuck_c >=^ z stuck_time))     (fun nok_stuck   ->
+  let' (sol_try /\ not_ nok_stuck)                (fun sol_en      ->
+  let' (pair sol_en nok_stuck)                   (fun result      ->
+  check' "ESTOP OK"      (estop => not_ sol_try) (
+  check' "LEVEL HIGH OK" (not_ level_low => not_ sol_try) (
     result))))))))
 
 let controller_prop =

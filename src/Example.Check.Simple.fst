@@ -37,7 +37,6 @@ let count_when_prop (e: s bool): s unit =
 let sys =
   system_of_exp (run1 count_when_prop)
 
-#push-options "--print_full_names --print_bound_var_types"
 let prove (fv: sem_freevars): Lemma (ensures induct1 (sys fv)) =
   assert (base_case (sys fv)) by (tac_nbe (); T.dump "base");
   assert (step_case (sys fv)) by (tac_nbe (); T.dump "step")
