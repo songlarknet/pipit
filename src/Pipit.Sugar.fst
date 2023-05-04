@@ -1,5 +1,5 @@
-(* Streaming effect, based on fstar/examples/layeredeffects/Locals.Effect *)
-module Pipit.SugarX4
+(* Applicative syntax *)
+module Pipit.Sugar
 
 open Pipit.Exp.Base
 open Pipit.Inhabited
@@ -157,13 +157,11 @@ let tup = liftA2 (fun a b -> (a,b))
 
 let negate = liftA1 (fun x -> -x)
 
-// assume
-// [@ "tac_opaque"]
 let if_then_else_impl (p: bool) (x y: 'a): 'a =
   if p then x else y
 
 (* if-then-else *)
-let ite = liftA3 if_then_else_impl // (fun x y z -> if x then y else z)
+let ite = liftA3 if_then_else_impl
 let if_then_else = ite
 
 (* itialised delay *)
