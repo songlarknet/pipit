@@ -26,7 +26,7 @@ let rec state_of_exp (e: exp 'c 'a): Tot Type (decreases e) =
   | XThen e1 e2 -> bool & state_of_exp e2
   | XMu _ e1 -> state_of_exp e1
   | XLet b e1 e2 -> state_of_exp e1 & state_of_exp e2
-  | XContract assm guar body arg -> unit
+  // | XContract assm guar body arg -> unit
   | XCheck p e1 e2 -> state_of_exp e2
 
 let xexec (e: exp 'c 'a) = exec (C.row 'c) (state_of_exp e) 'a
@@ -42,7 +42,7 @@ let rec extractable (e: exp 'c 'a): Tot prop (decreases e) =
   | XMu _ e1 ->
     extractable e1
   | XLet b e1 e2 -> extractable e1 /\ extractable e2
-  | XContract assm guar body arg -> False
+  // | XContract assm guar body arg -> False
   | XCheck p e1 e2 -> extractable e2
 
 let extractable_XApp (e1: exp 'c ('b -> 'a)) (e2: exp 'c 'b):

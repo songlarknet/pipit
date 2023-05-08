@@ -51,19 +51,15 @@ let rec row_index (l: list Type) (r: row l) (i: index { i < List.length l }): Li
         let res: List.index ts (i - 1) = row_index ts rs (i - 1) in
         coerce_eq #_ #(List.index l i) () res)
 
-let drop1 (l: list 'a) (i: nat { i < List.length l }): list 'a =
-  let open List in
-  let (pre, post) = splitAt i l in
-  match post with
-  | _ :: post' -> pre @ post'
-  | _ -> pre @ post
+let rec drop1 (l: list 'a) (i: nat { i < List.length l }): (l': list 'a { List.length l' == List.length l - 1 }) =
+  match l, i with
+  | _ :: l', 0 -> l'
+  | l0 :: l', _ -> l0 :: drop1 l' (i - 1)
 
-let lift1 (l: list 'a) (i: nat { i <= List.length l }) (v: 'a): (l': list 'a { List.length l' == List.length l + 1 }) =
-  let open List in
-  let (pre, post) = splitAt i l in
-  Pipit.List.lemma_splitAt_length i l;
-  List.Tot.Properties.append_length pre (v :: post);
-  pre @ v :: post
+let rec lift1 (l: list 'a) (i: nat { i <= List.length l }) (v: 'a): (l': list 'a { List.length l' == List.length l + 1 }) =
+  match l, i with
+  | _, 0 -> v :: l
+  | l0 :: l', _ -> l0 :: lift1 l' (i - 1) v
 
 let index_drop (i limit: index) (drop_by: nat { drop_by <= limit + 1 }): index =
   if i > limit then i - drop_by else i
@@ -76,6 +72,24 @@ let open1 (c: context { has_index c 0 }): context = open1' c 0
 
 let close1' (c: context) (t: Type) (i: index { i <= List.length c }): context = lift1 c i t
 let close1 (c: context) (t: Type): context = close1' c t 0
+
+// let lemma_drop0 (c: context { List.length c > 0 }) (t: Type):
+//   Lemma (ensures (drop1 c 0 == List.tl c)) = ()
+
+// let lemma_lift0 (c: context) (t: Type):
+//   Lemma (ensures (lift1 c 0 t == t :: c)) = ()
+
+// let lemma_dropS (c0: Type) (c': context) (i: index { 0 < i /\ i <= List.length c' }):
+//   Lemma (ensures (drop1 (c0 :: c') i == c0 :: drop1 c' (i - 1))) = ()
+
+// let lemma_liftS (c0: Type) (c': context) (i: index { 0 < i /\ i <= List.length c' + 1}) (t: Type):
+//   Lemma (ensures (lift1 (c0 :: c') i t == c0 :: lift1 c' (i - 1) t)) = ()
+
+// let lemma_drop_length (c: context) (i: index { has_index c i }):
+//   Lemma (ensures List.length (drop1 c i) == List.length c - 1) = ()
+
+// let lemma_lift_length (c: context) (i: index { has_index c i }) (t: Type):
+//   Lemma (ensures List.length (lift1 c i t) == List.length c + 1) = ()
 
 let rec lemma_open_preserves_opt_index (c: context) (n: index { has_index c n }) (i: index { i <> n }): Lemma (opt_index c i == opt_index (open1' c n) (index_drop i n 1)) =
   match c with
@@ -113,9 +127,12 @@ let rec lemma_lift_lift_commute (c: context) (i1: index { has_index c i1 }) (i2:
   Lemma (ensures lift1 (lift1 c i1 t1) i2 t2 == lift1 (lift1 c i2 t2) (i1 + 1) t1) =
   match c with
   | [] -> ()
-  | _ :: c' ->
+  | c0 :: c' ->
     if i2 > 0
-    then lemma_lift_lift_commute c' (i1 - 1) (i2 - 1) t1 t2
+    then (lemma_lift_lift_commute c' (i1 - 1) (i2 - 1) t1 t2;
+      assert (lift1 (lift1 c' (i1 - 1) t1) (i2 - 1) t2 == lift1 (lift1 c' (i2 - 1) t2) i1 t1);
+      assert (lift1 (lift1 (c0 :: c') i1 t1) i2 t2 == lift1 (lift1 (c0 :: c') i2 t2) (i1 + 1) t1);
+      ())
     else ()
 
 let rec lemma_drop_lift_eq (c: context) (i: index { i <= List.length c }) (t: Type):
@@ -125,4 +142,36 @@ let rec lemma_drop_lift_eq (c: context) (i: index { i <= List.length c }) (t: Ty
   | _ :: c' ->
     if i > 0
     then lemma_drop_lift_eq c' (i - 1) t
+    else ()
+
+let rec lemma_lift_drop_commute_le (c: context) (i1: index { has_index c i1 }) (i2: index { i2 <= i1 }) (t: Type):
+  Lemma (ensures (lift1 (drop1 c i1) i2 t == drop1 (lift1 c i2 t) (i1 + 1))) =
+  match c with
+  | [] -> ()
+  | c0 :: c' ->
+    if i1 > 0
+    then 
+      if i2 > 0
+      then
+        lemma_lift_drop_commute_le c' (i1 - 1) (i2 - 1) t
+      else ()
+    else ()
+
+let rec lemma_lift_get_index (c: context) (i: index { i <= List.length c }) (t: Type):
+  Lemma (ensures get_index (lift1 c i t) i == t) =
+  match c with
+  | [] -> ()
+  | _ :: c' ->
+    if i > 0
+    then lemma_lift_get_index c' (i - 1) t
+    else ()
+
+let rec lemma_lift_get_index_gt (c: context) (i1: index { has_index c i1 }) (i2: index { i2 <= i1 }) (t2: Type):
+  Lemma (ensures get_index (lift1 c i2 t2) (i1 + 1) == get_index c i1) =
+  match c with
+  | [] -> ()
+  | _ :: c' ->
+    if i2 > 0
+    then
+      lemma_lift_get_index_gt c' (i1 - 1) (i2 - 1) t2
     else ()

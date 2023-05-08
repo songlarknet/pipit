@@ -8,7 +8,7 @@ open Pipit.System.Ind
 open Pipit.System.Exp
 
 module T = FStar.Tactics
-module Sugar = Pipit.SugarX4
+module Sugar = Pipit.Sugar
 
 let tac_nbe (): T.Tac unit = T.norm [primops; iota; delta; zeta; nbe]
 
