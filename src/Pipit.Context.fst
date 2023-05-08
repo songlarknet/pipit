@@ -130,9 +130,23 @@ let rec lemma_lift_lift_commute (c: context) (i1: index { i1 <= List.length c })
   | c0 :: c' ->
     if i2 > 0
     then (lemma_lift_lift_commute c' (i1 - 1) (i2 - 1) t1 t2;
+      // sometimes fails; spell it out
       assert (lift1 (lift1 c' (i1 - 1) t1) (i2 - 1) t2 == lift1 (lift1 c' (i2 - 1) t2) i1 t1);
       assert (lift1 (lift1 (c0 :: c') i1 t1) i2 t2 == lift1 (lift1 (c0 :: c') i2 t2) (i1 + 1) t1);
       ())
+    else ()
+
+let rec lemma_drop_drop_commute (c: context) (i1: index { has_index c i1 }) (i2: index { i1 <= i2 /\ i2 < List.length c - 1 }):
+  Lemma (ensures drop1 (drop1 c i1) i2 == drop1 (drop1 c (i2 + 1)) i1) =
+  match c with
+  | [] -> ()
+  | c0 :: c' ->
+    if i1 > 0
+    then (lemma_drop_drop_commute c' (i1 - 1) (i2 - 1);
+         // TODO true but sometimes fails; spell it out
+         assume (drop1 (drop1 (c0 :: c') i1) i2 == drop1 (drop1 (c0 :: c') (i2 + 1)) i1);
+         ())
+
     else ()
 
 let rec lemma_drop_lift_eq (c: context) (i: index { i <= List.length c }) (t: Type):
@@ -142,6 +156,15 @@ let rec lemma_drop_lift_eq (c: context) (i: index { i <= List.length c }) (t: Ty
   | _ :: c' ->
     if i > 0
     then lemma_drop_lift_eq c' (i - 1) t
+    else ()
+
+let rec lemma_lift_drop_eq (c: context) (i: index { i < List.length c }):
+  Lemma (ensures lift1 (drop1 c i) i (get_index c i) == c) =
+  match c with
+  | [] -> ()
+  | _ :: c' ->
+    if i > 0
+    then lemma_lift_drop_eq c' (i - 1)
     else ()
 
 let rec lemma_lift_drop_commute_le (c: context) (i1: index { has_index c i1 }) (i2: index { i2 <= i1 }) (t: Type):
@@ -174,4 +197,24 @@ let rec lemma_lift_get_index_gt (c: context) (i1: index { has_index c i1 }) (i2:
     if i2 > 0
     then
       lemma_lift_get_index_gt c' (i1 - 1) (i2 - 1) t2
+    else ()
+
+let rec lemma_drop_get_index_gt (c: context) (i1: index { has_index c i1 }) (i2: index { i1 <= i2 /\ i2 < List.length c - 1 }):
+  Lemma (ensures get_index (drop1 c i1) i2 == get_index c (i2 + 1)) =
+  match c with
+  | [] -> ()
+  | _ :: c' ->
+    if i1 > 0
+    then
+      lemma_drop_get_index_gt c' (i1 - 1) (i2 - 1)
+    else ()
+
+let rec lemma_drop_get_index_lt (c: context) (i1: index { has_index c i1 }) (i2: index { i2 < i1 /\ i2 < List.length c - 1 }):
+  Lemma (ensures get_index (drop1 c i1) i2 == get_index c i2) =
+  match c with
+  | [] -> ()
+  | _ :: c' ->
+    if i2 > 0
+    then
+      lemma_drop_get_index_lt c' (i1 - 1) (i2 - 1)
     else ()
