@@ -10,6 +10,7 @@
 module Pipit.Exp.Bigstep
 
 open Pipit.Exp.Base
+open Pipit.Exp.Binding
 open Pipit.Inhabited
 
 module C = Pipit.Context
@@ -84,7 +85,7 @@ type bigstep (#c: C.context): (#a: Type) -> list (C.row c) -> exp c a -> a -> Ty
          streams: list (C.row c)    ->
          e: exp (C.close1 c 'a) 'a ->
          v: 'a                       ->
-         bigstep streams (subst_index1 e (XMu e)) v ->
+         bigstep streams (subst1 e (XMu e)) v ->
          bigstep streams (XMu e) v
 
  (* Let expressions are performed by substituting into the expression.
@@ -96,7 +97,7 @@ type bigstep (#c: C.context): (#a: Type) -> list (C.row c) -> exp c a -> a -> Ty
           e2: exp (C.close1 c 'b) 'a
                                     ->
           v: 'a                      ->
-          bigstep streams (subst_index1 e2 e1) v
+          bigstep streams (subst1 e2 e1) v
                                     ->
           bigstep streams (XLet 'b e1 e2) v
 
@@ -108,7 +109,7 @@ type bigstep (#c: C.context): (#a: Type) -> list (C.row c) -> exp c a -> a -> Ty
  //          earg: exp c                     'b     ->
  //          v:                              'a     ->
  //          bigstep streams
- //            (subst_index1 (weaken c eb) earg)
+ //            (subst1 (weaken c eb) earg)
  //            v                                  ->
  //          bigstep streams (XContract ea eg eb earg) v
 

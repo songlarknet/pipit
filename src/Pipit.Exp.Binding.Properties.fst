@@ -233,12 +233,17 @@ let rec lemma_subst_subst_distribute_le (e: exp 'c 'a) (i1: C.index { C.has_inde
     lemma_subst_subst_distribute_le e1 i1 i2 p1 p2;
     lemma_subst_subst_distribute_le e2 i1 i2 p1 p2;
     ()
+// TODO prove it
 
-(*
+let lemma_subst_subst_distribute_XMu {| Pipit.Inhabited.inhabited 'a |} (e: exp ('a :: 'c) 'a) (i: C.index { C.has_index 'c i }) (p: exp (C.drop1 'c i) (C.get_index 'c i)):
+  Lemma (ensures
+    // C.lemma_lift_drop_commute_le (C.drop1 'c i1) i2 i1 (C.get_index 'c i1);
+    // C.lemma_drop_drop_commute 'c i1 i2;
+    // C.lemma_lift_drop_eq 'c i1;
+    // C.lemma_drop_get_index_gt 'c i1 i2;
+    // C.lemma_drop_get_index_lt 'c (i2 + 1) i1;
 
-let subst_subst_distribute_XMu (e p: exp) (x: var):
-  Lemma (ensures subst (subst e 0 (XMu e)) x p ==
-                 subst (subst e (x + 1) (lift p 0)) 0 (XMu (subst e (x + 1) (lift p 0)))) =
- subst_subst_distribute_le e (XMu e) p 0 x
-
-*)
+    subst1' (subst1 e (XMu e)) i p ==
+    subst1 (subst1' e (i + 1) (lift1 p 'a)) (XMu (subst1' e (i + 1) (lift1 p 'a))))
+    =
+  lemma_subst_subst_distribute_le e 0 i (XMu e) p
