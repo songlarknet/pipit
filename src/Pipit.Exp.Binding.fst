@@ -76,7 +76,7 @@ let rec lift1' (#c: C.context) (e: exp c 'a) (n: C.index { n <= List.Tot.length 
   | XLet b e1 e2 -> XLet b (lift1' e1 n t) (lift1' e2 (n + 1) t)
   | XCheck name e1 e2 -> XCheck name (lift1' e1 n t) (lift1' e2 n t)
 
-let lift1 (#c: C.context) (e: exp c 'a) (t: Type): exp (C.lift1 c 0 t) 'a =
+let lift1 (#c: C.context) (e: exp c 'a) (t: Type): exp (t :: c) 'a =
   lift1' e 0 t
 
 (* Substitute one bound variable for a bound expression.
@@ -101,5 +101,5 @@ let rec subst1' (#c: C.context) (e: exp c 'a) (i: C.index { C.has_index c i }) (
   | XLet b e1 e2 -> XLet b (subst1' e1 i payload) (subst1' e2 (i + 1) (lift1 payload b))
   | XCheck name e1 e2 -> XCheck name (subst1' e1 i payload) (subst1' e2 i payload)
 
-let subst1 (#c: C.context { C.has_index c 0 }) (e: exp c 'a) (payload: exp (C.drop1 c 0) (C.get_index c 0)): Tot (exp (C.drop1 c 0) 'a) (decreases e) =
+let subst1 (#c: C.context { C.has_index c 0 }) (e: exp c 'a) (payload: exp (C.drop1 c 0) (C.get_index c 0)): Tot (exp (List.Tot.tl c) 'a) (decreases e) =
   subst1' e 0 payload

@@ -73,17 +73,17 @@ let open1 (c: context { has_index c 0 }): context = open1' c 0
 let close1' (c: context) (t: Type) (i: index { i <= List.length c }): context = lift1 c i t
 let close1 (c: context) (t: Type): context = close1' c t 0
 
-// let lemma_drop0 (c: context { List.length c > 0 }) (t: Type):
-//   Lemma (ensures (drop1 c 0 == List.tl c)) = ()
+let lemma_drop0 (c: context { List.length c > 0 }) (t: Type):
+  Lemma (ensures (drop1 c 0 == List.tl c)) = ()
 
-// let lemma_lift0 (c: context) (t: Type):
-//   Lemma (ensures (lift1 c 0 t == t :: c)) = ()
+let lemma_lift0 (c: context) (t: Type):
+  Lemma (ensures (lift1 c 0 t == t :: c)) = ()
 
-// let lemma_dropS (c0: Type) (c': context) (i: index { 0 < i /\ i <= List.length c' }):
-//   Lemma (ensures (drop1 (c0 :: c') i == c0 :: drop1 c' (i - 1))) = ()
+let lemma_dropCons (c0: Type) (c': context) (i: index { 0 < i /\ i <= List.length c' }):
+  Lemma (ensures (drop1 (c0 :: c') i == c0 :: drop1 c' (i - 1))) = ()
 
-// let lemma_liftS (c0: Type) (c': context) (i: index { 0 < i /\ i <= List.length c' + 1}) (t: Type):
-//   Lemma (ensures (lift1 (c0 :: c') i t == c0 :: lift1 c' (i - 1) t)) = ()
+let lemma_liftCons (c0: Type) (c': context) (i: index { 0 < i /\ i <= List.length c' + 1}) (t: Type):
+  Lemma (ensures (lift1 (c0 :: c') i t == c0 :: lift1 c' (i - 1) t)) = ()
 
 // let lemma_drop_length (c: context) (i: index { has_index c i }):
 //   Lemma (ensures List.length (drop1 c i) == List.length c - 1) = ()
