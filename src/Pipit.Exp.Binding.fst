@@ -70,14 +70,15 @@ let rec lift1' (#c: C.context) (e: exp c 'a) (n: C.index { n <= List.Tot.length 
   | XFby v e -> XFby v (lift1' e n t)
   | XThen e1 e2 -> XThen (lift1' e1 n t) (lift1' e2 n t)
   | XMu _ e1 ->
-    let e1': exp (C.lift1 (C.lift1 c 0 'a) (n + 1) t) 'a = lift1' e1 (n + 1) t in
-    let e1'': exp (C.lift1 (C.lift1 c n t) 0 'a) 'a = e1' in
-    XMu e1''
+    XMu (lift1' e1 (n + 1) t)
   | XLet b e1 e2 -> XLet b (lift1' e1 n t) (lift1' e2 (n + 1) t)
   | XCheck name e1 e2 -> XCheck name (lift1' e1 n t) (lift1' e2 n t)
 
 let lift1 (#c: C.context) (e: exp c 'a) (t: Type): exp (t :: c) 'a =
   lift1' e 0 t
+
+let lift_under (#c: C.context) (e: exp ('a :: c) 'a) (n: C.index { n <= List.Tot.length c }) (t: Type): exp ('a :: C.lift1 c n t) 'a =
+  lift1' e (n + 1) t
 
 (* Substitute one bound variable for a bound expression.
    This is used by the semantics, so we need to prove that it commutes. *)
@@ -95,9 +96,7 @@ let rec subst1' (#c: C.context) (e: exp c 'a) (i: C.index { C.has_index c i }) (
   | XFby v e -> XFby v (subst1' e i payload)
   | XThen e1 e2 -> XThen (subst1' e1 i payload) (subst1' e2 i payload)
   | XMu _ e1 ->
-    let e1': exp (C.drop1 (C.lift1 c 0 'a) (i + 1)) 'a = subst1' e1 (i + 1) (lift1 payload 'a) in
-    let e1'': exp (C.lift1 (C.drop1 c i) 0 'a) 'a = e1' in
-    XMu e1''
+    XMu (subst1' e1 (i + 1) (lift1 payload 'a))
   | XLet b e1 e2 -> XLet b (subst1' e1 i payload) (subst1' e2 (i + 1) (lift1 payload b))
   | XCheck name e1 e2 -> XCheck name (subst1' e1 i payload) (subst1' e2 i payload)
 

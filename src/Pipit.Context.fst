@@ -123,7 +123,7 @@ let rec lemma_append_preserves_opt_index (c c': context) (n: index { has_index c
     then lemma_append_preserves_opt_index c1' c' (n - 1)
     else ()
 
-let rec lemma_lift_lift_commute (c: context) (i1: index { has_index c i1 }) (i2: index { i2 <= i1 }) (t1 t2: Type):
+let rec lemma_lift_lift_commute (c: context) (i1: index { i1 <= List.length c }) (i2: index { i2 <= i1 }) (t1 t2: Type):
   Lemma (ensures lift1 (lift1 c i1 t1) i2 t2 == lift1 (lift1 c i2 t2) (i1 + 1) t1) =
   match c with
   | [] -> ()
