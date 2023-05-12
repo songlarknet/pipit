@@ -23,6 +23,57 @@ let step_case (#input #state #value: Type) (t: system input state value): prop =
     t.step i0 s0 s1 r0 ==> all_checks_hold t s1 ==>
     t.step i1 s1 s2 r1 ==> all_checks_hold t s2
 
+// WRONG quantifiers in the wrong place
+let rec step_case_k' (k: nat) (#input #state #value: Type) (t: system input state value) (s': state): prop =
+  match k with
+  | 0 ->
+    forall (i: input) (s: state) (r: value).
+        t.step i s s' r ==>
+        all_checks_hold t s'
+  | _ ->
+  forall (i: input) (s: state) (r: value).
+    step_case_k' (k - 1) t s ==>
+    t.step i s s' r ==>
+    all_checks_hold t s'
+
+// let rec step_case_k' (k: nat) (#input #state #value: Type) (t: system input state value) (s': state): prop =
+//   forall (i: input) (s: state) (r: value).
+//     let step' =
+//       if k = 0
+//       then True
+//       else step_case_k' (k - 1) t s
+//     in
+//     step' ==>
+//     t.step i s s' r ==>
+//     all_checks_hold t s'
+
+let step_case_k (k: nat) (#input #state #value: Type) (t: system input state value): prop =
+  forall (s': state). step_case_k' k t s'
+
+// let chk (t: system 'i 's 'v): unit =
+//   assert (step_case t == step_case_k 1 t) by (FStar.Tactics.norm [nbe; delta; zeta; iota; primops]; FStar.Tactics.norm [delta_fully ["Pipit.System.Ind.step_case_k"; "Pipit.System.Ind.step_case_k'"]]; FStar.Tactics.dump "ok")
+
+let step_case_2 (#input #state #value: Type) (t: system input state value): prop =
+  forall (i0 i1 i2: input) (s0 s1 s2 s3: state) (r0 r1 r2: value).
+    t.step i0 s0 s1 r0 ==> all_checks_hold t s1 ==>
+    t.step i1 s1 s2 r1 ==> all_checks_hold t s2 ==>
+    t.step i2 s2 s3 r2 ==> all_checks_hold t s3
+
+let step_case_3 (#input #state #value: Type) (t: system input state value): prop =
+  forall (i0 i1 i2 i3: input) (s0 s1 s2 s3 s4: state) (r0 r1 r2 r3: value).
+    t.step i0 s0 s1 r0 ==> all_checks_hold t s1 ==>
+    t.step i1 s1 s2 r1 ==> all_checks_hold t s2 ==>
+    t.step i2 s2 s3 r2 ==> all_checks_hold t s3 ==>
+    t.step i3 s3 s4 r3 ==> all_checks_hold t s4
+
+let step_case_4 (#input #state #value: Type) (t: system input state value): prop =
+  forall (i0 i1 i2 i3 i4: input) (s0: state) (s1 s2 s3 s4 s5: state) (r0 r1 r2 r3 r4: value).
+    t.step i0 s0 s1 r0 ==> all_checks_hold t s1 ==>
+    t.step i1 s1 s2 r1 ==> all_checks_hold t s2 ==>
+    t.step i2 s2 s3 r2 ==> all_checks_hold t s3 ==>
+    t.step i3 s3 s4 r3 ==> all_checks_hold t s4 ==>
+    t.step i4 s4 s5 r4 ==> all_checks_hold t s5
+
 let induct1 (#input #state #value: Type)
   (t: system input state value): prop =
     base_case t /\ step_case t

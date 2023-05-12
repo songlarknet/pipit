@@ -156,8 +156,8 @@ let controller' (estop level_low: Sugar.s bool) =
   let' (once (nok_stuck_c >=^ z stuck_time))     (fun nok_stuck   ->
   let' (sol_try /\ not_ nok_stuck)                (fun sol_en      ->
   let' (pair sol_en nok_stuck)                   (fun result      ->
-  check' "ESTOP OK"      (estop => not_ sol_try) (
-  check' "LEVEL HIGH OK" (not_ level_low => not_ sol_try) (
+  check' "ESTOP OK"      (estop => not_ sol_en) (
+  check' "LEVEL HIGH OK" (not_ level_low => not_ sol_en) (
     result))))))))
 
 let controller_prop =

@@ -2,6 +2,7 @@
 module Pipit.Sugar
 
 open Pipit.Exp.Base
+open Pipit.Exp.Binding
 open Pipit.Inhabited
 
 module C = Pipit.Context
@@ -47,7 +48,7 @@ let run2 (f: s 'a -> s 'b -> s 'c) : exp ['a; 'b] 'c =
   let a       = XVar ax in
   let b       = XVar bx in
   let (c,  s) = f (m_pure a) (m_pure b) s in
-  close1 (close1 c ax) bx
+  close1 (close1 c bx) ax
 
 let let'
   (e: s 'a)
@@ -79,6 +80,12 @@ let check'
     let (e, s) = e s in
     let (f, s) = f s in
     (XCheck name e f, s))
+
+let check
+  (name: string)
+  (e: s bool):
+    s unit =
+  check' name e (m_pure (XVal ()))
 
 let pure (a: 'a): s 'a =
   m_pure (XVal a)

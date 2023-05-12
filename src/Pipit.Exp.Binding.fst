@@ -52,7 +52,7 @@ let rec close1' (#c: C.context) (e: exp c 'a) (x: C.var 'b) (n: C.index { n <= L
   | XLet b e1 e2 -> XLet b (close1' e1 x n) (close1' e2 x (n + 1))
   | XCheck name e1 e2 -> XCheck name (close1' e1 x n) (close1' e2 x n)
 
-let close1 (e: exp 'c 'a) x = close1' e x 0
+let close1 (e: exp 'c 'a) (x: C.var 'b): exp ('b :: 'c) 'a = close1' e x 0
 
 (* Lift an expression by incrementing bound variable indices at or above n.
    This is used directly by substitution, so we need to prove some properties
