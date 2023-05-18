@@ -41,7 +41,7 @@ let rec causal (e: exp 'c 'a): Tot bool (decreases e) =
 
 #push-options "--split_queries always"
 
-(* used by lemma_causal_lift *)
+(* not used, but lemma_direct_dependency_not_subst' needs i' < i case *)
 let rec lemma_direct_dependency_lift (e: exp 'c 'a) (i: C.index { C.has_index 'c i }) (i': C.index { i < i' /\ i' <= List.Tot.length 'c }) (t: Type):
     Lemma (ensures direct_dependency e i == direct_dependency (lift1' e i' t) i) (decreases e) =
   match e with
@@ -49,17 +49,6 @@ let rec lemma_direct_dependency_lift (e: exp 'c 'a) (i: C.index { C.has_index 'c
   | XMu _ e1 ->
     lemma_direct_dependency_lift e1 (i + 1) (i' + 1) t
 
-  | _ -> admit ()
-
-(* used by lemma_causal_subst *)
-let rec lemma_direct_dependency_not_subst (i: C.index { C.has_index 'c i }) (i': C.index { C.has_index 'c i' /\ i < i' })
-  (e: exp 'c 'a { ~ (direct_dependency e i) /\ ~ (direct_dependency e i') })
-  (p: exp (C.drop1 'c i') (C.get_index 'c i')):
-    Lemma (ensures ~ (direct_dependency (subst1' e i' p) i)) (decreases e) =
-  match e with
-  | XVal _ | XVar _ | XBVar _ -> ()
-  | XMu _ e1 ->
-    lemma_direct_dependency_not_subst (i + 1) (i' + 1) e1 (lift1 p 'a)
   | _ -> admit ()
 
 (* used by lemma_bigstep_substitute_intros_no_dep *)
@@ -78,130 +67,7 @@ let rec lemma_direct_dependency_not_subst' (i: C.index { C.has_index 'c i }) (i'
     // admit ()
   | _ -> admit ()
 
-(* old statements, might be necessary *)
-// let rec direct_dependency_not_subst (i: C.index { C.has_index 'c i }) (i': C.index { i' < i })
-//   (e: exp 'c 'a { ~ (direct_dependency e i) })
-//   (p: exp (C.drop1 'c i') (C.get_index 'c i') { ~ (direct_dependency p (i - 1)) }):
-//     Lemma (ensures ~ (direct_dependency (subst1' e i' p) (i - 1))) (decreases e) =
-// let rec direct_dependency_not_subst2 (i: C.index { C.has_index 'c i }) (i': C.index { C.has_index 'c i' /\ i < i' })
-//   (e: exp 'c 'a)
-//   (p: exp (C.drop1 'c i') (C.get_index 'c i')):
-//     Lemma
-//       (requires ~ (direct_dependency (subst1' e i' p) i))
-//       (ensures ~ (direct_dependency e i)) (decreases e) =
-
-(* used by lemma_bigstep_recursive_XMu *)
-let rec lemma_bigstep_no_dep (e: exp (List.Tot.append 'c ('b :: 'd)) 'a { ~ (direct_dependency e (List.Tot.length 'c)) })
-  (history: list (C.row (List.Tot.append 'c ('b :: 'd))))
-  (rowc: C.row 'c)
-  (rowd: C.row 'd)
-  (b b': 'b)
-  (a: 'a)
-  (hBS: bigstep
-    (C.row_append rowc (C.row_cons b rowd) :: history)
-    e
-    a):
-  Tot (bigstep
-        (C.row_append rowc (C.row_cons b' rowd) :: history)
-        e a) (decreases hBS) =
-  admit ()
-
-  // let tv  = C.table_of_values (v :: row) in
-  // let tv' = C.table_of_values (v' :: row) in
-  // let t2  = C.table_map_append tv streams2 in
-  // let t2' = C.table_map_append tv' streams2 in
-  // let t  = C.table_map_append streams1 t2 in
-  // let t' = C.table_map_append streams1 t2' in
-  // match hBS with
-  // | BSVal _ v ->
-  //   C.table_const_const t t' v;
-  //   BSVal _ v
-  // | BSVar _ x ->
-  //   assert (x <> inner1);
-  //   if x < inner1
-  //   then
-  //   begin
-  //       C.table_index_append_inner1 streams1 t2 x;
-  //       C.table_index_append_inner1 streams1 t2' x;
-  //       BSVar _ x
-  //   end
-  //   else
-  //   begin
-  //       C.table_index_append_inner2 streams1 t2 x;
-  //       C.table_index_append_inner2 tv streams2 (x - inner1);
-  //       C.table_index_append_inner2 streams1 t2' x;
-  //       C.table_index_append_inner2 tv' streams2 (x - inner1);
-  //       BSVar _ x
-  //   end
-  // | BSPrim2 _ p e1 e2 vs1 vs2 hBS1 hBS2 ->
-  //   let hBS1' = bigstep_no_dep_no_difference e1 streams1 streams2 row v v' vs1 hBS1 in
-  //   let hBS2' = bigstep_no_dep_no_difference e2 streams1 streams2 row v v' vs2 hBS2 in
-  //   BSPrim2 _ p e1 e2 vs1 vs2 hBS1' hBS2'
-  // | BSPre s0 ss e1 vs1 hBS1 ->
-  //   let s0' = C.table_hd t' in
-  //   BSPre s0' ss e1 vs1 hBS1
-  // | BSThen _ e1 e2 vs1 vs2 hBS1 hBS2 ->
-  //   let hBS1' = bigstep_no_dep_no_difference e1 streams1 streams2 row v v' vs1 hBS1 in
-  //   let hBS2' = bigstep_no_dep_no_difference e2 streams1 streams2 row v v' vs2 hBS2 in
-  //   BSThen _ e1 e2 vs1 vs2 hBS1' hBS2'
-  // | BSMu _ e1 vs1 hBS1 ->
-  //   let e1' = subst e1 0 (XMu e1) in
-  //   direct_dependency_not_subst (inner1 + 1) 0 e1 (XMu e1);
-  //   let hBS1' = bigstep_no_dep_no_difference e1' streams1 streams2 row v v' vs1 hBS1 in
-  //   BSMu _ e1 vs1 hBS1'
-  // | BSLet _ e1 e2 vs2 hBS2 ->
-  //   let e1' = subst e2 0 e1 in
-  //   direct_dependency_not_subst (inner1 + 1) 0 e2 e1;
-  //   let hBS2' = bigstep_no_dep_no_difference e1' streams1 streams2 row v v' vs2 hBS2 in
-  //   BSLet _ e1 e2 vs2 hBS2'
-
-
-(*
-   We originally had a lemma that said:
-   if expression e mentions variable x, then e[x := e'] mentions e'.
-   we can re-state this as:
-   if expression e mentions variable x, and e' mentions x', then e[x := e'] mentions x'.
-   Do we need it?
-*)
-
-let rec lemma_causal_lift (e: exp 'c 'a) (i: C.index { i <= List.Tot.length 'c }) (t: Type):
-  Lemma (requires (causal e))
-        (ensures (causal (lift1' e i t)))
-        (decreases e) =
-  match e with
-  | XVal _ -> ()
-  | XVar _ -> ()
-  | XBVar _ -> ()
-  | XMu _ e1 ->
-    lemma_causal_lift e1 (i + 1) t;
-    lemma_direct_dependency_lift e1 0 (i + 1) t;
-    ()
-  | _ -> admit ()
-
-
-let rec lemma_causal_subst (e: exp 'c 'a) (i: C.index { C.has_index 'c i })
-  (p: exp (C.drop1 'c i) (C.get_index 'c i)):
-  Lemma (requires (causal e /\ causal p /\ ~ (direct_dependency e i)))
-        (ensures (causal (subst1' e i p)))
-        (decreases e) =
-  match e with
-  | XVal _ -> ()
-  | XVar _ -> ()
-  | XBVar _ -> ()
-  | XMu _ e1 ->
-    lemma_causal_lift p 0 'a;
-    lemma_causal_subst e1 (i + 1) (lift1 p 'a);
-    lemma_direct_dependency_not_subst 0 (i + 1) e1 (lift1 p 'a);
-    ()
-  | _ -> admit ()
-
-(* used by ?? *)
-let lemma_causal_subst__causal_XMu {| Pipit.Inhabited.inhabited 'a |}
-  (e: exp ('a :: 'c) 'a):
-  Lemma (requires causal (XMu e))
-        (ensures causal (subst1' e 0 (XMu e))) =
-  lemma_causal_subst e 0 (XMu e)
-
+(* used by lemma_bigstep_substitute_elim_XMu, indirectly by transition system proof *)
 let rec lemma_bigstep_substitute_elim
   (i: C.index { i < List.Tot.length 'c })
   (rows: list (C.row (C.drop1 'c i)) { Cons? rows })
@@ -260,25 +126,7 @@ let rec lemma_bigstep_substitute_elim
     )
   | _ -> admit ()
 
-// let rec lemma_bigsteps_substitute_elim
-//   (i: C.index { i < List.Tot.length 'c })
-//   (rows: list (C.row (C.drop1 'c i)))
-//   (e: exp (C.drop1 'c i) (C.get_index 'c i))
-//   (vs: list (C.get_index 'c i) { List.Tot.length rows == List.Tot.length vs })
-//   (e': exp 'c 'a)
-//   (vs': list 'a { List.Tot.length rows == List.Tot.length vs' })
-//   (hBSse: bigsteps rows e vs)
-//   (hBSse': bigsteps rows (subst1' e' i e) vs'):
-//     Tot (bigsteps (C.row_zip2_lift1_dropped i rows vs) e' vs') (decreases hBSse') =
-//   match hBSse with
-//   | BSs0 _ -> BSs0 e'
-//   | BSsS rowsP _ vsP  row v  hBSseP  hBSe ->
-//   match hBSse' with
-//   | BSsS _     _ vs'P _   v' hBSse'P hBSe' ->
-//     let hBSe'' = lemma_bigstep_substitute_elim i rows e vs e' v' hBSse hBSe' in
-//     let rest = lemma_bigsteps_substitute_elim i rowsP e vsP e' vs'P hBSseP hBSse'P in
-//     BSsS (C.row_zip2_lift1_dropped i rowsP vsP) _ vs'P (C.row_lift1_dropped i row v) v' rest hBSe''
-
+(* used indirectly by lemma_bigstep_total *)
 let rec lemma_bigstep_substitute_intros_no_dep
   (i: C.index { i < List.Tot.length 'c })
   (rows: list (C.row (C.drop1 'c i)))
@@ -309,26 +157,10 @@ let rec lemma_bigstep_substitute_intros_no_dep
       assume (C.drop1 ('a :: 'c) (i + 1) == 'a :: C.drop1 'c i);
       let hBSX = lemma_bigstep_substitute_intros_no_dep i rows e vs (subst1 e1 (XMu e1)) r v a hBSse hBSe1 in
       lemma_subst_subst_distribute_XMu e1 i e;
-      // let lifted: exp (C.drop1 ('a :: 'c) (i + 1)) (C.get_index ('a :: 'c) (i + 1)) = lift1 e 'a in
-      // assert (subst1 (subst1' e1 (i + 1) lifted) (XMu e1') == subst1' (subst1 e1 (XMu e1)) i e);
       BSMu inhabited _ (subst1' e1 (i + 1) (lift1 e 'a)) _ hBSX)
   | _ -> admit ()
 
-// let rec lemma_bigsteps_inverts_BSMu
-//   {| Pipit.Inhabited.inhabited 'a |}
-//   (rows: list (C.row 'c))
-//   (e: exp ('a :: 'c) 'a)
-//   (vs: list 'a { List.Tot.length rows == List.Tot.length vs })
-//   (hBSs: bigsteps rows (XMu e) vs):
-//          bigsteps rows (subst1 e (XMu e)) vs =
-//   match hBSs with
-//   | BSs0 _ -> BSs0 (subst1 e (XMu e))
-//   | BSsS rows _ vs row v hBSs' hBS ->
-//     let BSMu _ _ _ e1 hBS' = hBS in
-//     let hBSs'' = lemma_bigsteps_inverts_BSMu rows e vs hBSs' in
-//     BSsS rows _ vs row v hBSs'' hBS'
-
-
+(* used by transition system proof *)
 let lemma_bigstep_substitute_elim_XMu
   {| Pipit.Inhabited.inhabited 'a |}
   (rows: list (C.row 'c) { Cons? rows })
@@ -343,6 +175,7 @@ let lemma_bigstep_substitute_elim_XMu
         assume (C.row_zip2_cons vs rows == C.row_zip2_lift1_dropped 0 rows vs);
         lemma_bigstep_substitute_elim 0 rows (XMu e) vs e (List.Tot.hd vs) hBSs hBS'
 
+(* used by lemma_bigstep_total *)
 let lemma_bigstep_substitute_intros_XMu
   {| Pipit.Inhabited.inhabited 'a |}
   (rows: list (C.row 'c))
@@ -360,6 +193,7 @@ let lemma_bigstep_substitute_intros_XMu
     let hBS'': bigstep (row :: rows) (subst1 e (XMu e)) v = lemma_bigstep_substitute_intros_no_dep 0 rows (XMu e) vs e row v' v hBSs hBS1 in
     BSMu _ (row :: rows) e v hBS''
 
+(* used by transition system proof *)
 let rec lemma_bigstep_total
   (rows: list (C.row 'c) { Cons? rows }) (e: exp 'c 'a { causal e }):
     Tot (v: 'a & bigstep rows e v) (decreases %[e; rows; 0]) =
