@@ -53,7 +53,7 @@ type bigstep (#c: C.context): (#a: Type) -> list (C.row c) -> exp c a -> a -> Ty
            bigstep start (XFby v0 e) v0
  (* To compute `pre e` we evaluate `e` without the most recent element. *)
  | BSFbyS: latest: C.row c          ->
-           prefix: list (C.row c) { List.Tot.length prefix > 1 }
+           prefix: list (C.row c) { List.Tot.length prefix >= 1 }
                                     ->
            v0: 'a                    ->
            v': 'a                    ->
@@ -125,12 +125,20 @@ type bigstep (#c: C.context): (#a: Type) -> list (C.row c) -> exp c a -> a -> Ty
 
 (* Under streaming history `streams`, evaluate expression `e` at each step to
    produce stream of values `vs` *)
-let rec bigsteps (streams: list (C.row 'c)) (e: exp 'c 'a) (vs: list 'a { List.Tot.length vs == List.Tot.length streams }): prop =
-  match streams, vs with
-  | (t :: ts'), (v :: vs') ->
-    squash (bigstep streams e v) /\ bigsteps ts' e vs'
-  | [], [] ->
-    True
+noeq
+type bigsteps (#c: C.context) (#a: Type): list (C.row c) -> exp c a -> list a -> Type =
+ | BSs0:
+    e: exp c a                          ->
+    bigsteps [] e []
+ | BSsS:
+    rows: list (C.row c)                ->
+    e: exp c a                          ->
+    vs: list a                          ->
+    row: C.row c                        ->
+    v: a                                ->
+    bigsteps        rows  e      vs     ->
+    bigstep  (row :: rows) e  v          ->
+    bigsteps (row :: rows) e (v :: vs)
 
 //TODO clean
 #push-options "--split_queries always"

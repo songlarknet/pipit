@@ -36,7 +36,7 @@ type exp (c: C.context) 'a =
   //          (arg: exp c 'b) ->
   //          exp c 'a
 
-  // check "" e in e
+  // check "" e
   | XCheck : string -> exp c xprop -> exp c 'a -> exp c 'a
 
 let rec weaken (#c c': C.context) (e: exp c 'a): Tot (exp (C.append c c') 'a) (decreases e) =

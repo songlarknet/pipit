@@ -33,6 +33,16 @@ let empty = []
 
 let append (c c': context): context = List.append c c'
 
+let rec drop1 (l: list 'a) (i: nat { i < List.length l }): (l': list 'a { List.length l' == List.length l - 1 }) =
+  match l, i with
+  | _ :: l', 0 -> l'
+  | l0 :: l', _ -> l0 :: drop1 l' (i - 1)
+
+let rec lift1 (l: list 'a) (i: nat { i <= List.length l }) (v: 'a): (l': list 'a { List.length l' == List.length l + 1 }) =
+  match l, i with
+  | _, 0 -> v :: l
+  | l0 :: l', _ -> l0 :: lift1 l' (i - 1) v
+
 let rec row (l: list Type): Type =
   match l with
   | [] -> unit
@@ -51,15 +61,39 @@ let rec row_index (l: list Type) (r: row l) (i: index { i < List.length l }): Li
         let res: List.index ts (i - 1) = row_index ts rs (i - 1) in
         coerce_eq #_ #(List.index l i) () res)
 
-let rec drop1 (l: list 'a) (i: nat { i < List.length l }): (l': list 'a { List.length l' == List.length l - 1 }) =
-  match l, i with
-  | _ :: l', 0 -> l'
-  | l0 :: l', _ -> l0 :: drop1 l' (i - 1)
+let rec row_append (r: row 'c) (r': row 'd): row (List.append 'c 'd) =
+  match 'c with
+  | [] -> r'
+  | t :: ts ->
+    let rr: (t & row ts) = r in
+    let (rt, rts) = rr in
+    (rt, row_append rts r')
 
-let rec lift1 (l: list 'a) (i: nat { i <= List.length l }) (v: 'a): (l': list 'a { List.length l' == List.length l + 1 }) =
-  match l, i with
-  | _, 0 -> v :: l
-  | l0 :: l', _ -> l0 :: lift1 l' (i - 1) v
+let row_cons (a: 'a) (r: row 'c): row ('a :: 'c) = (a, r)
+
+let rec row_lift1 (r: row 'c) (i: nat { i <= List.length 'c }) (v: 'a): row (lift1 'c i 'a) =
+  if i = 0 then (v, r)
+  else
+    match 'c with
+    | t :: ts ->
+      let rr: (t & row ts) = r in
+      let (rt, rts) = rr in
+      (rt, row_lift1 rts (i - 1) v)
+
+let rec row_zip2_append (rs: list (row 'c)) (rs': list (row 'd) { List.length rs == List.length rs' }): list (row (List.append 'c 'd)) =
+  match rs, rs' with
+  | [], [] -> []
+  | r :: rs, r' :: rs' -> (row_append r r') :: row_zip2_append rs rs'
+
+let rec row_zip2_cons (rs: list 'a) (rs': list (row 'd) { List.length rs == List.length rs' }): (ret: list (row ('a :: 'd)) { List.length ret == List.length rs }) =
+  match rs, rs' with
+  | [], [] -> []
+  | r :: rs, r' :: rs' -> (row_cons r r') :: row_zip2_cons rs rs'
+
+let rec row_zip2_lift1 (rs: list (row 'c)) (i: nat { i <= List.length 'c }) (vs: list 'a { List.length rs == List.length vs }): (ret: list (row (lift1 'c i 'a)) { List.length ret == List.length rs }) =
+  match rs, vs with
+  | [], [] -> []
+  | r :: rs, v :: vs -> row_lift1 r i v :: row_zip2_lift1 rs i vs
 
 let index_drop (i limit: index) (drop_by: nat { drop_by <= limit + 1 }): index =
   if i > limit then i - drop_by else i
@@ -68,10 +102,10 @@ let index_lift (i limit: index) (lift_by: nat): index =
   if i >= limit then i + lift_by else i
 
 let open1' (c: context) (i: index { has_index c i }): context = drop1 c i
-let open1 (c: context { has_index c 0 }): context = open1' c 0
+let open1 (c: context { has_index c 0 }): context = List.tl c
 
 let close1' (c: context) (t: Type) (i: index { i <= List.length c }): context = lift1 c i t
-let close1 (c: context) (t: Type): context = close1' c t 0
+let close1 (c: context) (t: Type): context = t :: c
 
 let lemma_drop0 (c: context { List.length c > 0 }) (t: Type):
   Lemma (ensures (drop1 c 0 == List.tl c)) = ()
@@ -218,3 +252,11 @@ let rec lemma_drop_get_index_lt (c: context) (i1: index { has_index c i1 }) (i2:
     then
       lemma_drop_get_index_lt c' (i1 - 1) (i2 - 1)
     else ()
+
+let row_lift1_dropped (i: nat { i < List.length 'c }) (r: row (drop1 'c i)) (v: get_index 'c i): row 'c =
+  lemma_lift_drop_eq 'c i;
+  row_lift1 r i v
+
+let row_zip2_lift1_dropped (i: nat { i < List.length 'c }) (rs: list (row (drop1 'c i))) (vs: list (get_index 'c i) { List.length rs == List.length vs }): (ret: list (row 'c) { List.length ret == List.length rs }) =
+  lemma_lift_drop_eq 'c i;
+  row_zip2_lift1 rs i vs
