@@ -133,7 +133,6 @@ let induct1 (#input #state #value: Type)
 // let rec prop_for_all__prop_of_bool (vs: list value):
 //   Lemma (requires prop_for_all (C.vector_map #(List.Tot.length vs) prop_of_value vs))
 //         (ensures List.Tot.for_all (fun r -> r <> 0) vs) =
-//  // TODO prop_for_all__prop_of_bool easy
 //  admit ()
 
 // let induct1_exp (#vars: nat)

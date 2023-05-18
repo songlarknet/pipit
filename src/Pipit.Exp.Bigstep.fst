@@ -140,7 +140,6 @@ type bigsteps (#c: C.context) (#a: Type): list (C.row c) -> exp c a -> list a ->
     bigstep  (row :: rows) e  v          ->
     bigsteps (row :: rows) e (v :: vs)
 
-//TODO clean
 #push-options "--split_queries always"
 (* Properties *)
 let rec bigstep_proof_equivalence

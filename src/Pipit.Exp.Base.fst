@@ -3,7 +3,7 @@ module Pipit.Exp.Base
 module C = Pipit.Context
 open Pipit.Inhabited
 
-(* TODO: restrict "properties" to booleans for now to avoid universe stuff *)
+(* LATER: restrict "properties" to booleans for now to avoid universe stuff *)
 type xprop = bool
 
 noeq
@@ -28,7 +28,7 @@ type exp (c: C.context) 'a =
   // Proof terms
   // Contracts for hiding implementation:
   //   (λx. { assumes } body { λr. guarantees })(arg)
-  // TODO: assumes and guarantees should probably be in context c, so they can be CSEd with the main expression. body should be separate to allow separate codegen
+  // LATER: assumes and guarantees should probably be in context c, so they can be CSEd with the main expression. body should be separate to allow separate codegen
   // | XContract:
   //          (assumes: exp ['b] xprop) ->
   //          (guarantees: exp ['a; 'b] xprop) ->
