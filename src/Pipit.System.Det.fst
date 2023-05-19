@@ -101,7 +101,7 @@ let dsystem_then (#input #state1 #state2 #v: Type)
      let init = s.init in
      let s1 = s.s1 in
      let s2 = s.s2 in
-     let (s1', v1) = t1.step i t1.init in
+     let (s1', v1) = t1.step i s1 in
      let (s2', v2) = t2.step i s2 in
      let s' = { init = false; s1 = s1'; s2 = s2' } <: system_then_state state1 state2 in
      (s', (if init then v1 else v2)));

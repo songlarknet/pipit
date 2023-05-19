@@ -155,6 +155,20 @@ let rec lemma_bigstep_substitute_intros_no_dep
   | _ -> admit ()
 
 (* used by transition system proof *)
+let lemma_bigstep_substitute_elim_XLet
+  (rows: list (C.row 'c) { Cons? rows })
+  (e1: exp 'c 'b)
+  (vs: list 'b { List.Tot.length rows == List.Tot.length vs })
+  (hBS1s: bigsteps rows e1 vs)
+  (e2: exp ('b :: 'c) 'a { causal e2 })
+  (v: 'a)
+  (hBS2: bigstep rows (XLet 'b e1 e2) v):
+    (bigstep (C.row_zip2_cons vs rows) e2 v) =
+  match hBS2 with
+  | BSLet _ _ _ _ hBS2' ->
+    lemma_bigstep_substitute_elim 0 rows e1 vs e2 v hBS1s hBS2'
+
+(* used by transition system proof *)
 let lemma_bigstep_substitute_elim_XMu
   {| Pipit.Inhabited.inhabited 'a |}
   (rows: list (C.row 'c) { Cons? rows })
@@ -224,3 +238,9 @@ and lemma_bigsteps_total
     let (| vs, hBSs |) = lemma_bigsteps_total rows' e in
     let (| v,  hBS1 |) = lemma_bigstep_total  rows  e in
     (| v :: vs, BSsS _ _ _ r v hBSs hBS1 |)
+
+let lemma_bigstep_total_v
+  (rows: list (C.row 'c) { Cons? rows }) (e: exp 'c 'a { causal e }):
+    'a =
+  let (| v, _ |) = lemma_bigstep_total rows e in
+  v

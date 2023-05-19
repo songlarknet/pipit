@@ -1,15 +1,15 @@
 (* Translation to transition system *)
 module Pipit.System.Exp
 
+module C = Pipit.Context
 
 open Pipit.System.Base
 open Pipit.System.Det
 
 open Pipit.Exp.Base
+module Causal = Pipit.Exp.Causality
 // open Pipit.Exp.Bigstep
 // open Pipit.Exp.Causality
-
-module C = Pipit.Context
 
 (* A system we get from translating an expression *)
 let xsystem (c: C.context) (state: Type) (value: Type) = system (C.row c) state value
@@ -41,83 +41,80 @@ let rec state_of_exp (e: exp 'c 'a): Tot Type (decreases e) =
   //   state_of_exp arg
   | XCheck name e1 e2 -> (xprop & state_of_exp e1) & state_of_exp e2
 
-let sem_freevars = (#a: Type) -> (x: C.var a) -> a
+(* Can the expression be represented as a (non-relation) function?
+   This is true for most things, but contracts (which are not supported yet)
+   require a relation. *)
+// let rec exp_is_function (e: exp 'c 'a): Tot bool (decreases e) =
+//   Causal.causal e &&
+//   (match e with
+//   | XVal v -> true
+//   | XBVar x -> true
+//   | XVar x -> false
+//   | XApp f e -> exp_is_function f && exp_is_function e
+//   | XFby v e1 -> exp_is_function e1
+//   | XThen e1 e2 -> exp_is_function e1 && exp_is_function e2
+//   | XMu _ e1 -> exp_is_function e1
+//   | XLet b e1 e2 -> exp_is_function e1 && exp_is_function e2
+//   // | XContract assm guar body arg -> false
+//   | XCheck name e1 e2 -> exp_is_function e1 && exp_is_function e2)
 
-let rec dsystem_of_exp (e: exp 'c 'a)
-    (fv: sem_freevars):
-    Tot (option (xdsystem 'c (state_of_exp e) 'a)) (decreases e) =
+let rec dsystem_of_exp (e: exp 'c 'a { Causal.causal e }):
+    Tot (xdsystem 'c (state_of_exp e) 'a) (decreases e) =
   match e with
-  | XVal v -> Some (dsystem_const v)
-  | XBVar x -> Some (dsystem_map (fun i -> C.row_index 'c i x) dsystem_input)
-  | XVar x -> Some (dsystem_const (fv x))
+  | XVal v -> dsystem_const v
+  | XBVar x -> dsystem_map (fun i -> C.row_index 'c i x) dsystem_input
+  | XVar x -> false_elim ()
   | XApp e1 e2 ->
-    (match dsystem_of_exp e1 fv, dsystem_of_exp e2 fv with
-     | Some t1, Some t2 ->
-       let t': xdsystem 'c (state_of_exp (XApp e1 e2)) 'a = dsystem_ap2 t1 t2 in
-       Some t'
-     | _ -> None)
+    assert_norm (Causal.causal (XApp e1 e2) ==> (Causal.causal e1 && Causal.causal e2));
+    let t1 = dsystem_of_exp e1 in
+    let t2 = dsystem_of_exp e2 in
+    let t': xdsystem 'c (state_of_exp (XApp e1 e2)) 'a = dsystem_ap2 t1 t2 in
+    t'
   | XFby v e1 ->
-    (match dsystem_of_exp e1 fv with
-     | Some t -> Some (dsystem_pre v t)
-     | _ -> None)
+    dsystem_pre v (dsystem_of_exp e1)
   | XThen e1 e2 ->
-    (match dsystem_of_exp e1 fv, dsystem_of_exp e2 fv with
-     | Some t1, Some t2 ->
-        Some (dsystem_then t1 t2)
-     | _ -> None)
-  | XLet b e1 e2 ->
-    (match dsystem_of_exp e1 fv, dsystem_of_exp e2 fv with
-     | Some t1, Some t2 ->
-        Some (dsystem_let (fun i v -> (v, i)) t1 t2)
-     | _ -> None)
-  | XCheck name e1 e2 ->
-    (match dsystem_of_exp e1 fv, dsystem_of_exp e2 fv with
-     | Some t1, Some t2 ->
-        let t1' = dsystem_check name t1 in
-        let t': xdsystem 'c (state_of_exp (XCheck name e1 e2)) 'a = dsystem_let (fun i v -> i) t1' t2 in
-        Some t'
-     | _ -> None)
-
-
+    dsystem_then (dsystem_of_exp e1) (dsystem_of_exp e2)
   | XMu _ e1 ->
-    (match dsystem_of_exp e1 fv with
-    | Some t1 ->
-      let t' = dsystem_mu_causal #(C.row 'c) #('a & C.row 'c) (fun i v -> (v, i)) t1 in
-      Some t'
-    | _ -> None)
-  // | XContract assm guar body arg -> None
+    let t = dsystem_of_exp e1 in
+    dsystem_mu_causal #(C.row 'c) #('a & C.row 'c) (fun i v -> (v, i)) t
+  | XLet b e1 e2 ->
+    dsystem_let (fun i v -> (v, i)) (dsystem_of_exp e1) (dsystem_of_exp e2)
+  | XCheck name e1 e2 ->
+    let t1 = dsystem_check name (dsystem_of_exp e1) in
+    let t2 = dsystem_of_exp e2 in
+    let t': xdsystem 'c (state_of_exp (XCheck name e1 e2)) 'a = dsystem_let (fun i v -> i) t1 t2 in
+    t'
 
-let rec system_of_exp (e: exp 'c 'a)
-    (fv: sem_freevars):
+let rec system_of_exp (e: exp 'c 'a { Causal.causal e }):
     Tot (xsystem 'c (state_of_exp e) 'a) (decreases e) =
-  match dsystem_of_exp e fv with
-  | Some d -> system_of_dsystem d
-  | None ->
+  // if exp_is_function e then system_of_dsystem (dsystem_of_exp e)
+  // else
     match e with
     | XVal v -> system_const v
     | XBVar x -> system_map (fun i -> C.row_index 'c i x) system_input
-    | XVar x -> system_const (fv x)
+    | XVar x -> false_elim ()
     | XApp e1 e2 ->
-      let t1 = system_of_exp e1 fv in
-      let t2 = system_of_exp e2 fv in
+      assert_norm (Causal.causal (XApp e1 e2) ==> (Causal.causal e1 && Causal.causal e2));
+      let t1 = system_of_exp e1 in
+      let t2 = system_of_exp e2 in
       let t': xsystem 'c (state_of_exp (XApp e1 e2)) 'a = system_ap2 t1 t2 in
       t'
     | XFby v e1 ->
-      system_pre v (system_of_exp e1 fv)
+      system_pre v (system_of_exp e1)
     | XThen e1 e2 ->
-      system_then (system_of_exp e1 fv) (system_of_exp e2 fv)
+      system_then (system_of_exp e1) (system_of_exp e2)
     | XMu _ e1 ->
-      let t = system_of_exp e1 fv in
+      let t = system_of_exp e1 in
       system_mu #(C.row 'c) #('a & C.row 'c) (fun i v -> (v, i)) t
     | XLet b e1 e2 ->
-      system_let (fun i v -> (v, i)) (system_of_exp e1 fv) (system_of_exp e2 fv)
+      system_let (fun i v -> (v, i)) (system_of_exp e1) (system_of_exp e2)
     // | XContract assm guar body arg ->
     //   system_contract_instance (fun i b -> (b, ())) (fun i a b -> (a, (b, ())))
-    //     (system_bool_holds (system_of_exp assm fv))
-    //     (system_bool_holds (system_of_exp guar fv))
-    //     (system_of_exp arg fv)
+    //     (system_bool_holds (system_of_exp assm))
+    //     (system_bool_holds (system_of_exp guar))
+    //     (system_of_exp arg)
     | XCheck name e1 e2 ->
-      let t1 = system_check name (system_of_exp e1 fv) in
-      let t2 = system_of_exp e2 fv in
+      let t1 = system_check name (system_of_exp e1) in
+      let t2 = system_of_exp e2 in
       let t': xsystem 'c (state_of_exp (XCheck name e1 e2)) 'a = system_let (fun i v -> i) t1 t2 in
       t'
