@@ -15,7 +15,7 @@ let rec open1' (#c: C.context) (e: exp c 'a) (n: C.index { C.has_index c n }) (x
       XVar x
     else
       (C.lemma_open_preserves_opt_index c n i;
-      XBVar (C.index_drop i n 1))
+      XBVar (C.index_drop i n))
   | XVar x' ->
     XVar x'
   | XApp f e -> XApp (open1' f n x) (open1' e n x)
@@ -37,7 +37,7 @@ let rec close1' (#c: C.context) (e: exp c 'a) (x: C.var 'b) (n: C.index { n <= L
   | XVal v -> XVal v
   | XBVar i ->
     C.lemma_close_preserves_opt_index c 'b n i;
-    XBVar (C.index_lift i n 1)
+    XBVar (C.index_lift i n)
   | XVar x' ->
     if C.var_eq x x'
     then
@@ -63,7 +63,7 @@ let rec lift1' (#c: C.context) (e: exp c 'a) (n: C.index { n <= List.Tot.length 
   | XVal v -> XVal v
   | XBVar i ->
     C.lemma_close_preserves_opt_index c t n i;
-    XBVar (C.index_lift i n 1)
+    XBVar (C.index_lift i n)
   | XVar x' ->
     XVar x'
   | XApp f e -> XApp (lift1' f n t) (lift1' e n t)
@@ -90,7 +90,7 @@ let rec subst1' (#c: C.context) (e: exp c 'a) (i: C.index { C.has_index c i }) (
     then payload
     else
       (C.lemma_open_preserves_opt_index c i i';
-      XBVar (C.index_drop i' i 1))
+      XBVar (C.index_drop i' i))
   | XVar x' -> XVar x'
   | XApp f e -> XApp (subst1' f i payload) (subst1' e i payload)
   | XFby v e -> XFby v (subst1' e i payload)
