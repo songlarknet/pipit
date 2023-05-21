@@ -65,7 +65,6 @@ let rec lemma_direct_dependency_not_subst' (i: C.index { C.has_index 'c i }) (i'
     // TODO requires extra lemma lemma_direct_dependency_lift p i 0 'a;
     assume (~ (direct_dependency (lift1 p 'a) (i + 1)));
     lemma_direct_dependency_not_subst' (i + 1) (i' + 1) e1 (lift1 p 'a)
-    // admit ()
   | _ -> admit ()
 
 (* used by lemma_bigstep_substitute_elim_XMu, indirectly by transition system proof *)
@@ -111,9 +110,6 @@ let rec lemma_bigstep_substitute_elim
       let hBSe1': bigstep rows se v' = hBSe1 in
       let hBSX = lemma_bigstep_substitute_elim i rows e vs (subst1 e1 (XMu e1)) v' hBSse hBSe1' in
       BSMu _ _ e1 _ hBSX
-      // let hBSe1': bigstep rows' (subst1 e1' (subst1' (XMu e1) i e)) v' = hBSe1 in
-      // let hBSe1' = lemma_bigstep_substitute_elim i rows vs _ _ hBSse hBSe1 in
-      // admit ()
     )
   | _ -> admit ()
 

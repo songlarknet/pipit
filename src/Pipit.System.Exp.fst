@@ -34,7 +34,7 @@ let rec state_of_exp (e: exp 'c 'a): Tot Type (decreases e) =
   | XThen e1 e2 -> system_then_state (state_of_exp e1) (state_of_exp e2)
   | XMu _ e1 -> state_of_exp e1
   | XLet b e1 e2 -> state_of_exp e1 & state_of_exp e2
-  // Contracts do not expose their body, so we only need state of assume, guarantee and arg
+  // Contracts do not expose their body, so we only need state of assumptions, guarantee and arg
   // | XContract assm guar body arg ->
   //   state_of_exp assm &
   //   state_of_exp guar &

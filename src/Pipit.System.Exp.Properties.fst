@@ -369,40 +369,67 @@ let rec dstepn_ok
 
 // #pop-options
 
-// let rec step_many_ok
-//   (#outer: nat { outer > 0 }) (#vars: nat)
-//   (e: exp { causal e /\ wf e vars })
-//   (streams: C.table outer vars)
-//   (vs: C.vector value outer)
-//   (hBS: bigstep streams e vs):
-//     Tot (s': state_of_exp e & u: unit { system_of_exp_invariant #(outer - 1) e streams vs hBS s' /\ xsystem_stepn #(outer - 1) #vars (system_of_exp e vars) streams vs s' }) (decreases outer) =
-//   match streams, vs with
-//   | C.Table [row], [v] ->
-//     let (| s, () |) = step0_ok e row v hBS in
-//     (| s, () |)
+let rec dstep_many_ok
+  (rows: list (C.row 'c) { Cons? rows })
+  (e: exp 'c 'a { causal e })
+  (vs: list 'a { List.Tot.length rows == List.Tot.length vs })
+  (hBSs: bigsteps rows e vs):
+    Tot (s': state_of_exp e { system_of_exp_invariant rows e s' }) (decreases rows) =
+  match hBSs with
+  | BSsS rows' e vs' r v hBSs' hBS ->
+    let t = dsystem_of_exp e in
+    (match rows' with
+    | [] ->
+      let (s', v') = t.step r t.init in
+      dstep0_ok r e v hBS;
+      s'
 
-//   | C.Table (r :: rs'), v :: vs' ->
-//     let (| s, () |) = step_many_ok e (C.Table #(outer - 1) rs') vs' (bigstep_monotone #(outer - 1) hBS) in
-//     let (| s', () |) = stepn_ok #(outer - 1) e r (C.Table #(outer - 1) rs') v vs' hBS s () in
-//     (| s', () |)
+    | _ ->
+      let s = dstep_many_ok rows' e vs' hBSs' in
+      let (s', v') = t.step r s in
+      dstepn_ok rows' r e v hBS s;
+      s')
+
+#pop-options
+#push-options "--fuel 2 --ifuel 1"
+
+let rec dstep_eval_complete'
+  (rvs: list (C.row 'c & 'a) { Cons? rvs })
+  (e: exp 'c 'a { causal e })
+  (hBSs: bigsteps (List.Tot.map fst rvs) e (List.Tot.map snd rvs)):
+    Tot (s': state_of_exp e { system_of_exp_invariant (List.Tot.map fst rvs) e s' /\ xsystem_stepn (system_of_dsystem (dsystem_of_exp e)) rvs s' }) (decreases rvs) =
+  let t = dsystem_of_exp e in
+  match hBSs with
+  | BSsS rows' e vs' r v hBSs' hBS ->
+    (match rows' with
+    | [] ->
+      let (s', v') = t.step r t.init in
+      dstep0_ok r e v hBS;
+      s'
+
+    | _ ->
+      let s = dstep_eval_complete' (List.Tot.tl rvs) e hBSs' in
+      let (s', v') = t.step r s in
+      dstepn_ok rows' r e v hBS s;
+      s')
+
+let dstep_eval_complete
+  (rvs: list (C.row 'c & 'a))
+  (e: exp 'c 'a { causal e })
+  (hBSs: bigsteps (List.Tot.map fst rvs) e (List.Tot.map snd rvs)):
+    Tot (s': state_of_exp e { xsystem_stepn (system_of_dsystem (dsystem_of_exp e)) rvs s' }) (decreases rvs) =
+  let t = dsystem_of_exp e in
+  match hBSs with
+  | BSs0 _ -> t.init
+  | BSsS rows' e vs' r v hBSs' hBS ->
+    dstep_eval_complete' rvs e hBSs
 
 // let system_eval_complete
-//   (#outer: nat { outer > 0 }) (#vars: nat)
-//   (e: exp { causal e /\ wf e vars })
-//   (streams: C.table outer vars)
-//   (vs: C.vector value outer)
-//   (hBS: bigstep streams e vs):
-//     Lemma (exists (s': state_of_exp e). xsystem_stepn #(outer - 1) #vars (system_of_exp e vars) streams vs s') =
-//   let (| s', () |) = step_many_ok e streams vs hBS in ()
-
-// let system_eval_complete
-//   (#outer: nat) (#vars: nat)
-//   (e: exp { causal e /\ wf e vars })
-//   (streams: C.table outer vars)
-//   (vs: C.vector value outer)
-//   (hBS: bigstep streams e vs):
-//     Lemma (exists (s': state_of_exp e). xsystem_stepn #outer #vars (system_of_exp e vars) streams vs s') =
-//   admit ()
+//   (rvs: list (C.row 'c & 'a))
+//   (e: exp 'c 'a { causal e })
+//   (hBS: bigsteps (List.Tot.map fst rvs) e (List.Tot.map snd rvs)):
+//     Lemma (exists (s': state_of_exp e). xsystem_stepn (system_of_dsystem (dsystem_of_exp e)) rvs s') =
+//   let s' = dstep_many_ok (List.Tot.map fst rvs) e (List.Tot.map snd rvs) hBS in ()
 
 // let system_eval_complete'
 //   (#outer: nat) (#vars: nat)

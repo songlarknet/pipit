@@ -47,14 +47,6 @@ let reset = XL.mk_reset system
    before returning the values.
    *)
 
-// [@@(Tac.postprocess_with XL.tac_extract)]
-// let step (inp: input) (stref: B.pointer state): ST output
-//     (requires (fun h -> B.live h stref))
-//     (ensures (fun h _ h' -> B.live h' stref)) =
-//   let res = XL.mk_step system (inp.estop, (inp.level_low, ())) stref in
-//   admit ()
-//   { sol_en = has_bit res Pump.solenoid_flag; nok_stuck = has_bit res Pump.stuck_flag }
-
 [@@(Tac.postprocess_with XL.tac_extract)]
 let step (inp: input) = XL.mk_step system (inp.estop, (inp.level_low, ()))
 
