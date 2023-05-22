@@ -128,7 +128,19 @@ let induct2_sound (#input #state #value: Type)
   with
     (induct2_sound' t inputs s)
 
-// TODO inductk_sound
+let induct_k_sound (k: nat) (#input #state #value: Type)
+  (t: system input state value):
+    Lemma
+        (requires induct_k k t)
+        (ensures system_holds t) =
+  introduce forall (inputs: list (input & value) { Cons? inputs }) (s: state { system_stepn t inputs s }).
+    (Cons? inputs) ==>
+    system_stepn t inputs s ==>
+    all_checks_hold t s
+  with
+    // TODO inductk_sound
+    admit ()
+
 
 (* Shelved: proof that properties proved for transition systems apply to original expression *)
 // open Pipit.Exp.Base

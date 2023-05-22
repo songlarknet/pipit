@@ -27,10 +27,10 @@ type exp (c: C.context) 'a =
 
   // Proof terms
   // Contracts for hiding implementation:
-  //   (λx. { assumes } body { λr. guarantees })(arg)
-  // LATER: assumes and guarantees should probably be in context c, so they can be CSEd with the main expression. body should be separate to allow separate codegen
+  //   (λx. { assumptions } body { λr. guarantees })(arg)
+  // LATER: assumptions and guarantees should probably be in context c, so they can be CSEd with the main expression. body should be separate to allow separate codegen
   // | XContract:
-  //          (assumes: exp ['b] xprop) ->
+  //          (assumptions: exp ['b] xprop) ->
   //          (guarantees: exp ['a; 'b] xprop) ->
   //          (body: exp ['b] 'a) ->
   //          (arg: exp c 'b) ->

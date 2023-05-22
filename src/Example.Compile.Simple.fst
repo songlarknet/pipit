@@ -17,14 +17,6 @@ module C = Pipit.Context
 // noextract
 // let arg0: Pipit.Exp.Base.exp [] bool = Pipit.Exp.Base.XVar arg0_x
 
-// noextract
-// let extract_context (i: bool): XX.extract_context = {
-//   fv = (fun x -> if C.Var?.v x = C.Var?.v arg0_x
-//               then (C.cheat_variables_assume_global x arg0_x; Some i)
-//               else None);
-// }
-
-
 (* We will translate the "count_when" node with a variable as input.
    We do not want the expression's internal representation to show up in the
    C code, so we mark it as noextract. *)

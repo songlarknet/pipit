@@ -9,17 +9,17 @@ type var (t: Type) =
   | Var: (v: nat) -> var t
 let index  = nat
 
-(* AXIOM: assume that all fresh name allocation doesn't reuse names!
+(* AXIOM: we trust that all fresh name allocation doesn't reuse names!
    We can't use decidable equality on two variables of different type variables
    (x: var 'a) and (x': var 'b) because equality on Type isn't decidable.
  *)
-let axiom_variables_assume_global (x: var 'a) (x': var 'b { Var?.v x = Var?.v x' }): Lemma ('a == 'b) =
+let axiom_variables_require_fresh_indices (x: var 'a) (x': var 'b { Var?.v x = Var?.v x' }): Lemma ('a == 'b) =
   admit ()
 
 let var_eq (x: var 'a) (x': var 'b):
   (eq: bool { eq <==> x === x' }) =
   if Var?.v x = Var?.v x'
-  then (axiom_variables_assume_global x x'; true)
+  then (axiom_variables_require_fresh_indices x x'; true)
   else false
 
 

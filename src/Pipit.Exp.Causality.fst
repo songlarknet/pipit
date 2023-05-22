@@ -43,27 +43,49 @@ let rec causal (e: exp 'c 'a): Tot bool (decreases e) =
 #push-options "--split_queries always"
 
 (* not used, but lemma_direct_dependency_not_subst' needs i' < i case *)
-let rec lemma_direct_dependency_lift (e: exp 'c 'a) (i: C.index { C.has_index 'c i }) (i': C.index { i < i' /\ i' <= List.Tot.length 'c }) (t: Type):
-    Lemma (ensures direct_dependency e i == direct_dependency (lift1' e i' t) i) (decreases e) =
+let rec lemma_direct_dependency_lift_ge (e: exp 'c 'a) (i: C.index { C.has_index 'c i }) (i': C.index { i >= i' /\ i' <= List.Tot.length 'c }) (t: Type):
+    Lemma (ensures direct_dependency e i == direct_dependency (lift1' e i' t) (i + 1)) (decreases e) =
   match e with
   | XVal _ | XVar _ | XBVar _ -> ()
+  | XApp e1 e2 ->
+    lemma_direct_dependency_lift_ge e1 i i' t;
+    lemma_direct_dependency_lift_ge e2 i i' t;
+    assert_norm (direct_dependency (XApp e1 e2) i == (direct_dependency e1 i || direct_dependency e2 i));
+    assert_norm (direct_dependency (lift1' (XApp e1 e2) i' t) (i + 1) == (direct_dependency (lift1' e1 i' t) (i + 1) || direct_dependency (lift1' e2 i' t) (i + 1)));
+    ()
+  | XFby _ e1 -> lemma_direct_dependency_lift_ge e1 i i' t
+  | XThen e1 e2 ->
+    lemma_direct_dependency_lift_ge e1 i i' t;
+    lemma_direct_dependency_lift_ge e2 i i' t
   | XMu _ e1 ->
-    lemma_direct_dependency_lift e1 (i + 1) (i' + 1) t
+    lemma_direct_dependency_lift_ge e1 (i + 1) (i' + 1) t
+  | XLet b e1 e2 ->
+    lemma_direct_dependency_lift_ge e1 i i' t;
+    lemma_direct_dependency_lift_ge e2 (i + 1) (i' + 1) t
+  | XCheck _ e1 e2 ->
+    lemma_direct_dependency_lift_ge e1 i i' t;
+    lemma_direct_dependency_lift_ge e2 i i' t
 
-  | _ -> admit ()
+// let rec lemma_direct_dependency_lift_lt (e: exp 'c 'a) (i: C.index { C.has_index 'c i }) (i': C.index { i < i' /\ i' <= List.Tot.length 'c }) (t: Type):
+//     Lemma (ensures direct_dependency e i == direct_dependency (lift1' e i' t) i) (decreases e) =
+//   match e with
+//   | XVal _ | XVar _ | XBVar _ -> ()
+//   | XMu _ e1 ->
+//     lemma_direct_dependency_lift_lt e1 (i + 1) (i' + 1) t
 
 (* used by lemma_bigstep_substitute_intros_no_dep *)
-let rec lemma_direct_dependency_not_subst' (i: C.index { C.has_index 'c i }) (i': C.index { C.has_index 'c i' /\ i' <= i })
+let rec lemma_direct_dependency_not_subst' (i: C.index) (i': C.index { C.has_index 'c i' /\ i' <= i })
   (e: exp 'c 'a { ~ (direct_dependency e (i + 1)) })
   (p: exp (C.drop1 'c i') (C.get_index 'c i') { ~ (direct_dependency p i ) }):
-    Lemma (ensures ~ (direct_dependency (subst1' e i' p) i)) (decreases e) =
+    Lemma
+      (requires (C.has_index (C.drop1 'c i') i))
+      (ensures ~ (direct_dependency (subst1' e i' p) i)) (decreases e) =
   match e with
   | XVal _ -> ()
   | XVar _ -> ()
   | XBVar _ -> ()
   | XMu _ e1 ->
-    // TODO requires extra lemma lemma_direct_dependency_lift p i 0 'a;
-    assume (~ (direct_dependency (lift1 p 'a) (i + 1)));
+    lemma_direct_dependency_lift_ge p i 0 'a;
     lemma_direct_dependency_not_subst' (i + 1) (i' + 1) e1 (lift1 p 'a)
   | _ -> admit ()
 
