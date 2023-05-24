@@ -55,3 +55,10 @@ let rec weaken (#c c': C.context) (e: exp c 'a): Tot (exp (C.append c c') 'a) (d
     XMu e1''
   | XLet b e1 e2 -> XLet b (weaken c' e1) (weaken c' e2)
   | XCheck name e1 e2 -> XCheck name (weaken c' e1) (weaken c' e2)
+
+
+let is_base_exp (e: exp 'c 'a): bool = match e with
+ | XVal _ | XVar _ | XBVar _ -> true
+ | _ -> false
+
+type base_exp (c: C.context) (a: Type) = e : exp c a { is_base_exp e }

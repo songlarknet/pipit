@@ -13,8 +13,7 @@ let index  = nat
    We can't use decidable equality on two variables of different type variables
    (x: var 'a) and (x': var 'b) because equality on Type isn't decidable.
  *)
-let axiom_variables_require_fresh_indices (x: var 'a) (x': var 'b { Var?.v x = Var?.v x' }): Lemma ('a == 'b) =
-  admit ()
+let axiom_variables_require_fresh_indices (x: var 'a) (x': var 'b { Var?.v x = Var?.v x' }): Lemma ('a == 'b) = admit ()
 
 let var_eq (x: var 'a) (x': var 'b):
   (eq: bool { eq <==> x === x' }) =
