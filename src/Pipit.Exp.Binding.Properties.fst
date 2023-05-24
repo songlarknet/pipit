@@ -264,6 +264,7 @@ let rec lemma_subst_subst_distribute_le (e: exp 'c 'a) (i1: C.index { C.has_inde
     //   (subst1' (subst1' e1 (i1 + 1) p1') (i2 + 1) p2') ==
     //   (subst1' (subst1' e1 (i2 + 2) (lift1' p2' (i1 + 1) (C.get_index ('a :: 'c) (i1 + 1)))) (i1 + 1) (subst1' p1' (i2 + 1) p2')));
     // ()
+    // TODO: finish proofs for subst-subst
     admit ()
   | XLet b e1 e2 ->
     admit ()

@@ -84,10 +84,28 @@ let rec lemma_direct_dependency_not_subst' (i: C.index) (i': C.index { C.has_ind
   | XVal _ -> ()
   | XVar _ -> ()
   | XBVar _ -> ()
+  | XApp e1 e2 ->
+    assert_norm (direct_dependency (XApp e1 e2) (i + 1) == (direct_dependency e1 (i + 1) || direct_dependency e2 (i + 1)));
+    lemma_direct_dependency_not_subst' i i' e1 p;
+    lemma_direct_dependency_not_subst' i i' e2 p;
+    assert_norm (subst1' (XApp e1 e2) i' p == XApp (subst1' e1 i' p) (subst1' e2 i' p));
+    assert_norm (direct_dependency (subst1' (XApp e1 e2) i' p) i == (direct_dependency (subst1' e1 i' p) i || direct_dependency (subst1' e2 i' p) i));
+    ()
+  | XFby v1 e2 ->
+    ()
+  | XThen e1 e2 ->
+    lemma_direct_dependency_not_subst' i i' e1 p;
+    lemma_direct_dependency_not_subst' i i' e2 p
   | XMu _ e1 ->
     lemma_direct_dependency_lift_ge p i 0 'a;
     lemma_direct_dependency_not_subst' (i + 1) (i' + 1) e1 (lift1 p 'a)
-  | _ -> admit ()
+  | XLet b e1 e2 ->
+    lemma_direct_dependency_not_subst' i i' e1 p;
+    lemma_direct_dependency_lift_ge p i 0 b;
+    lemma_direct_dependency_not_subst' (i + 1) (i' + 1) e2 (lift1 p b)
+  | XCheck _ e1 e2 ->
+    lemma_direct_dependency_not_subst' i i' e1 p;
+    lemma_direct_dependency_not_subst' i i' e2 p
 
 (* used by lemma_bigstep_substitute_elim_XMu, indirectly by transition system proof *)
 let rec lemma_bigstep_substitute_elim
@@ -117,6 +135,28 @@ let rec lemma_bigstep_substitute_elim
       (match hBSe' with
        | BSVar latest prefix ix ->
          BSVar latest' (List.Tot.tl rows') i')
+  | XApp e1 e2 ->
+    (match hBSe' with
+    | BSApp _ _ _ v1 v2 hBS1 hBS2 ->
+      assert_norm (subst1' (XApp e1 e2) i e == XApp (subst1' e1 i e) (subst1' e2 i e));
+      let hBS1' = lemma_bigstep_substitute_elim i rows e vs e1 v1 hBSse hBS1 in
+      let hBS2' = lemma_bigstep_substitute_elim i rows e vs e2 v2 hBSse hBS2 in
+      BSApp _ _ _ v1 v2 hBS1' hBS2')
+  | XFby v1 e2 ->
+    (match hBSe' with
+    | BSFby1 _ _ _ -> BSFby1 _ v1 e2
+    | BSFbyS latest prefix _ v2 _ hBS2 ->
+      let BSsS _ _ vs' _ _ hBSse' _ = hBSse in
+      let hBS2' = lemma_bigstep_substitute_elim i prefix e vs' e2 v2 hBSse' hBS2 in
+      BSFbyS latest' (List.Tot.tl rows') v1 v2 e2 hBS2')
+  | XThen e1 e2 ->
+    (match hBSe' with
+    | BSThen1 _ _ _ _ hBS1 ->
+      let hBS1' = lemma_bigstep_substitute_elim i rows e vs e1 v' hBSse hBS1 in
+      BSThen1 _ e1 e2 _ hBS1'
+    | BSThenS _ _ _ _ hBS2 ->
+      let hBS2' = lemma_bigstep_substitute_elim i rows e vs e2 v' hBSse hBS2 in
+      BSThenS _ e1 e2 _ hBS2')
   | XMu _ e1 ->
     (match hBSe' with
     | BSMu _ _ e1' _ hBSe1 ->
@@ -131,9 +171,18 @@ let rec lemma_bigstep_substitute_elim
       assert (subst1 (subst1' e1 (i + 1) lifted) (XMu e1') == subst1' (subst1 e1 (XMu e1)) i e);
       let hBSe1': bigstep rows se v' = hBSe1 in
       let hBSX = lemma_bigstep_substitute_elim i rows e vs (subst1 e1 (XMu e1)) v' hBSse hBSe1' in
-      BSMu _ _ e1 _ hBSX
-    )
-  | _ -> admit ()
+      BSMu _ _ e1 _ hBSX)
+  | XLet b e1 e2 ->
+    (match hBSe' with
+    | BSLet _ e1' e2' _ hBSe1' ->
+      lemma_subst_subst_distribute_le e2 0 i e1 e;
+      let hBSX = lemma_bigstep_substitute_elim i rows e vs (subst1 e2 e1) v' hBSse hBSe1' in
+      BSLet _ e1 e2 _ hBSX)
+  | XCheck p e1 e2 ->
+    (match hBSe' with
+    | BSCheck _ _ _ _ _ hBS1 ->
+      let hBS1' = lemma_bigstep_substitute_elim i rows e vs e2 v' hBSse hBS1 in
+      BSCheck _ p e1 e2 _ hBS1')
 
 (* used indirectly by lemma_bigstep_total *)
 let rec lemma_bigstep_substitute_intros_no_dep
