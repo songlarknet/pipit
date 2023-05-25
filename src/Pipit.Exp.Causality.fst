@@ -385,6 +385,16 @@ let rec lemma_bigstep_total
     | latest :: prefix ->
       let (| v', hBSe1 |) = lemma_bigstep_total prefix e1 in
       (| v', BSFbyS latest prefix v0 v' e1 hBSe1 |))
+  | XThen e1 e2 ->
+    (match rows with
+    | [_] ->
+      assert_norm (List.Tot.length rows == 1);
+      let (| v1, hBS1 |) = lemma_bigstep_total rows e1 in
+      (| v1, BSThen1 rows e1 e2 v1 hBS1 |)
+    | _ ->
+      assert_norm (List.Tot.length rows > 1);
+      let (| v2, hBS2 |) = lemma_bigstep_total rows e2 in
+      (| v2, BSThenS rows e1 e2 v2 hBS2 |))
 
   | XMu _ e1 ->
     let (| vs, hBSs |) = lemma_bigsteps_total tl e in
@@ -393,7 +403,16 @@ let rec lemma_bigstep_total
     let hBS' = lemma_bigstep_substitute_intros_XMu tl e1 vs hd v v' hBSs hBS0 in
     (| v, hBS' |)
 
-  | _ -> admit ()
+  | XCheck p e1 e2 ->
+    let (| v2, hBS2 |) = lemma_bigstep_total rows e2 in
+    (| v2, BSCheck rows p e1 e2 v2 hBS2 |)
+
+  | XLet b e1 e2 ->
+    let (| vs, hBSs |) = lemma_bigsteps_total rows e1 in
+    let (| v, hBS2 |) = lemma_bigstep_total (C.row_zip2_cons vs rows) e2 in
+    let hBS' = lemma_bigstep_substitute_intros 0 rows e1 vs e2 v hBSs hBS2 in
+    (| v, BSLet rows e1 e2 v hBS' |)
+
 and lemma_bigsteps_total
   (rows: list (C.row 'c)) (e: exp 'c 'a { causal e }):
     Tot (vs: list 'a { List.Tot.length vs == List.Tot.length rows } & bigsteps rows e vs) (decreases %[e; rows; 1]) =
