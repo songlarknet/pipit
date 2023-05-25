@@ -109,6 +109,7 @@ let lemma_subst1_XMu {| Pipit.Inhabited.inhabited 'a |} (e: exp ('a :: 'c) 'a) (
     ()
 
 #push-options "--fuel 1 --ifuel 0"
+private
 let lemma_lift_subst_distribute_le_XBVar (i: C.index { C.has_index 'c i }) (i1: C.index { C.has_index 'c i1 }) (i2: C.index { i2 <= i1 }) (t2: Type) (p: exp (C.drop1 'c i1) (C.get_index 'c i1)):
   Lemma (ensures (
     let e: exp 'c (C.get_index 'c i) = XBVar i in
@@ -169,12 +170,16 @@ let rec lemma_lift_subst_distribute_le (e: exp 'c 'a) (i1: C.index { C.has_index
     lemma_lift_subst_distribute_le e2 i1 i2 t2 p;
     ()
 
-let lemma_subst_subst_distribute_le_base (e: base_exp 'c 'a) (i1: C.index { C.has_index 'c i1 }) (i2: C.index { i1 <= i2 /\ i2 < List.Tot.length 'c - 1 }) (p1: exp (C.drop1 'c i1) (C.get_index 'c i1)) (p2: exp (C.drop1 (C.drop1 'c i1) i2) (C.get_index (C.drop1 'c i1) i2)):
-  Lemma (ensures
+let lemma_subst_subst_distribute_le_def (e: exp 'c 'a) (i1: C.index { C.has_index 'c i1 }) (i2: C.index { i1 <= i2 /\ i2 < List.Tot.length 'c - 1 }) (p1: exp (C.drop1 'c i1) (C.get_index 'c i1)) (p2: exp (C.drop1 (C.drop1 'c i1) i2) (C.get_index (C.drop1 'c i1) i2)) =
     C.lemma_drop_drop_commute 'c i1 i2;
     C.lemma_drop_get_index_lt 'c (i2 + 1) i1;
     subst1' (subst1' e i1 p1) i2 p2 ==
-    subst1' (subst1' e (i2 + 1) (lift1' p2 i1 (C.get_index 'c i1))) i1 (subst1' p1 i2 p2)) =
+    subst1' (subst1' e (i2 + 1) (lift1' p2 i1 (C.get_index 'c i1))) i1 (subst1' p1 i2 p2)
+
+private
+let lemma_subst_subst_distribute_le_base (e: base_exp 'c 'a) (i1: C.index { C.has_index 'c i1 }) (i2: C.index { i1 <= i2 /\ i2 < List.Tot.length 'c - 1 }) (p1: exp (C.drop1 'c i1) (C.get_index 'c i1)) (p2: exp (C.drop1 (C.drop1 'c i1) i2) (C.get_index (C.drop1 'c i1) i2)):
+  Lemma (ensures
+    lemma_subst_subst_distribute_le_def e i1 i2 p1 p2) =
   C.lemma_drop_drop_commute 'c i1 i2;
   C.lemma_drop_get_index_lt 'c (i2 + 1) i1;
   match e with
@@ -203,6 +208,88 @@ let lemma_subst_subst_distribute_le_base (e: base_exp 'c 'a) (i1: C.index { C.ha
       ()
     end
     else ()
+
+private
+let lemma_subst_XMu_unfold
+  {| Pipit.Inhabited.inhabited 'a |}
+  (e: exp ('a :: 'c) 'a) (i: C.index { C.has_index 'c i }) (p: exp (C.drop1 'c i) (C.get_index 'c i)):
+  Lemma (subst1' (XMu e) i p == XMu (subst1' e (i + 1) (lift1 p 'a))) = ()
+
+// #pop-options
+#push-options "--fuel 1 --ifuel 1"
+
+private
+let lemma_subst_subst_distribute_le_XMu
+  {| Pipit.Inhabited.inhabited 'a |}
+  (e: exp ('a :: 'c) 'a) (i1: C.index { C.has_index 'c i1 }) (i2: C.index { i1 <= i2 /\ i2 < List.Tot.length 'c - 1 }) (p1: exp (C.drop1 'c i1) (C.get_index 'c i1)) (p2: exp (C.drop1 (C.drop1 'c i1) i2) (C.get_index (C.drop1 'c i1) i2)):
+  Lemma
+    (requires (lemma_subst_subst_distribute_le_def e (i1 + 1) (i2 + 1) (_lift_of_drop i1 p1 'a) (_lift_of_drop i2 p2 'a)))
+    (ensures (lemma_subst_subst_distribute_le_def (XMu e) i1 i2 p1 p2)) =
+    let p1' = _lift_of_drop i1 p1 'a in
+    let p2' = _lift_of_drop i2 p2 'a in
+    lemma_lift_lift_commute p2 i1 0 (C.get_index 'c i1) 'a;
+    lemma_lift_subst_distribute_le p1 i2 0 'a p2;
+
+    C.lemma_lift_drop_commute_le (C.drop1 'c i1) i2 i1 (C.get_index 'c i1);
+    C.lemma_lift_drop_eq 'c i1;
+
+    assert (C.get_index ('a :: 'c) (i1 + 1) == C.get_index 'c i1);
+    assert (subst1' (subst1' (XMu e) i1 p1) i2 p2 ==
+      XMu (subst1' (subst1' e (i1 + 1) p1') (i2 + 1) p2'));
+
+    C.lemma_dropCons 'a 'c (i2 + 2);
+    C.lemma_dropCons 'a (C.drop1 'c (i2 + 1)) (i1 + 1);
+    assert ('a :: C.drop1 (C.drop1 'c (i2 + 1)) i1 == C.drop1 (C.drop1 ('a :: 'c) (i2 + 2)) (i1 + 1));
+    assert (C.get_index ('a :: 'c) (i2 + 2) == C.get_index ('a :: C.drop1 'c i1) (i2 + 1));
+    C.lemma_dropCons 'a 'c (i2 + 1);
+    C.lemma_dropCons 'a (C.drop1 'c i1) (i2 + 1);
+    // C.lemma_lift_drop_commute_le
+    assert (C.drop1 ('a :: 'c) (i2 + 2) == C.lift1 (C.drop1 ('a :: C.drop1 'c i1) (i2 + 1)) (i1 + 1) (C.get_index 'c i1));
+
+
+    C.lemma_drop_drop_commute 'c i1 i2;
+    C.lemma_drop_get_index_lt 'c (i2 + 1) i1;
+    assert (subst1' (subst1' e (i1 + 1) p1') (i2 + 1) p2' == subst1' (subst1' e (i2 + 2) (lift1' p2' (i1 + 1) (C.get_index 'c i1))) (i1 + 1) (subst1' p1' (i2 + 1) p2'));
+    assert (subst1' (subst1' (XMu e) i1 p1) i2 p2 == XMu (subst1' (subst1' e (i1 + 1) p1') (i2 + 1) p2'));
+    assert (XMu (coerce_eq () (subst1' (subst1' e (i1 + 1) p1') (i2 + 1) p2')) == XMu #(C.drop1 (C.drop1 'c (i2 + 1)) i1) (subst1' (subst1' e (i2 + 2) (lift1' p2' (i1 + 1) (C.get_index 'c i1))) (i1 + 1) (subst1' p1' (i2 + 1) p2')));
+
+    assert (subst1' (subst1' (XMu e) (i2 + 1) (lift1' p2 i1 (C.get_index 'c i1))) i1 (subst1' p1 i2 p2) ==
+            XMu (subst1' (subst1' e (i2 + 2) (lift1 (lift1' p2 i1 (C.get_index 'c i1)) 'a)) (i1 + 1) (lift1 (subst1' p1 i2 p2) 'a)));
+
+    assert (subst1' (subst1' (XMu e) i1 p1) i2 p2 == subst1' (subst1' (XMu e) (i2 + 1) (lift1' p2 i1 (C.get_index 'c i1))) i1 (subst1' p1 i2 p2));
+
+    ()
+
+// let i = ()
+//     assert_norm (subst1' (subst1' (XMu e) (i2 + 1) (lift1' p2 i1 (C.get_index 'c i1))) i1 (subst1' p1 i2 p2) ==
+//       subst1' (XMu (subst1' e ((i2 + 1) + 1) (lift1 (lift1' p2 i1 (C.get_index 'c i1)) 'a))) i1 (subst1' p1 i2 p2) ==
+//       XMu (subst1' (subst1' e ((i2 + 1) + 1) (lift1 (lift1' p2 i1 (C.get_index 'c i1)) 'a)) (i1 + 1) (lift1 (subst1' p1 i2 p2) 'a))
+//       );
+
+private
+let lemma_subst_subst_distribute_le_XLet
+  (e1: exp 'c 'b) (e2: exp ('b :: 'c) 'a) (i1: C.index { C.has_index 'c i1 }) (i2: C.index { i1 <= i2 /\ i2 < List.Tot.length 'c - 1 }) (p1: exp (C.drop1 'c i1) (C.get_index 'c i1)) (p2: exp (C.drop1 (C.drop1 'c i1) i2) (C.get_index (C.drop1 'c i1) i2)):
+  Lemma
+    (requires (lemma_subst_subst_distribute_le_def e1 i1 i2 p1 p2 /\
+               lemma_subst_subst_distribute_le_def e2 (i1 + 1) (i2 + 1) (_lift_of_drop i1 p1 'b) (_lift_of_drop i2 p2 'b)))
+    (ensures (lemma_subst_subst_distribute_le_def (XLet 'b e1 e2) i1 i2 p1 p2)) =
+    admit ()
+//   | XLet b e1 e2 ->
+//   //   lemma_lift_lift_commute p i2 0 t2 b;
+//   //   let p' = _lift_of_drop i1 p b in
+
+//   //   C.lemma_lift_get_index_gt 'c i1 0 b;
+//   //   C.lemma_lift_get_index_gt (b :: 'c) (i1 + 1) (i2 + 1) t2;
+
+//   //   C.lemma_lift_drop_commute_le 'c i1 i2 t2;
+
+//   //   lemma_subst_subst_distribute_le e1 i1 i2 t2 p;
+//   //   lemma_subst_subst_distribute_le e2 (i1 + 1) (i2 + 1) t2 p';
+
+//   //   ()
+//     // lemma_lift_lift_commute p2 x1 0;
+//     // lift_subst_distribute_le p1 p2 x2 0
+
 
 let rec lemma_subst_subst_distribute_le (e: exp 'c 'a) (i1: C.index { C.has_index 'c i1 }) (i2: C.index { i1 <= i2 /\ i2 < List.Tot.length 'c - 1 }) (p1: exp (C.drop1 'c i1) (C.get_index 'c i1)) (p2: exp (C.drop1 (C.drop1 'c i1) i2) (C.get_index (C.drop1 'c i1) i2)):
   Lemma (ensures
@@ -243,46 +330,13 @@ let rec lemma_subst_subst_distribute_le (e: exp 'c 'a) (i1: C.index { C.has_inde
     let p1' = _lift_of_drop i1 p1 'a in
     let p2' = _lift_of_drop i2 p2 'a in
     lemma_subst_subst_distribute_le e1 (i1 + 1) (i2 + 1) p1' p2';
-    lemma_lift_lift_commute p2 i1 0 (C.get_index 'c i1) 'a;
-    lemma_lift_subst_distribute_le p1 i2 0 'a p2;
-
-    C.lemma_lift_drop_commute_le (C.drop1 'c i1) i2 i1 (C.get_index 'c i1);
-    C.lemma_lift_drop_eq 'c i1;
-
-    // assert (C.get_index ('a :: 'c) (i1 + 1) == C.get_index 'c i1);
-    // assert (subst1' (subst1' (XMu e1) i1 p1) i2 p2 ==
-    //   XMu (subst1' (subst1' e1 (i1 + 1) p1') (i2 + 1) p2'));
-
-    // assert ('a :: C.drop1 (C.drop1 'c (i2 + 1)) i1 == C.drop1 (C.drop1 ('a :: 'c) (i2 + 2)) (i1 + 1));
-    // assert (C.get_index ('a :: 'c) (i2 + 2) == C.get_index ('a :: C.drop1 'c i1) (i2 + 1));
-    // assert (C.drop1 ('a :: 'c) (i2 + 2) == C.lift1 (C.drop1 ('a :: C.drop1 'c i1) (i2 + 1)) (i1 + 1) (C.get_index 'c i1));
-
-    // assert (subst1' (subst1' (XMu e1) (i2 + 1) (lift1' p2 i1 (C.get_index 'c i1))) i1 (subst1' p1 i2 p2) ==
-    //   XMu (subst1' (subst1' e1 (i2 + 2) (lift1' p2' (i1 + 1) (C.get_index 'c i1))) (i1 + 1) (subst1' p1' (i2 + 1) p2')));
-
-    // assert (
-    //   (subst1' (subst1' e1 (i1 + 1) p1') (i2 + 1) p2') ==
-    //   (subst1' (subst1' e1 (i2 + 2) (lift1' p2' (i1 + 1) (C.get_index ('a :: 'c) (i1 + 1)))) (i1 + 1) (subst1' p1' (i2 + 1) p2')));
-    // ()
-    // TODO: finish proofs for subst-subst
-    admit ()
+    lemma_subst_subst_distribute_le_XMu e1 i1 i2 p1 p2
   | XLet b e1 e2 ->
-    admit ()
-//   | XLet b e1 e2 ->
-//   //   lemma_lift_lift_commute p i2 0 t2 b;
-//   //   let p' = _lift_of_drop i1 p b in
-
-//   //   C.lemma_lift_get_index_gt 'c i1 0 b;
-//   //   C.lemma_lift_get_index_gt (b :: 'c) (i1 + 1) (i2 + 1) t2;
-
-//   //   C.lemma_lift_drop_commute_le 'c i1 i2 t2;
-
-//   //   lemma_subst_subst_distribute_le e1 i1 i2 t2 p;
-//   //   lemma_subst_subst_distribute_le e2 (i1 + 1) (i2 + 1) t2 p';
-
-//   //   ()
-//     // lemma_lift_lift_commute p2 x1 0;
-//     // lift_subst_distribute_le p1 p2 x2 0
+    let p1' = _lift_of_drop i1 p1 b in
+    let p2' = _lift_of_drop i2 p2 b in
+    lemma_subst_subst_distribute_le e1 i1 i2 p1 p2;
+    lemma_subst_subst_distribute_le e2 (i1 + 1) (i2 + 1) p1' p2';
+    lemma_subst_subst_distribute_le_XLet e1 e2 i1 i2 p1 p2
 
 let lemma_subst_subst_distribute_XMu {| Pipit.Inhabited.inhabited 'a |} (e: exp ('a :: 'c) 'a) (i: C.index { C.has_index 'c i }) (p: exp (C.drop1 'c i) (C.get_index 'c i)):
   Lemma (ensures

@@ -161,7 +161,7 @@ let rec lemma_bigstep_substitute_elim
     (match hBSe' with
     | BSMu _ _ e1' _ hBSe1 ->
       C.lemma_dropCons 'a 'c (i + 1);
-      // flaky:
+      // XXX flaky:
       assert (C.get_index ('a :: 'c) (i + 1) == C.get_index 'c i);
       assert (C.drop1 ('a :: 'c) (i + 1) == 'a :: C.drop1 'c ((i + 1) - 1));
       let lifted: exp (C.drop1 ('a :: 'c) (i + 1)) (C.get_index ('a :: 'c) (i + 1)) = lift1 e 'a in
