@@ -1,28 +1,25 @@
 (* Checking a simple example *)
-module Example.Check.Simple
-
-module Exp = Pipit.Exp.Base
+module Simple.Check
 
 open Pipit.System.Base
 open Pipit.System.Ind
 open Pipit.System.Exp
 
-module T = FStar.Tactics
-module Sugar = Pipit.SugarX4
-open Sugar
-
-let tac_nbe (): T.Tac unit = T.norm [primops; iota; delta; zeta; nbe]
+module T = Pipit.Tactics
+open Pipit.Sugar
 
 (*
-   count_when p =
-     let rec count =
+   Count the number of times a predicate has been true.
+
+   count_when p = count
+    where
+     count =
        (0 -> pre count) +
        (if p then 1 else 0)
 *)
-inline_for_extraction
 let count_when (p: s bool): s int =
  rec' (fun count ->
-   fby 0 count +^ (ite p z1 z0))
+   fby 0 count +^ (if_then_else p z1 z0))
 
 (* forall e. count_when false <= count_when e <= count_when true *)
 let count_when_prop (e: s bool): s unit =
@@ -37,7 +34,6 @@ let count_when_prop (e: s bool): s unit =
 let sys =
   system_of_exp (run1 count_when_prop)
 
-#push-options "--print_full_names --print_bound_var_types"
-let prove (fv: sem_freevars): Lemma (ensures induct1 (sys fv)) =
-  assert (base_case (sys fv)) by (tac_nbe (); T.dump "base");
-  assert (step_case (sys fv)) by (tac_nbe (); T.dump "step")
+let prove (): Lemma (ensures induct1 sys) =
+  assert (base_case sys) by (T.norm_full ());
+  assert (step_case sys) by (T.norm_full ())

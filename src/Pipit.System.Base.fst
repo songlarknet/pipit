@@ -128,6 +128,8 @@ let system_pre (#input #state1 #v: Type) (init: v)
     chck = map_checks fst t1.chck;
   }
 
+(* FRAGILE: this type is listed by name in Pipit.Tactics. The tactic needs to
+   know to break it apart. *)
 type system_then_state (state1 state2: Type) = {
   init: bool; s1: state1; s2: state2;
 }
@@ -183,22 +185,6 @@ let system_let (#input #input' #state1 #state2 #v1 #v2: Type)
         t2.step (extend i r1) s2 s2' r);
     chck = app_checks (map_checks fst t1.chck) (map_checks snd t2.chck);
   }
-
-// TODO UNIMPLEMENTED
-let system_contract_instance (#input #input_b #input_ab #state1 #state2 #state3 #a #b: Type)
-  (extend_a: input -> b -> input_b)
-  (extend_ab: input -> a -> b -> input_ab)
-  (assm: system input_b  state1 prop)
-  (guar: system input_ab state2 prop)
-  (arg:  system input    state3 b):
-       system input (state1 & state2 & state3) a =
-  // TODO no pattern match
-  { init = (fun (s1, s2, s3) -> assm.init s1 /\ guar.init s2 /\ arg.init s3);
-    step = (fun i (s1, s2, s3) (s1', s2', s3') r ->
-      exists (rb: b). True);
-    chck = [];
-  }
-
 
 let system_bool_holds (#input #state: Type) (t: system input state bool):
   system input state prop =

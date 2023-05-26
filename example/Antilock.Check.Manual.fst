@@ -1,4 +1,4 @@
-module Example.Manual.Antilock
+module Antilock.Check.Manual
 
 open FStar.Mul
 open FStar.Ref
@@ -82,7 +82,7 @@ let estimate_update_accuracy_degrades (i: inputs) (pre: estimate) (tol: speed):
 
 
 module Exp = Pipit.Exp.Base
-module Sugar = Pipit.SugarX4
+module Sugar = Pipit.Sugar
 
 let previously (e: Sugar.s bool): Sugar.s bool =
   let open Sugar in
@@ -132,21 +132,16 @@ open Pipit.System.Base
 open Pipit.System.Exp
 open Pipit.System.Ind
 open Pipit.System.Det
-module T = FStar.Tactics
-
-// let veh_speed_estimate': system
-
-let run (e: Sugar.s 'a) : Exp.exp [] 'a =
-  let (a, _) = e { fresh = 0 } in
-  a
+module T = Pipit.Tactics
 
 let sys =
-  system_of_exp (run (veh_speed_estimate (Sugar.m_pure (Exp.XVar (Pipit.Context.Var 100)))))
+  assert_norm (Pipit.Exp.Causality.causal (Sugar.run1 veh_speed_estimate));
+  system_of_exp (Sugar.run1 veh_speed_estimate)
 
 
-let prove (fv: sem_freevars): Lemma (ensures base_case (sys fv)) =
-  assert (base_case (sys fv)) by (T.norm [primops; iota; delta; zeta; nbe]; T.dump "");
-  assert (step_case (sys fv)) by (T.norm [primops; iota; delta; zeta; nbe]; T.dump "")
+let prove (): Lemma (ensures base_case sys) =
+  assert (base_case sys) by (T.norm_full (); T.dump "");
+  assert (step_case sys) by (T.norm_full (); T.dump "")
 
 let dsys': dsystem inputs (bool & speed & speed & prop) estimate =
   {
@@ -181,5 +176,5 @@ let dsys': dsystem inputs (bool & speed & speed & prop) estimate =
 let sys' = system_of_dsystem dsys'
 
 let prove' (): Lemma (ensures induct1 sys') =
-  assert (base_case sys') by (T.norm [primops; iota; delta; zeta; nbe]; T.dump "");
-  assert (step_case sys') by (T.norm [primops; iota; delta; zeta; nbe]; T.dump "")
+  assert (base_case sys') by (T.norm_full (); T.dump "");
+  assert (step_case sys') by (T.norm_full (); T.dump "")

@@ -1,5 +1,5 @@
 (* Checking our "pump" example *)
-module Example.Check.Pump
+module Pump.Check
 
 open Pipit.Exp.Base
 
@@ -7,10 +7,8 @@ open Pipit.System.Base
 open Pipit.System.Ind
 open Pipit.System.Exp
 
-module T = FStar.Tactics
-module Sugar = Pipit.SugarX4
-
-let tac_nbe (): T.Tac unit = T.norm [primops; iota; delta; zeta; nbe]
+module T = Pipit.Tactics
+module Sugar = Pipit.Sugar
 
 (*
    node min(
@@ -137,33 +135,37 @@ let pair a b =
     --          not level_low => not pump_en;
   tel
 *)
-let controller (estop level_low: Sugar.s bool) =
-  let open Sugar in
-  // XXX: nesting is not working properly, for some reason inlining lastn helps
-  let' (lastn settle_time (not_ estop /\ level_low)) (fun sol_try ->
-  let' (once (lastn stuck_time sol_try)) (fun nok_stuck ->
-  let' (sol_try /\ not_ nok_stuck) (fun sol_en ->
-  let' (pair sol_en nok_stuck) (fun result ->
-  check' "ESTOP OK" (estop => not_ sol_try) (
-  check' "LEVEL HIGH OK"   (not_ level_low => not_ sol_try) (
-    result))))))
+// let controller (estop level_low: Sugar.s bool) =
+//   let open Sugar in
+//   // XXX: nesting is not working properly, for some reason inlining lastn helps
+//   let' (lastn settle_time (not_ estop /\ level_low)) (fun sol_try ->
+//   let' (once (lastn stuck_time sol_try)) (fun nok_stuck ->
+//   let' (sol_try /\ not_ nok_stuck) (fun sol_en ->
+//   let' (pair sol_en nok_stuck) (fun result ->
+//   check' "ESTOP OK" (estop => not_ sol_try) (
+//   check' "LEVEL HIGH OK"   (not_ level_low => not_ sol_try) (
+//     result))))))
 
 let controller' (estop level_low: Sugar.s bool) =
   let open Sugar in
-  let' (countsecutive' (not_ estop /\ level_low)) (fun sol_try_c ->
-  let' (sol_try_c >=^ z settle_time) (fun sol_try ->
-  let' (countsecutive' sol_try) (fun nok_stuck_c ->
-  let' (once (nok_stuck_c >=^ z stuck_time)) (fun nok_stuck ->
-  let' (sol_try /\ not_ nok_stuck) (fun sol_en ->
-  let' (pair sol_en nok_stuck) (fun result ->
-  check' "ESTOP OK" (estop => not_ sol_try) (
-  check' "LEVEL HIGH OK"   (not_ level_low => not_ sol_try) (
+  let' (countsecutive' (not_ estop /\ level_low)) (fun sol_try_c   ->
+  let' (sol_try_c >=^ z settle_time)             (fun sol_try     ->
+  let' (countsecutive' sol_try)                  (fun nok_stuck_c ->
+  let' (once (nok_stuck_c >=^ z stuck_time))     (fun nok_stuck   ->
+  let' (sol_try /\ not_ nok_stuck)                (fun sol_en      ->
+  let' (pair sol_en nok_stuck)                   (fun result      ->
+  check' "ESTOP OK"      (estop => not_ sol_en) (
+  check' "LEVEL HIGH OK" (not_ level_low => not_ sol_en) (
     result))))))))
 
 let controller_prop =
+  assert_norm (Pipit.Exp.Causality.causal (Sugar.run2 controller'));
   system_of_exp (Sugar.run2 controller')
 
-let controller_prop_prove (fv: sem_freevars): Lemma (ensures induct1 (controller_prop fv)) =
-  assert (base_case (controller_prop fv)) by (tac_nbe (); T.dump "base");
-  assert (step_case (controller_prop fv)) by (tac_nbe (); T.dump "step");
+#push-options "--tactic_trace_d 3"
+
+let controller_prop_prove (): Lemma (ensures induct1 controller_prop) =
+  assert (base_case controller_prop) by (T.norm_full ());
+  assert (step_case controller_prop) by (T.norm_full ());
   ()
+

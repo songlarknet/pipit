@@ -1,6 +1,8 @@
-(* Reactive step semantics, similar to other Lustre semantics. TODO update to typed exprs*)
+(* Reactive step semantics, similar to other Lustre semantics.
+     Shelved: update to typed exprs*)
 module Pipit.Exp.ReactiveStep
 
+(*
 open Pipit.Exp.Base
 open Pipit.Exp.Subst
 
@@ -62,3 +64,5 @@ noeq type react (#inner: nat) (store: C.row inner): exp -> value -> exp -> Type 
         e1': exp   ->
         react (C.row_append (C.row1 v1) store) e1 v1 e1' ->
         react store (XMu e1) v1 (XMu e1')
+
+*)
