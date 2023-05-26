@@ -1,5 +1,5 @@
 (* Checking our "pump" example *)
-module Example.Check.Pump
+module Pump.Check
 
 open Pipit.Exp.Base
 
@@ -7,10 +7,8 @@ open Pipit.System.Base
 open Pipit.System.Ind
 open Pipit.System.Exp
 
-module T = FStar.Tactics
+module T = Pipit.Tactics
 module Sugar = Pipit.Sugar
-
-let tac_nbe (): T.Tac unit = T.norm [primops; iota; delta; zeta; nbe]
 
 (*
    node min(
@@ -161,9 +159,13 @@ let controller' (estop level_low: Sugar.s bool) =
     result))))))))
 
 let controller_prop =
+  assert_norm (Pipit.Exp.Causality.causal (Sugar.run2 controller'));
   system_of_exp (Sugar.run2 controller')
 
-let controller_prop_prove (fv: sem_freevars): Lemma (ensures induct1 (controller_prop fv)) =
-  assert (base_case (controller_prop fv)) by (tac_nbe (); T.dump "base");
-  assert (step_case (controller_prop fv)) by (tac_nbe (); T.dump "step");
+#push-options "--tactic_trace_d 3"
+
+let controller_prop_prove (): Lemma (ensures induct1 controller_prop) =
+  assert (base_case controller_prop) by (T.norm_full ());
+  assert (step_case controller_prop) by (T.norm_full ());
   ()
+

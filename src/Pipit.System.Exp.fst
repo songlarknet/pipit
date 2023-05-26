@@ -8,8 +8,6 @@ open Pipit.System.Det
 
 open Pipit.Exp.Base
 module Causal = Pipit.Exp.Causality
-// open Pipit.Exp.Bigstep
-// open Pipit.Exp.Causality
 
 (* A system we get from translating an expression *)
 let xsystem (c: C.context) (state: Type) (value: Type) = system (C.row c) state value
@@ -85,7 +83,7 @@ let rec dsystem_of_exp (e: exp 'c 'a { Causal.causal e }):
     let t': xdsystem 'c (state_of_exp (XCheck name e1 e2)) 'a = dsystem_let (fun i v -> i) t1 t2 in
     t'
 
-let rec system_of_exp (e: exp 'c 'a { Causal.causal e }):
+let rec system_of_exp_rel (e: exp 'c 'a { Causal.causal e }):
     Tot (xsystem 'c (state_of_exp e) 'a) (decreases e) =
   // if exp_is_function e then system_of_dsystem (dsystem_of_exp e)
   // else
@@ -95,26 +93,29 @@ let rec system_of_exp (e: exp 'c 'a { Causal.causal e }):
     | XVar x -> false_elim ()
     | XApp e1 e2 ->
       assert_norm (Causal.causal (XApp e1 e2) ==> (Causal.causal e1 && Causal.causal e2));
-      let t1 = system_of_exp e1 in
-      let t2 = system_of_exp e2 in
+      let t1 = system_of_exp_rel e1 in
+      let t2 = system_of_exp_rel e2 in
       let t': xsystem 'c (state_of_exp (XApp e1 e2)) 'a = system_ap2 t1 t2 in
       t'
     | XFby v e1 ->
-      system_pre v (system_of_exp e1)
+      system_pre v (system_of_exp_rel e1)
     | XThen e1 e2 ->
-      system_then (system_of_exp e1) (system_of_exp e2)
+      system_then (system_of_exp_rel e1) (system_of_exp_rel e2)
     | XMu _ e1 ->
-      let t = system_of_exp e1 in
+      let t = system_of_exp_rel e1 in
       system_mu #(C.row 'c) #('a & C.row 'c) (fun i v -> (v, i)) t
     | XLet b e1 e2 ->
-      system_let (fun i v -> (v, i)) (system_of_exp e1) (system_of_exp e2)
+      system_let (fun i v -> (v, i)) (system_of_exp_rel e1) (system_of_exp_rel e2)
     // | XContract assm guar body arg ->
     //   system_contract_instance (fun i b -> (b, ())) (fun i a b -> (a, (b, ())))
-    //     (system_bool_holds (system_of_exp assm))
-    //     (system_bool_holds (system_of_exp guar))
-    //     (system_of_exp arg)
+    //     (system_bool_holds (system_of_exp_rel assm))
+    //     (system_bool_holds (system_of_exp_rel guar))
+    //     (system_of_exp_rel arg)
     | XCheck name e1 e2 ->
-      let t1 = system_check name (system_of_exp e1) in
-      let t2 = system_of_exp e2 in
+      let t1 = system_check name (system_of_exp_rel e1) in
+      let t2 = system_of_exp_rel e2 in
       let t': xsystem 'c (state_of_exp (XCheck name e1 e2)) 'a = system_let (fun i v -> i) t1 t2 in
       t'
+
+let system_of_exp (e: exp 'c 'a { Causal.causal e }) =
+  system_of_dsystem (dsystem_of_exp e)

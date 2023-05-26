@@ -128,6 +128,8 @@ let system_pre (#input #state1 #v: Type) (init: v)
     chck = map_checks fst t1.chck;
   }
 
+(* FRAGILE: this type is listed by name in Pipit.Tactics. The tactic needs to
+   know to break it apart. *)
 type system_then_state (state1 state2: Type) = {
   init: bool; s1: state1; s2: state2;
 }
