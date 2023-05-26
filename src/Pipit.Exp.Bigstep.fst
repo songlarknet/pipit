@@ -6,6 +6,11 @@
    fully evaluates an expression to a value.
    The bigstep semantics feels a lot more functional (applicative), while the
    reactive step semantics better matches the actual streaming execution mode.
+
+   We prove that the semantics is deterministic here. The statement of
+   "progress" says that for every list of inputs there exists an output; this
+   property only holds for causal programs, so we prove it in the
+   `Pipit.Exp.Causality` module.
 *)
 module Pipit.Exp.Bigstep
 

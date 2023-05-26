@@ -1,4 +1,4 @@
-(* Shelved - translation to transition system proof *)
+(* Translation to transition system proof *)
 module Pipit.System.Exp.Properties
 
 module C = Pipit.Context

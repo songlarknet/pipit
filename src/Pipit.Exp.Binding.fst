@@ -1,4 +1,5 @@
-(* Manipulating bindings: opening, closing, substituting and lifting *)
+(* Manipulating bindings: opening, closing, substituting and lifting.
+   Properties about these functions are in `Pipit.Exp.Binding.Properties`. *)
 module Pipit.Exp.Binding
 
 open Pipit.Exp.Base

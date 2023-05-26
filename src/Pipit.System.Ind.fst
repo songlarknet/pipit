@@ -30,11 +30,10 @@ let rec base_case_k' (k: nat) (#input #state #value: Type) (t: system input stat
   | _ ->
     forall (i: input) (s: state) (r: value).
       t.step i s s' r ==>
-      base_case_k' (k - 1) t s check
+      base_case_k' (k - 1) t s (check /\ all_checks_hold t s')
 
-let rec base_case_k (k: nat) (#input #state #value: Type) (t: system input state value): prop =
-  (if k > 1 then base_case_k (k - 1) t else True) /\
-  (forall (s': state). base_case_k' k t s' (all_checks_hold t s'))
+let base_case_k (k: nat) (#input #state #value: Type) (t: system input state value): prop =
+  forall (s': state). base_case_k' k t s' True
 
 let step_case (#input #state #value: Type) (t: system input state value): prop =
   forall (i0 i1: input) (s0: state) (s1 s2: state) (r0 r1: value).
@@ -50,7 +49,7 @@ let rec step_case_k' (k: nat) (#input #state #value: Type) (t: system input stat
     step_case_k' (k - 1) t s check
 
 let step_case_k (k: nat) (#input #state #value: Type) (t: system input state value): prop =
-  forall (s': state). step_case_k' k t s' (all_checks_hold t s')
+  forall (s': state). step_case_k' (k + 1) t s' (all_checks_hold t s')
 
 let induct1 (#input #state #value: Type)
   (t: system input state value): prop =
@@ -102,6 +101,7 @@ let rec induct2_sound' (#input #state #value: Type)
         (decreases inputs) =
   match inputs with
   | [] -> ()
+  // TODO: XXX: this is no longer true! need extra requirement on system to be total / make progress.
   | [(i0, v0)] -> ()
   | [(i0, v0); (i1, v1)] -> ()
   | (i2,v2) :: (i1,v1) :: (i0,v0) :: ivs ->

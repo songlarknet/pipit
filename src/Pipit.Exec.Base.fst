@@ -1,4 +1,6 @@
-(* Definition of executable transition systems *)
+(* Definition of executable transition systems.
+   These systems are very simple and don't produce the best code, but Low* can
+   generate C code for them. *)
 module Pipit.Exec.Base
 
 (* Executable transition systems, with separate eval/update phases *)

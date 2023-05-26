@@ -1,48 +1,46 @@
+(* This is an example of an FIR filter. *)
 module Fir.Check
 
 open Pipit.Sugar
 
-open Pipit.System.Base
+// open Pipit.System.Base
 open Pipit.System.Ind
 open Pipit.System.Exp
 
 module T = Pipit.Tactics
 
-type sample = int
+open Pipit.Sugar.Real
 
-let rec fir (coeffs: list sample) (sig: s sample): s sample =
+let rec fir (coeffs: list real) (input: reals): reals =
   match coeffs with
-  | [] -> z0
-  | c :: coeffs' -> (sig *^ pure c) +^ fir coeffs' (fby 0 sig)
+  | [] -> pure 0.0R
+  | c :: coeffs' -> (input *. pure c) +. fir coeffs' (fby 0.0R input)
 
-let fir2_contract (n: nat) (cfg: list sample) (signal: s sample): s unit =
-  let out = fir cfg signal in
-  let ok  = signal <=^ z n in
-  check "contract"
-    (sofar ok => (out <=^ z (op_Multiply n 10)))
+let fir2 (input: reals): reals = fir [0.7R; 0.3R] input
 
-let fir2_prop n =
-  assert_norm (Pipit.Exp.Causality.causal (run1 (fir2_contract n [8; 2])));
-  system_of_exp (run1 (fir2_contract n [8; 2]))
+let bibo2 (n: pos) (signal: reals): s unit =
+  check "bibo" (sofar (abs signal <=. pure n) => (abs (fir2 signal) <=. pure n))
 
-let fir3_contract (cfg: list sample) (signal: s sample): s unit =
-  let out = fir cfg signal in
-  let ok  = signal <=^ z 100 in
-  check "contract"
-    (sofar ok => (out <=^ z 1000))
+let bibo2' n =
+  assert_norm (Pipit.Exp.Causality.causal (run1 (bibo2 n)));
+  system_of_exp (run1 (bibo2 n))
 
-let fir3_prop =
-  assert_norm (Pipit.Exp.Causality.causal (run1 (fir3_contract [7; 2; 1])));
-  system_of_exp (run1 (fir3_contract [7; 2; 1]))
-
-// #push-options "--tactic_trace_d 1"
-let fir_prop_prove (n: nat): Lemma (ensures induct1 (fir2_prop n)) =
-  assert (base_case (fir2_prop n)) by (T.norm_full (); T.pipit_simplify (); T.norm_full (); T.dump "base");
-  assert (step_case (fir2_prop n)) by (T.norm_full (); T.pipit_simplify (); T.norm_full (); T.dump "step");
+let proof2 (n: pos): Lemma (ensures induct1 (bibo2' n)) =
+  assert (base_case (bibo2' n)) by (T.pipit_simplify ());
+  assert (step_case (bibo2' n)) by (T.pipit_simplify ());
   ()
 
-#push-options "--tactic_trace_d 1"
-let fir3_prop_prove (): Lemma (induct1 fir3_prop) =
-  // assert (base_case (fir3_prop fv)) by (tac_nbe (); tac_intros_smash (); tac_nbe (); T.dump "base");
-  assert (step_case_k 2 fir3_prop) by (T.pipit_simplify' 10; T.dump "step");
-  admit ()
+let fir3 (input: reals): reals = fir [0.7R; 0.2R; 0.1R] input
+
+let bibo3 (n: pos) (signal: reals): s unit =
+  check "bibo" (sofar (abs signal <=. pure n) => (abs (fir3 signal) <=. pure n))
+
+let bibo3' n =
+  assert_norm (Pipit.Exp.Causality.causal (run1 (bibo3 n)));
+  system_of_exp (run1 (bibo3 n))
+
+let proof3 (n: pos): Lemma (ensures induct_k 2 (bibo3' n)) =
+  assert (base_case_k 2 (bibo3' n)) by (T.pipit_simplify ());
+  assert (step_case_k 2 (bibo3' n)) by (T.pipit_simplify ());
+  ()
+

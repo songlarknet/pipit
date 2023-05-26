@@ -1,3 +1,13 @@
+(* Causality is whether a program can be scheduled without depending on future
+   values. The causality check just requires any references to recursive binders
+   to be "guarded" by a delay.
+
+   The following is bad:
+   > rec x. x + 1             (XMu (XApp (+1) x))
+   But adding a delay fixes it:
+   > rec x. 0 fby (x + 1)     (XMu (XFby 0 (XApp (+1) x)))
+
+*)
 module Pipit.Exp.Causality
 
 open Pipit.Exp.Base
@@ -18,6 +28,14 @@ let rec direct_dependency (e: exp 'c 'a) (i: C.index) : Tot bool (decreases e) =
   | XFby _ _ -> false
   | XThen e1 e2 -> direct_dependency e1 i || direct_dependency e2 i
   | XMu _ e1 -> direct_dependency e1 (i + 1)
+  (* This is more restrictive than necessary. The following should work:
+     > rec x. let y = x + 1 in 0 fby y
+     Maybe the definition should allow `e1` to directly refer to `i` if `e2` does
+     not directly refer to `e1`:
+     > XLet b e1 e2 ->
+     >    (if direct_dependency e1 i then direct_dependency e2 0 else false) ||
+     >        direct_dependency e2 (i + 1)
+  *)
   | XLet b e1 e2 -> direct_dependency e1 i || direct_dependency e2 (i + 1)
   | XCheck name e1 e2 -> direct_dependency e1 i || direct_dependency e2 i
 

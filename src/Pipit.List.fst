@@ -1,3 +1,4 @@
+(* List helper lemmas *)
 module Pipit.List
 
 module L = FStar.List.Tot

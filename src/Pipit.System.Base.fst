@@ -30,9 +30,6 @@ type system (input: Type) (state: Type) (result: Type) = {
   chck: checks state;
 }
 
-(* A system with "oracles", which let us draw out the quantifiers to the top level *)
-// let osystem (input: Type) (oracle: Type) (state: Type) (result: Type) = system (input & oracle) state result
-
 let map_checks (#state #state': Type) (f: state' -> state) (chck: checks state): checks state' =
   List.Tot.map (fun (name, x) -> (name, (fun s -> x (f s)))) chck
 

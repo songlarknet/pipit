@@ -1,4 +1,9 @@
-(* Applicative syntax *)
+(* Syntactic sugar for writing nice-ish stream programs.
+   This module provides a type constructor for streams `s 'a` and combinators
+   for combining them together.
+   There are `run`, `run1` and `run2` functions for converting stream programs
+   to core expressions, but these should really be hidden...
+*)
 module Pipit.Sugar
 
 open Pipit.Exp.Base

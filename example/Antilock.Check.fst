@@ -1,7 +1,8 @@
-module Antilock.Check.Manual
+(* This is a simple (contrived?) example of vehicle speed estimation in an
+   antilock braking system. *)
+module Antilock.Check
 
 open FStar.Mul
-open FStar.Ref
 
 (* Distance in millimetres, because the wheel is 235mm *)
 type distance = int
@@ -128,6 +129,10 @@ let veh_speed_estimate (i: Sugar.s inputs): Sugar.s estimate =
      (within_tolerance <$> lo <*> hi <*> pure wheel_tolerance_speed)) (
   est)
 
+// TODO: we should have an invariant that bounds the accuracy of the estimate, something like:
+// let agree = within_tolerance lo hi accelerometer_tolerance in
+// previously agree => (within_tolerance lo hi (accelerometer_tolerance * count_when_previously agree))
+
 open Pipit.System.Base
 open Pipit.System.Exp
 open Pipit.System.Ind
@@ -140,41 +145,7 @@ let sys =
 
 
 let prove (): Lemma (ensures base_case sys) =
-  assert (base_case sys) by (T.norm_full (); T.dump "");
-  assert (step_case sys) by (T.norm_full (); T.dump "")
-
-let dsys': dsystem inputs (bool & speed & speed & prop) estimate =
-  {
-    init = (true, 0, 0, True);
-    step = (fun i (init, lo, hi, chk_accurate) ->
-        let front = i.wheel_front * wheel_circ / 1000 in
-        let rear  = i.wheel_rear  * wheel_circ / 1000 in
-        let min_vel = min front rear                    in
-        let max_vel = max front rear                    in
-
-        let ok    = within_tolerance i.wheel_front i.wheel_rear wheel_tolerance in
-
-        let lo' =
-            if ok
-            then min_vel
-            else ((if init then min_vel else lo) + i.accel_z - accelerometer_tolerance)
-        in
-        let hi' =
-            if ok
-            then min_vel
-            else ((if init then min_vel else hi) + i.accel_z + accelerometer_tolerance)
-        in
-        let chk_accurate': prop =
-          ok ==> within_tolerance lo' hi' wheel_tolerance_speed
-        in
-        ((false, lo', hi', chk_accurate'),
-          { speed_lo = lo'; speed_hi = hi' })
-      );
-    chck = [("chk_accurate", (fun (_, _, _, c) -> c))];
-  }
-
-let sys' = system_of_dsystem dsys'
-
-let prove' (): Lemma (ensures induct1 sys') =
-  assert (base_case sys') by (T.norm_full (); T.dump "");
-  assert (step_case sys') by (T.norm_full (); T.dump "")
+  // Using the pipit_simplify tactic is very slow here. Pipit_simplify is
+  // only really necessary for k-induction, so just use norm_full.
+  assert (base_case sys) by (T.norm_full ()); // by (T.pipit_simplify ());
+  assert (step_case sys) by (T.norm_full ())

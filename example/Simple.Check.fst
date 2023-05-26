@@ -32,6 +32,7 @@ let count_when_prop (e: s bool): s unit =
   pure ()))))))
 
 let sys =
+  assert_norm (Pipit.Exp.Causality.causal (run1 count_when_prop));
   system_of_exp (run1 count_when_prop)
 
 let prove (): Lemma (ensures induct1 sys) =

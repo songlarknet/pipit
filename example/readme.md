@@ -11,3 +11,4 @@ There is a video of the controller in action on [youtube](https://youtu.be/6Iybb
 
 ## Fir:
 Finite impulse response filter: see the [Fir.Check module](Fir.Check.fst).
+This checks a bounded-input-bounded-output property of a few tiny FIR filters.

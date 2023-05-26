@@ -1,4 +1,9 @@
-(* Manipulating bindings: opening, closing, substituting and lifting *)
+(* Properties about lifting and substitution.
+   The proofs here are quite involved. I think the theory for contexts needs to
+   be cleaned up a bit.
+   The main lemma we want is that substitution can be reordered a bit like:
+     (e0[x1 := e1])[x2 := e2] == (e0[x2 := e2])[x1 := e1[x2 := e2]]
+   *)
 module Pipit.Exp.Binding.Properties
 
 open Pipit.Exp.Base

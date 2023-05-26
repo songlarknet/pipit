@@ -12,7 +12,6 @@ open FStar.HyperStack.ST
 (* Tactic for normalizing *)
 let tac_extract () =
   Tac.norm [nbe; delta; primops; iota; zeta];
-  Tac.dump "ok";
   Tac.trefl ()
 
 inline_for_extraction

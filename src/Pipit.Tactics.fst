@@ -56,17 +56,16 @@ let rec tac_products (bs: list T.binder): T.Tac unit = match bs with
    let open FStar.List.Tot in
    let tm = T.binder_to_term b in
    let ty = T.type_of_binder b in
-   if type_is_unit ty
-   then begin
-     (try clear b with | _ -> ());
-     tac_products bs
-   end
-   else if type_is_product ty
+   // if type_is_unit ty
+   // then begin
+   //   (try clear b with | _ -> ());
+   //   tac_products bs
+   // end
+   // else
+   if type_is_product ty
    then begin
     T.destruct tm;
     let bs' = T.repeat T.intro in
-    T.rewrite_all_context_equalities bs';
-    T.norm [iota];
     let _ = T.trytac (fun () ->
       match List.Tot.rev bs' with
       | breq :: _ -> rewrite breq; clear breq; clear b
@@ -78,22 +77,26 @@ let rec tac_products (bs: list T.binder): T.Tac unit = match bs with
     tac_products bs
    end
 
-let tac_intros_smash (): T.Tac unit =
+(* For some reason, these guys need to be explicitly unfolded here *)
+let tac_tricky_unfolds (): T.Tac unit =
+    T.norm [
+           delta_fully ["Pipit.System.Ind.step_case_k'";
+                        "Pipit.System.Ind.base_case_k'";
+                        ];
+           zeta]
+
+(* Prove a transition system. We want to ensure that the translation
+   to transition system and all of the definitions are normalised
+   away. This turns out to be surprisingly simple, and we just
+   need to explicitly unfold a few definitions that are otherwise ignored
+   by the normalisation heuristics.
+   Breaking apart the products is sometimes helpful for debugging,
+   but doesn't seem to be necessary for actual proofs.
+   *)
+let pipit_simplify (): T.Tac unit =
   T.repeatseq (fun _ ->
-    let b = T.forall_intro () in
-    tac_products [b])
-
-(* Introduce foralls and try to simplify them *)
-let rec pipit_simplify' (n: nat): T.Tac unit =
-  match n with
-  | 0 -> ()
-  | _ ->
-    let open T in
     norm_full ();
-    try
-        let b = forall_intro () in
-        tac_products [b];
-        pipit_simplify' (n - 1)
-    with _ -> ()
-
-let pipit_simplify (): T.Tac unit = pipit_simplify' 5
+    tac_tricky_unfolds ();
+    let b = T.forall_intro () in
+    // tac_products [b];
+    ())
