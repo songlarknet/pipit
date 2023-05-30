@@ -91,55 +91,81 @@ let induct_k (k: nat) (#input #state #value: Type)
   (t: system input state value): prop =
     base_case_k k t /\ step_case_k k t
 
-let rec induct2_sound' (#input #state #value: Type)
-  (t: system input state value)
-  (inputs: list (input & value))
-  (s': state):
-    Lemma
-        (requires system_stepn t inputs s' /\ induct_k 2 t)
-        (ensures Nil? inputs \/ all_checks_hold t s')
-        (decreases inputs) =
-  match inputs with
-  | [] -> ()
-  // TODO: XXX: this is no longer true! need extra requirement on system to be total / make progress.
-  | [(i0, v0)] -> ()
-  | [(i0, v0); (i1, v1)] -> ()
-  | (i2,v2) :: (i1,v1) :: (i0,v0) :: ivs ->
-    eliminate exists (s0: state) (s1: state) (s2: state).
-      system_stepn t ivs s0 /\
-      t.step i0 s0 s1 v0 /\
-      t.step i1 s1 s2 v1 /\
-      t.step i2 s2 s' v2
-    returns all_checks_hold t s'
-    with h.
-      (induct2_sound' t ((i1, v1) :: (i0, v0) :: ivs) s2;
-      induct2_sound' t ((i0, v0) :: ivs) s1;
-      ())
+(* The current formulation of the base case makes it difficult to prove
+   that induction is sound. The issue is that base_case_k 2 has the shape:
+   >  forall s0 s1 s2.
+   >    t.init s0 /\
+   >    t.step s0 s1 /\
+   >    t.step s1 s2 /\
+   >    all_checks_hold s1 /\
+   >    all_checks_hold s2
 
-let induct2_sound (#input #state #value: Type)
-  (t: system input state value):
-    Lemma
-        (requires induct_k 2 t)
-        (ensures system_holds t) =
-  introduce forall (inputs: list (input & value) { Cons? inputs }) (s: state { system_stepn t inputs s }).
-    (Cons? inputs) ==>
-    system_stepn t inputs s ==>
-    all_checks_hold t s
-  with
-    (induct2_sound' t inputs s)
+   To prove induction is sound assuming base_case_k and step_case_k,
+   you want to show that for a single step s0 to s1, the checks
+   hold. But what do you instantiate s2 to in the above? This would
+   be easier for deterministic systems.
+   We could restate base_case_k 2 as something like:
 
-let induct_k_sound (k: nat) (#input #state #value: Type)
-  (t: system input state value):
-    Lemma
-        (requires induct_k k t)
-        (ensures system_holds t) =
-  introduce forall (inputs: list (input & value) { Cons? inputs }) (s: state { system_stepn t inputs s }).
-    (Cons? inputs) ==>
-    system_stepn t inputs s ==>
-    all_checks_hold t s
-  with
-    // TODO inductk_sound
-    admit ()
+   >  forall s0 s1.
+   >    t.init s0 /\
+   >    t.step s0 s1 /\
+   >    all_checks_hold s1 /\
+   >    forall s2.
+   >      t.step s1 s2 /\
+   >      all_checks_hold s2
+
+   But proving this for user programs would require the pipit_simplify tactic to
+   split apart the conjunctions, which it doesn't do right now.
+*)
+
+// let rec induct2_sound' (#input #state #value: Type)
+//   (t: system input state value)
+//   (inputs: list (input & value))
+//   (s': state):
+//     Lemma
+//         (requires system_stepn t inputs s' /\ induct_k 2 t)
+//         (ensures Nil? inputs \/ all_checks_hold t s')
+//         (decreases inputs) =
+//   match inputs with
+//   | [] -> ()
+//   | [(i0, v0)] -> ()
+//   | [(i0, v0); (i1, v1)] -> ()
+//   | (i2,v2) :: (i1,v1) :: (i0,v0) :: ivs ->
+//     eliminate exists (s0: state) (s1: state) (s2: state).
+//       system_stepn t ivs s0 /\
+//       t.step i0 s0 s1 v0 /\
+//       t.step i1 s1 s2 v1 /\
+//       t.step i2 s2 s' v2
+//     returns all_checks_hold t s'
+//     with h.
+//       (induct2_sound' t ((i1, v1) :: (i0, v0) :: ivs) s2;
+//       induct2_sound' t ((i0, v0) :: ivs) s1;
+//       ())
+
+// let induct2_sound (#input #state #value: Type)
+//   (t: system input state value):
+//     Lemma
+//         (requires induct_k 2 t)
+//         (ensures system_holds t) =
+//   introduce forall (inputs: list (input & value) { Cons? inputs }) (s: state { system_stepn t inputs s }).
+//     (Cons? inputs) ==>
+//     system_stepn t inputs s ==>
+//     all_checks_hold t s
+//   with
+//     (induct2_sound' t inputs s)
+
+// let induct_k_sound (k: nat) (#input #state #value: Type)
+//   (t: system input state value):
+//     Lemma
+//         (requires induct_k k t)
+//         (ensures system_holds t) =
+//   introduce forall (inputs: list (input & value) { Cons? inputs }) (s: state { system_stepn t inputs s }).
+//     (Cons? inputs) ==>
+//     system_stepn t inputs s ==>
+//     all_checks_hold t s
+//   with
+//     // TODO inductk_sound
+//     admit ()
 
 
 (* Shelved: proof that properties proved for transition systems apply to original expression *)

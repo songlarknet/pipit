@@ -11,19 +11,19 @@ FSTAR_MAYBE_ADMIT = $(if $(ADMIT),--admit_smt_queries true)
 
 FSTAR_NL_DISABLE  ?= --z3smtopt '(set-option :smt.arith.nl false)'
 FSTAR_ARITH_UNBOX ?= --smtencoding.l_arith_repr native --smtencoding.elim_box true
-FSTAR_PROOF_OPT   ?= $(FSTAR_NL_DISABLE) $(FSTAR_ARITH_UNBOX)
+# Disable FSTAR_NL_DISABLE and FSTAR_ARITH_UNBOX: for some reason this breaks the proof of lemma_lift_subst_distribute_le.
+FSTAR_PROOF_OPT   ?=
 
 FSTAR_INCLUDES	  ?= --include src --include example
-FSTAR_CACHE       ?= --cache_dir $(BUILD)/cache --cache_checked_modules
+FSTAR_CACHE       ?= --cache_dir $(BUILD)/cache --cache_checked_modules --already_cached Prims,FStar,LowStar
 FSTAR_HINTS       ?= --hint_dir $(BUILD)/hint --use_hints --record_hints --warn_error -333
 
-# Ignore warning about standard library already being checked...
-FSTAR_DEP_OPT     ?= $(FSTAR_INCLUDES) $(FSTAR_CACHE) --warn_error -321
+FSTAR_DEP_OPT     ?= $(FSTAR_INCLUDES) $(FSTAR_CACHE)
 
 FSTAR_EXTRA_OPT   ?=
 FSTAR_OPT		  ?= $(FSTAR_INCLUDES) $(FSTAR_PROOF_OPT) $(FSTAR_CACHE) $(FSTAR_EXTRA_OPT) $(FSTAR_MAYBE_ADMIT)
 
-FSTAR_SRCS = $(wildcard src/**.fst src/**.fsti example/**.fst exampke/**.fsti)
+FSTAR_SRCS = $(wildcard src/**.fst src/**.fsti example/**.fst example/**.fsti)
 
 .PHONY: all
 all: verify extract

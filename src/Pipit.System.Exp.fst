@@ -39,23 +39,6 @@ let rec state_of_exp (e: exp 'c 'a): Tot Type (decreases e) =
   //   state_of_exp arg
   | XCheck name e1 e2 -> (xprop & state_of_exp e1) & state_of_exp e2
 
-(* Can the expression be represented as a (non-relation) function?
-   This is true for most things, but contracts (which are not supported yet)
-   require a relation. *)
-// let rec exp_is_function (e: exp 'c 'a): Tot bool (decreases e) =
-//   Causal.causal e &&
-//   (match e with
-//   | XVal v -> true
-//   | XBVar x -> true
-//   | XVar x -> false
-//   | XApp f e -> exp_is_function f && exp_is_function e
-//   | XFby v e1 -> exp_is_function e1
-//   | XThen e1 e2 -> exp_is_function e1 && exp_is_function e2
-//   | XMu _ e1 -> exp_is_function e1
-//   | XLet b e1 e2 -> exp_is_function e1 && exp_is_function e2
-//   // | XContract assm guar body arg -> false
-//   | XCheck name e1 e2 -> exp_is_function e1 && exp_is_function e2)
-
 let rec dsystem_of_exp (e: exp 'c 'a { Causal.causal e }):
     Tot (xdsystem 'c (state_of_exp e) 'a) (decreases e) =
   match e with

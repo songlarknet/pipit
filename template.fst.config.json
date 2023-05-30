@@ -1,4 +1,4 @@
-{ "fstar_exe":"build/env/_opam/bin/fstar.exe",
-  "options":["--smt", "build/env/_opam/bin/z3", "--cache_dir", "build/cache"],
+{ "fstar_exe":"_opam/bin/fstar.exe",
+  "options":["--smt", "_opam/bin/z3", "--cache_dir", "build/cache"],
   "include_dirs":["src","example"]
 }

@@ -125,6 +125,8 @@ let rec lemma_direct_dependency_not_subst' (i: C.index) (i': C.index { C.has_ind
     lemma_direct_dependency_not_subst' i i' e1 p;
     lemma_direct_dependency_not_subst' i i' e2 p
 
+#push-options "--fuel 1 --ifuel 1"
+
 (* used by lemma_bigstep_substitute_elim_XMu, indirectly by transition system proof *)
 let rec lemma_bigstep_substitute_elim
   (i: C.index { i < List.Tot.length 'c })
@@ -179,11 +181,10 @@ let rec lemma_bigstep_substitute_elim
     (match hBSe' with
     | BSMu _ _ e1' _ hBSe1 ->
       C.lemma_dropCons 'a 'c (i + 1);
-      // XXX flaky:
-      assert (C.get_index ('a :: 'c) (i + 1) == C.get_index 'c i);
-      assert (C.drop1 ('a :: 'c) (i + 1) == 'a :: C.drop1 'c ((i + 1) - 1));
+      assert (C.drop1 ('a :: 'c) (i + 1) == 'a :: C.drop1 'c i);
       let lifted: exp (C.drop1 ('a :: 'c) (i + 1)) (C.get_index ('a :: 'c) (i + 1)) = lift1 e 'a in
-      assert (e1' == subst1' e1 (i + 1) lifted);
+      assert_norm (subst1' (XMu e1) i e == XMu (subst1' e1 (i + 1) lifted));
+
       let se: exp ('a :: C.drop1 'c i) 'a = e1' in
       let se: exp (C.drop1 'c i) 'a = subst1 e1' (XMu e1') in
       lemma_subst_subst_distribute_XMu e1 i e;
@@ -194,6 +195,12 @@ let rec lemma_bigstep_substitute_elim
   | XLet b e1 e2 ->
     (match hBSe' with
     | BSLet _ e1' e2' _ hBSe1' ->
+      C.lemma_dropCons b 'c (i + 1);
+      assert (C.drop1 (b :: 'c) (i + 1) == b :: C.drop1 'c i);
+      C.lemma_get_index_Cons b 'c i;
+      let lifted: exp (C.drop1 (b :: 'c) (i + 1)) (C.get_index (b :: 'c) (i + 1)) = lift1 e b in
+      assert_norm (subst1' (XLet b e1 e2) i e == XLet b (subst1' e1 i e) (subst1' e2 (i + 1) lifted));
+
       lemma_subst_subst_distribute_le e2 0 i e1 e;
       let hBSX = lemma_bigstep_substitute_elim i rows e vs (subst1 e2 e1) v' hBSse hBSe1' in
       BSLet _ e1 e2 _ hBSX)
@@ -224,7 +231,11 @@ let rec lemma_bigstep_substitute_intros
     then (let BSsS _ _ _ _ _ _ hBSe = hBSse in hBSe)
     else if i' < i
     then BSVar row rows' i'
-    else BSVar row rows' (i' - 1)
+    else (
+      C.lemma_drop_get_index_gt 'c i (i' - 1);
+      assert (C.opt_index (C.drop1 'c i) (i' - 1) == Some 'a);
+      assert_norm (subst1' (XBVar i') i e == XBVar #(C.drop1 'c i) #('a) (i' - 1));
+      BSVar row rows' (i' - 1))
   | XApp e1 e2 ->
     (match hBSe' with
     | BSApp _ _ _ v1 v2 hBS1 hBS2 ->
@@ -252,6 +263,7 @@ let rec lemma_bigstep_substitute_intros
     | BSMu inhabited _ _ _ hBSe1 ->
       let hBSX = lemma_bigstep_substitute_intros i rows e vs (subst1 e1 (XMu e1)) a hBSse hBSe1 in
       lemma_subst_subst_distribute_XMu e1 i e;
+      assert_norm (subst1' (XMu e1) i e == XMu (subst1' e1 (i + 1) (lift1 e 'a)));
       BSMu inhabited _ (subst1' e1 (i + 1) (lift1 e 'a)) _ hBSX)
   | XCheck p e1 e2 ->
     (match hBSe' with
@@ -263,7 +275,64 @@ let rec lemma_bigstep_substitute_intros
     | BSLet _ _ _ _ hBSX ->
       let hBSX' = lemma_bigstep_substitute_intros i rows e vs (subst1 e2 e1) a hBSse hBSX in
       lemma_subst_subst_distribute_le e2 0 i e1 e;
+      assert_norm (subst1' (XLet b e1 e2) i e == XLet b (subst1' e1 i e) (subst1' e2 (i + 1) (lift1 e b)));
       BSLet _ (subst1' e1 i e) (subst1' e2 (i + 1) (lift1 e b)) _ hBSX')
+
+#push-options "--fuel 1 --ifuel 0"
+
+let lemma_bigstep_substitute_intros_no_dep_XApp
+  (i: C.index { i < List.Tot.length 'c })
+  (rows: list (C.row (C.drop1 'c i)))
+  (e: exp (C.drop1 'c i) (C.get_index 'c i))
+  (vs: list (C.get_index 'c i) { List.Tot.length rows == List.Tot.length vs })
+  (e1': exp 'c ('b -> 'a))
+  (e2': exp 'c 'b)
+  (r: C.row (C.drop1 'c i))
+  (v: C.get_index 'c i)
+  (vf: ('b -> 'a))
+  (vb: 'b)
+  (hBSse: bigsteps rows e vs)
+  (hBS1': bigstep (r :: rows) (subst1' e1' i e) vf)
+  (hBS2': bigstep (r :: rows) (subst1' e2' i e) vb):
+    Tot (bigstep (r :: rows) (subst1' (XApp e1' e2') i e) (vf vb)) =
+      assert_norm (subst1' (XApp e1' e2') i e == XApp (subst1' e1' i e) (subst1' e2' i e));
+      BSApp _ _ _ vf vb hBS1' hBS2'
+
+let lemma_bigstep_substitute_intros_no_dep_XMu
+  {| Pipit.Inhabited.inhabited 'a |}
+  (i: C.index { i < List.Tot.length 'c })
+  (rows: list (C.row (C.drop1 'c i)))
+  (e: exp (C.drop1 'c i) (C.get_index 'c i))
+  (vs: list (C.get_index 'c i) { List.Tot.length rows == List.Tot.length vs })
+  (e1': exp ('a :: 'c) 'a)
+  (r: C.row (C.drop1 'c i))
+  (v: C.get_index 'c i)
+  (a: 'a)
+  (hBSse: bigsteps rows e vs)
+  (hBS1': bigstep (r :: rows) (subst1' (subst1 e1' (XMu e1')) i e) a):
+    Tot (bigstep (r :: rows) (subst1' (XMu e1') i e) a) =
+      lemma_subst_subst_distribute_XMu e1' i e;
+      assert_norm (subst1' (XMu e1') i e == XMu (subst1' e1' (i + 1) (lift1 e 'a)));
+      BSMu _ _ (subst1' e1' (i + 1) (lift1 e 'a)) _ hBS1'
+
+let lemma_bigstep_substitute_intros_no_dep_XLet
+  (i: C.index { i < List.Tot.length 'c })
+  (rows: list (C.row (C.drop1 'c i)))
+  (e: exp (C.drop1 'c i) (C.get_index 'c i))
+  (vs: list (C.get_index 'c i) { List.Tot.length rows == List.Tot.length vs })
+  (e1': exp 'c 'b)
+  (e2': exp ('b :: 'c) 'a)
+  (r: C.row (C.drop1 'c i))
+  (v: C.get_index 'c i)
+  (a: 'a)
+  (hBSse: bigsteps rows e vs)
+  (hBSX': bigstep (r :: rows) (subst1' (subst1 e2' e1') i e) a):
+    Tot (bigstep (r :: rows) (subst1' (XLet 'b e1' e2') i e) a) =
+      lemma_subst_subst_distribute_le e2' 0 i e1' e;
+      assert_norm (subst1' (XLet 'b e1' e2') i e == XLet 'b (subst1' e1' i e) (subst1' e2' (i + 1) (lift1 e 'b)));
+      BSLet _ (subst1' e1' i e) (subst1' e2' (i + 1) (lift1 e 'b)) _ hBSX'
+
+#pop-options
 
 (* used indirectly by lemma_bigstep_total *)
 let rec lemma_bigstep_substitute_intros_no_dep
@@ -285,15 +354,18 @@ let rec lemma_bigstep_substitute_intros_no_dep
     assert (i <> i');
     if i' < i
     then BSVar r rows i'
-    else BSVar r rows (i' - 1)
+    else (
+      C.lemma_drop_get_index_gt 'c i (i' - 1);
+      assert (C.opt_index (C.drop1 'c i) (i' - 1) == Some 'a);
+      assert_norm (subst1' (XBVar i') i e == XBVar #(C.drop1 'c i) #('a) (i' - 1));
+      BSVar r rows (i' - 1))
   | XApp e1 e2 ->
     (match hBSe' with
     | BSApp _ _ _ v1 v2 hBS1 hBS2 ->
       assert_norm (direct_dependency (XApp e1 e2) i == (direct_dependency e1 i || direct_dependency e2 i));
       let hBS1' = lemma_bigstep_substitute_intros_no_dep i rows e vs e1 r v v1 hBSse hBS1 in
       let hBS2' = lemma_bigstep_substitute_intros_no_dep i rows e vs e2 r v v2 hBSse hBS2 in
-      assert_norm (subst1' (XApp e1 e2) i e == XApp (subst1' e1 i e) (subst1' e2 i e));
-      BSApp _ _ _ v1 v2 hBS1' hBS2')
+      lemma_bigstep_substitute_intros_no_dep_XApp i rows e vs e1 e2 r v v1 v2 hBSse hBS1' hBS2')
   | XFby v0 e1 ->
     (match hBSe' with
     | BSFby1 _ _ _ -> BSFby1 [r] v0 (subst1' e1 i e)
@@ -314,28 +386,28 @@ let rec lemma_bigstep_substitute_intros_no_dep
     | BSMu inhabited _ _ _ hBSe1 ->
       lemma_direct_dependency_not_subst' i 0 e1 (XMu e1);
       C.lemma_dropCons 'a 'c (i + 1);
-      assert (C.get_index ('a :: 'c) (i + 1) == C.get_index 'c i);
+      C.lemma_get_index_Cons 'a 'c i;
       assert (C.drop1 ('a :: 'c) (i + 1) == 'a :: C.drop1 'c i);
-      // assert (C.get_index ('a :: 'c) (i + 1) == C.get_index 'c i);
-      // assert (C.drop1 ('a :: 'c) (i + 1) == 'a :: C.drop1 'c ((i + 1) - 1));
       let hBSX = lemma_bigstep_substitute_intros_no_dep i rows e vs (subst1 e1 (XMu e1)) r v a hBSse hBSe1 in
-      lemma_subst_subst_distribute_XMu e1 i e;
-      BSMu inhabited _ (subst1' e1 (i + 1) (lift1 e 'a)) _ hBSX)
+      lemma_bigstep_substitute_intros_no_dep_XMu i rows e vs e1 r v a hBSse hBSX)
   | XCheck p e1 e2 ->
     (match hBSe' with
     | BSCheck _ _ _ _ _ hBS2 ->
       let hBS2' = lemma_bigstep_substitute_intros_no_dep i rows e vs e2 r v a hBSse hBS2 in
       BSCheck _ p (subst1' e1 i e) (subst1' e2 i e) _ hBS2')
+
   | XLet b e1 e2 ->
     (match hBSe' with
     | BSLet _ _ _ _ hBSX ->
       lemma_direct_dependency_not_subst' i 0 e2 e1;
       C.lemma_dropCons b 'c (i + 1);
+      C.lemma_get_index_Cons b 'c i;
       assert (C.get_index (b :: 'c) (i + 1) == C.get_index 'c i);
       assert (C.drop1 (b :: 'c) (i + 1) == b :: C.drop1 'c i);
       let hBSX' = lemma_bigstep_substitute_intros_no_dep i rows e vs (subst1 e2 e1) r v a hBSse hBSX in
-      lemma_subst_subst_distribute_le e2 0 i e1 e;
-      BSLet _ (subst1' e1 i e) (subst1' e2 (i + 1) (lift1 e b)) _ hBSX')
+      lemma_bigstep_substitute_intros_no_dep_XLet i rows e vs e1 e2 r v a hBSse hBSX')
+
+  | _ -> false_elim ()
 
 (* used by transition system proof *)
 let lemma_bigstep_substitute_elim_XLet

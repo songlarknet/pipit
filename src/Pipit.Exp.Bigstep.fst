@@ -22,8 +22,8 @@ module C = Pipit.Context
 
 (* bigstep streams e v
 
- Bigstep semantics: in streaming history `streams`, which is a 2-dimensional table of
- `elts` elements and `vars` variables, the expression `e` evaluates to value `v`.
+ Bigstep semantics: in streaming history `streams`, which is a sequence of
+ environments, the expression `e` evaluates to value `v`.
  The stream history `streams` is in most-recent-first order.
  *)
 noeq

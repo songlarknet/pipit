@@ -3,3 +3,4 @@ build/
 .fst.config.json
 .vscode/
 *.DS_Store
+_opam

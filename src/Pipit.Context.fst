@@ -129,6 +129,9 @@ let lemma_liftCons (c0: Type) (c': context) (i: index { 0 < i /\ i <= List.lengt
         = // [SMTPat (lift1 (c0 :: c') i t)] =
   ()
 
+let lemma_get_index_Cons (c0: Type) (c': context) (i1: index { has_index c' i1 }):
+  Lemma (ensures (get_index (c0 :: c') (i1 + 1) == get_index c' i1)) = ()
+
 let rec lemma_open_preserves_opt_index (c: context) (n: index { has_index c n }) (i: index { i <> n }): Lemma (opt_index c i == opt_index (open1' c n) (index_drop i n)) =
   match c with
   | [] -> ()
