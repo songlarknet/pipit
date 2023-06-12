@@ -28,7 +28,10 @@ FSTAR_SRCS = $(wildcard src/**.fst src/**.fsti example/**.fst example/**.fsti)
 .PHONY: all
 all: verify extract
 
-$(BUILD)/deps.mk: $(FSTAR_SRCS)
+$(BUILD)/deps.mk.rsp:
+	@mkdir -p $(BUILD)
+
+$(BUILD)/deps.mk: $(BUILD)/deps.mk.rsp $(FSTAR_SRCS)
 	@echo "* Updating dependencies"
 	@true $(shell rm -f $@.rsp) $(foreach f,$(FSTAR_SRCS),$(shell echo $(f) >> $@.rsp))
 	$(Q)$(FSTAR_EXE) $(FSTAR_DEP_OPT) --dep full @$@.rsp > $@.tmp

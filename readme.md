@@ -35,10 +35,14 @@ Karamel can be installed from source at [karamel on github](https://github.com/F
 ### Dependency installation
 
 The following script should set up an environment.
-Make sure you have [opam](https://opam.ocaml.org/) installed.
+Make sure you have [opam](https://opam.ocaml.org/) and some version of Python 2 installed.
+Unfortunately, the latest release of Ubuntu (23.04) does not include any packages for Python 2, so you'll have to install it manually (see below).
 Run this from the Pipit directory:
 
 ``` sh
+# Make sure the opam index is up-to-date
+opam update
+
 # Create a local opam switch with OCaml 4.14
 opam switch create . 4.14.1
 
@@ -47,6 +51,32 @@ opam pin add fstar --dev-repo --no-action
 
 # Tell opam where to find the local repo for Karamel and install it and F*
 opam pin add karamel --dev-repo --yes
+```
+#### Modern Linux (no Python 2.7)
+
+The opam package for the Z3 SMT solver requires Python 2.7.
+Unfortunately, the latest release of Ubuntu (23.04) no longer includes packages for Python 2.
+I had the most luck installing from source.
+Run the following in a temporary directory in which you'd like to build Python:
+
+```
+cd $TMP
+wget https://www.python.org/ftp/python/2.7.16/Python-2.7.16.tgz
+tar xvzf Python-2.7.16.tgz
+cd Python-2.7.16
+./configure --enable-optimizations
+make -j8
+sudo make install
+```
+
+Then, you can install Z3 and other dependencies as follows.
+The `--no-depexts` flag is important: it tells opam not to care that the `python-2.7` apt package is missing.
+```
+cd $PIPIT
+opam update
+opam switch create . 4.14.1
+opam pin add fstar --dev-repo --no-action
+opam pin add karamel --dev-repo --yes --no-depexts
 ```
 
 ### IDE configuration
