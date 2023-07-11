@@ -12,21 +12,27 @@
  to write programs in, but it's difficult to do deep transforms such as CSE. *)
 module Pipit.Prim.Table
 
-let funty (t: eqtype) = list t & t
+type funty (valty: eqtype) =
+ | FTVal: t: valty -> funty valty
+ | FTFun: t: valty -> rest: funty valty -> funty valty
 
-let rec funty_sem' (#typ: eqtype) (typ_sem: typ -> Type) (args: list typ) (ret: typ) =
-  match args with
-  | a :: args' -> typ_sem a -> funty_sem' typ_sem args' ret
-  | [] -> typ_sem ret
-
-let funty_sem (#typ: eqtype) (typ_sem: typ -> Type) (tys: funty typ) =
-  funty_sem' typ_sem (fst tys) (snd tys)
+let rec funty_sem (#typ: eqtype) (typ_sem: typ -> Type) (ft: funty typ) =
+  match ft with
+  | FTVal t -> typ_sem t
+  | FTFun t r -> typ_sem t -> funty_sem typ_sem r
 
 noeq
 type table = {
   typ:        eqtype;
-  typ_sem:    typ -> Type;
+  typ_sem:    typ -> eqtype;
   prim:       eqtype;
-  prim_types: prim -> (list typ & typ);
-  prim_sem:   (p: prim) -> funty_sem typ_sem (prim_types p);
+  prim_types: prim -> funty typ;
+  prim_sem:   p: prim -> funty_sem typ_sem (prim_types p);
+  // val_eq_dec: t: typ -> a: typ_sem t -> b: typ_sem t -> eq: bool { eq <==> a == b }
+
+  (* Default or bottom: some interpretations of recursive expressions need an
+    initial value just to seed the computation, even though the value will
+    never be inspected. When we support interesting refinements, we will
+    probably only want to provide bottom for unrefined base types. *)
+  val_default: t: typ -> typ_sem t
 }

@@ -8,7 +8,6 @@ module Pipit.Prim.Vanilla
 open Pipit.Prim.Table
 module R = FStar.Real
 
-
 type valtype =
  | TBool: valtype
  | TInt:  valtype
@@ -118,3 +117,10 @@ let prim_sem (p: prim): funty_sem typ_sem (prim_types p) = match p with
  | P'T p' a b -> prim_tup_sem p' a b
  | P'V p' a   -> prim_valtype_sem p' a
 
+let table: table = {
+   typ        = valtype;
+   typ_sem    = typ_sem;
+   prim       = prim;
+   prim_types = prim_types;
+   prim_sem   = prim_sem;
+}
