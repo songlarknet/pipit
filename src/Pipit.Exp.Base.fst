@@ -1,29 +1,32 @@
 (* Definition of base expression type *)
 module Pipit.Exp.Base
 module C = Pipit.Context
+open Pipit.Prim.Table
 open Pipit.Inhabited
 
 (* LATER: restrict "properties" to booleans for now to avoid universe stuff *)
 type xprop = bool
 
 noeq
-type exp (c: C.context) 'a =
+type exp (t: table) (c: C.context t.typ): funty t.typ -> Type =
   // v
-  | XVal   : 'a -> exp c 'a
+  | XVal   : a: t.typ -> v: t.typ_sem a -> exp t c (FTVal a)
   // bound variable (de Bruijn index)
-  | XBVar  : (i: C.index { C.opt_index c i == Some 'a }) -> exp c 'a
+  | XBVar  : a: t.typ -> i: C.index { C.opt_index c i == Some (t.typ_sem a) } -> exp t c (FTVal a)
   // free variables
-  | XVar   : (x: C.var 'a) -> exp c 'a
+  | XVar   : a: t.typ -> x: C.var a -> exp t c (FTVal a)
+  // primitives
+  | XPrim  : p: t.prim -> exp t c (t.prim_types p)
   // f(e,...)
-  | XApp   : exp c ('b -> 'a) -> exp c 'b -> exp c 'a
+  | XApp   : arg: t.typ -> ret: funty t.typ -> exp t c (FTFun arg ret) -> exp t c [] (FTVal arg) -> exp t c ret
   // v fby e
-  | XFby   : 'a -> exp c 'a -> exp c 'a
+  | XFby   : a: t.typ -> v: a -> exp t c (FTVal a) -> exp t c (FTVal a)
   // e -> e'
-  | XThen  : exp c 'a -> exp c 'a -> exp c 'a
+  | XThen  : a: t.typ -> exp c (FTVal a) -> exp c (FTVal a) -> exp c (FTVal a)
   // µx. e[x]
-  | XMu    : {| inhabited 'a |} -> exp ('a :: c) 'a -> exp c 'a
+  | XMu    : a: t.typ -> exp (a :: c) (FTVal a) -> exp c (FTVal a)
   // let x = e in e[x]
-  | XLet   : (b: Type) -> exp c b -> exp (b :: c) 'a -> exp c 'a
+  | XLet   : a: t.typ -> b: t.typ -> exp c (FTVal b) -> exp (b :: c) (FTVal a) -> exp c (FTVal a)
 
   // Proof terms
   // Contracts for hiding implementation:
