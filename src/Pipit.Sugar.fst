@@ -6,198 +6,98 @@
 *)
 module Pipit.Sugar
 
+open Pipit.Prim.Vanilla
+
 open Pipit.Exp.Base
 open Pipit.Exp.Binding
-open Pipit.Inhabited
 
-module C = Pipit.Context
+module C  = Pipit.Context.Base
 
-module Pure = FStar.Monotonic.Pure
+module S = Pipit.Sugar.Base
 
-type state = {
-  fresh: nat;
-}
+module R = FStar.Real
 
-type m (a: Type) =
-  s: state -> (a & state)
+type s (t: valtype) = S.s table t
+type bools = s TBool
+type ints = s TInt
 
-type s (a: Type) = m (exp [] a)
+let run (#a: valtype) (e: s a) : val_exp table [] a = S.run e
+let run1 (#a #b: valtype) (f: s a -> s b) : val_exp table [a] b = S.run1 f
+let run2 (#a #b #c: valtype) (f: s a -> s b -> s c) : val_exp table [a; b] c = S.run2 f
 
-let m_pure (#a: Type) (x: a): m a =
-  fun s -> (x, s)
+let pure (#t: valtype) (v: table.ty_sem t): s t = S.pure v
 
-let fresh' (t: Type): m (C.var t) =
-  (fun s ->
-    let x = s.fresh in
-    (C.Var x), { fresh = x + 1 })
+// LATER: explicit let' should not be necessary once we have CSE / sharing recovery
+let let' (#a #b: valtype) (e: s a) (f: s a -> s b) = S.let' e f
 
-let fresh (t: Type): s t =
-  (fun s ->
-    let (x, s') = fresh' t s in
-    (XVar x, s'))
+let rec' (#a: valtype) (f: s a -> s a): s a = S.rec' f
 
-let run (e: s 'a) : exp [] 'a =
-  let (a, _) = e { fresh = 0 } in
-  a
+let check' (#a: valtype) (name: string) (e: bools) (f: s a): s a =
+  S.check' name e f
 
-let run1 (f: s 'a -> s 'b) : exp ['a] 'b =
-  let (ax, s) = fresh' 'a { fresh = 0 } in
-  let a       = XVar ax in
-  let (b,  s) = f (m_pure a) s in
-  close1 b ax
+let fby (#a: valtype) (v: ty_sem a) (e: s a): s a = S.fby v e
+let pre (#a: valtype) (e: s a): s a = S.pre e
+let (-->) (#a: valtype) (e1 e2: s a): s a = S.(e1 --> e2)
 
-let run2 (f: s 'a -> s 'b -> s 'c) : exp ['a; 'b] 'c =
-  let s       = { fresh = 0 } in
-  let (ax, s) = fresh' 'a s in
-  let (bx, s) = fresh' 'b s in
-  let a       = XVar ax in
-  let b       = XVar bx in
-  let (c,  s) = f (m_pure a) (m_pure b) s in
-  close1 (close1 c bx) ax
 
-let let'
-  (e: s 'a)
-  (f: s 'a -> s 'b):
-    s 'b =
-  (fun s ->
-    let (xvar, s) = fresh' 'a s in
-    let evar = XVar xvar in
-    let (e, s) = e s in
-    let (e', s) = f (m_pure evar) s in
-    (XLet 'a e (close1 e' xvar), s))
+let tt: bools = pure true
+let ff: bools = pure false
 
-let rec'
-  {| inhabited 'a |}
-  (f: s 'a -> s 'a):
-    s 'a =
-  (fun s ->
-    let (xvar, s) = fresh' 'a s in
-    let evar = XVar xvar in
-    let (e', s) = f (m_pure evar) s in
-    (XMu (close1 e' xvar), s))
-
-let check'
-  (name: string)
-  (e: s bool)
-  (f: s 'a):
-    s 'a =
-  (fun s ->
-    let (e, s) = e s in
-    let (f, s) = f s in
-    (XCheck name e f, s))
-
-let check
-  (name: string)
-  (e: s bool):
-    s unit =
-  check' name e (m_pure (XVal ()))
-
-let pure (a: 'a): s 'a =
-  m_pure (XVal a)
-
-let (<$>)
-  (f: ('a -> 'b))
-  (a: s 'a):
-      s 'b =
-  (fun s ->
-    let (a, s) = a s in
-    (XApp (XVal f) a, s))
-
-let (<*>)
-  (f: s ('a -> 'b))
-  (a: s 'a):
-      s 'b =
-  (fun s ->
-    let (f, s) = f s in
-    let (a, s) = a s in
-    (XApp f a, s))
-
-let liftA1
-  (f: ('a -> 'b))
-  (a: s 'a):
-      s 'b =
-  f <$> a
-
-let liftA2
-  (f: ('a -> 'b -> 'c))
-  (a: s 'a)
-  (b: s 'b):
-      s 'c =
-  f <$> a <*> b
-
-let liftA3
-  (f: ('a -> 'b -> 'c -> 'd))
-  (a: s 'a)
-  (b: s 'b)
-  (c: s 'c):
-      s 'd =
-  f <$> a <*> b <*> c
-
-let tt: s bool = pure true
-let ff: s bool = pure false
-
-let z (i: int): s int = pure i
+let z (i: int): ints = S.pure i
 let z0 = z 0
 let z1 = z 1
 
-(* Working with booleans *)
-let (/\) = liftA2 (fun x y -> if x then y else false)
-let (\/) = liftA2 (fun x y -> if x then true else y)
-let (=>) = liftA2 (fun x y -> if x then y else true)
+let zero (#t: arithtype): s t = match t with
+ | TInt  -> z0
+ | TReal -> pure R.zero
 
-let op_Negation = liftA1 not
-let (!^) = liftA1 not
-let not_ = liftA1 not
+(* Working with booleans *)
+let (/\): bools -> bools -> bools = S.liftP2 (P'B P'B'And)
+let (\/): bools -> bools -> bools = S.liftP2 (P'B P'B'Or)
+let (=>): bools -> bools -> bools = S.liftP2 (P'B P'B'Implies)
+
+let op_Negation: bools -> bools = S.liftP1 (P'B P'B'Not)
+let (!^) = op_Negation
+let not_ = op_Negation
 
 (* Arithmetic operators, "^" suffix means "lifted" but unfortunately boolean operators such as /\^ do not parse *)
-let (=^) (#t: eqtype) (a b: s t): s bool = liftA2 (fun x y -> x = y) a b
+let (=^) (#t: valtype): s t -> s t -> bools = S.liftP2 (P'V P'V'Eq t)
+let (<>^) (#t: valtype): s t -> s t -> bools = S.liftP2 (P'V P'V'Ne t)
 
-let (<>^) (#t: eqtype) (a b: s t): s bool = !^ (a =^ b)
+let (+^) (#t: arithtype): s t -> s t -> s t = S.liftP2 (P'A P'A'Add t)
+let (-^) (#t: arithtype): s t -> s t -> s t = S.liftP2 (P'A P'A'Sub t)
+let (/^) (#t: arithtype): s t -> s t -> s t = S.liftP2 (P'A P'A'Div t)
+let ( *^ ) (#t: arithtype): s t -> s t -> s t = S.liftP2 (P'A P'A'Mul t)
 
-let (+^) = liftA2 (+)
-let (-^) = liftA2 (fun x y -> x - y)
+let (<=^) (#t: arithtype): s t -> s t -> bools = S.liftP2 (P'A P'A'Le t)
+let (<^) (#t: arithtype): s t -> s t -> bools = S.liftP2 (P'A P'A'Lt t)
+let (>=^) (#t: arithtype): s t -> s t -> bools = S.liftP2 (P'A P'A'Ge t)
+let (>^) (#t: arithtype): s t -> s t -> bools = S.liftP2 (P'A P'A'Gt t)
 
-let (/^) = liftA2 (/)
-let ( *^ ) = liftA2 Prims.op_Multiply
+let tup (#a #b: valtype): s a -> s b -> s (TPair a b) = S.liftP2 (P'T P'T'Pair a b)
+let fst (#a #b: valtype): s (TPair a b) -> s a = S.liftP1 (P'T P'T'Fst a b)
+let snd (#a #b: valtype): s (TPair a b) -> s b = S.liftP1 (P'T P'T'Snd a b)
 
-let (<=^) = liftA2 (<=)
-let (>=^) = liftA2 (>=)
-let (<^) = liftA2 (<)
-let (>^) = liftA2 (>)
-
-let tup = liftA2 (fun a b -> (a,b))
-
-let negate = liftA1 (fun x -> -x)
-
-let if_then_else_impl (p: bool) (x y: 'a): 'a =
-  if p then x else y
+// let negate = 0
 
 (* if-then-else *)
-let ite = liftA3 if_then_else_impl
-let if_then_else = ite
+let ite (#t: valtype): bools -> s t -> s t -> s t = S.liftP3 (P'V P'V'IfThenElse t)
+let if_then_else (#t: valtype) = ite #t
 
-(* itialised delay *)
-let fby (a: 'a) (e: s 'a): s 'a = (fun s -> let (e, s) = e s in (XFby a e, s))
 
-(* unitialised delay, only works for ints for now, needs default / bottom *)
-let pre (e: s int): s int = fby 0 e
+let sofar (e: bools): bools =
+  S.rec' (fun r -> e /\ S.fby true r)
 
-(* "p -> q" in Lustre, first element of p followed by remainder of q *)
-let (-->) (e1 e2: s 'a): s 'a =
-  (fun s ->
-    let (e1, s) = e1 s in
-    let (e2, s) = e2 s in
-    (XThen e1 e2, s))
+let once (e: bools): bools =
+  S.rec' (fun r -> e \/ S.fby false r)
 
-let sofar (e: s bool): s bool =
-  rec' (fun r -> e /\ fby true r)
-
-let once (e: s bool): s bool =
-  rec' (fun r -> e \/ fby false r)
-
-let countsecutive (e: s bool): s int =
-  rec' (fun r -> if_then_else e (fby 0 r +^ z1) (fby 0 r))
+let countsecutive (e: bools): ints =
+  S.rec' (fun r -> if_then_else e (fby 0 r +^ z1) (fby 0 r))
 
 (* last-n, true for last n ticks *)
-let last (n: nat) (e: s bool): s bool =
+let last (n: nat) (e: bools): bools =
   countsecutive e <=^ z n
+
+let abs (#t: arithtype) (r: s t): s t =
+  let' r (fun r' ->
+    if_then_else (r' >=^ zero) r' (zero -^ r'))
