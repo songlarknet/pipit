@@ -10,12 +10,15 @@
 *)
 module Pipit.Exp.Causality
 
+open Pipit.Prim.Table
 open Pipit.Exp.Base
 open Pipit.Exp.Binding
 open Pipit.Exp.Binding.Properties
 open Pipit.Exp.Bigstep
 
-module C = Pipit.Context
+module C  = Pipit.Context.Base
+module CR = Pipit.Context.Row
+module CP = Pipit.Context.Properties
 
 (* Direct dependencies: does expression `e` have a non-delayed dependency on bound-variable `i`?
     *)

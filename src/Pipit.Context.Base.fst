@@ -14,13 +14,10 @@ let var_eq (#ty: eqtype) (#a #b: ty) (x: var a) (x': var b):
 
 
 type context 'a = list 'a
-type context_t = context eqtype
 
 let index  = nat
 let index_lookup (c: context 'a) = i: index { i <  List.length c }
 let index_insert (c: context 'a) = i: index { i <= List.length c }
-
-let context_sem (typ_sem: 'a -> eqtype) (c: context 'a): context_t = List.map typ_sem c
 
 let has_index (c: context 'a) (i: index) = i < List.length c
 let get_index (c: context 'a) (i: index_lookup c): 'a = List.index c i

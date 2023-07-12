@@ -4,8 +4,6 @@ module Pipit.System.Det
 open Pipit.System.Base
 module C = Pipit.Context
 
-open Pipit.Inhabited
-
 (* Deterministic systems can't express the whole language, but they can do a subset of it much simpler *)
 noeq
 type dsystem (input: Type) (state: Type) (result: Type) = {
@@ -111,13 +109,13 @@ let dsystem_then (#input #state1 #state2 #v: Type)
   }
 
 let dsystem_mu_causal (#input #input' #state1 #v: Type)
-  {| inhabited v |}
+  (bottom: v)
   (extend: input -> v -> input')
   (t1: dsystem input' state1 v):
        dsystem input state1 v =
   { init = t1.init;
     step = (fun i s ->
-      let (s',r) = t1.step (extend i (get_inhabited <: v)) s in
+      let (s',r) = t1.step (extend i bottom) s in
       t1.step (extend i r) s);
     chck = t1.chck;
   }

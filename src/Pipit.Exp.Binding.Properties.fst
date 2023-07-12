@@ -6,10 +6,13 @@
    *)
 module Pipit.Exp.Binding.Properties
 
+open Pipit.Prim.Table
 open Pipit.Exp.Base
 open Pipit.Exp.Binding
 
-module C = Pipit.Context
+module C  = Pipit.Context.Base
+module CR = Pipit.Context.Row
+module CP = Pipit.Context.Properties
 
 #push-options "--split_queries always"
 

@@ -14,11 +14,14 @@
 *)
 module Pipit.Exp.Bigstep
 
+open Pipit.Prim.Table
+
 open Pipit.Exp.Base
 open Pipit.Exp.Binding
-open Pipit.Inhabited
 
-module C = Pipit.Context
+module C  = Pipit.Context.Base
+module CR = Pipit.Context.Row
+module CP = Pipit.Context.Properties
 
 (* bigstep streams e v
 
@@ -27,18 +30,18 @@ module C = Pipit.Context
  The stream history `streams` is in most-recent-first order.
  *)
 noeq
-type bigstep (#c: C.context): (#a: Type) -> list (C.row c) -> exp c a -> a -> Type =
+type bigstep (#c: C.context): (#a: Type) -> list (CR.row c) -> exp c a -> a -> Type =
  (* Values `v` always evaluate to the value *)
  | BSVal:
-          streams: list (C.row c) ->
+          streams: list (CR.row c) ->
           v: 'a ->
           bigstep streams (XVal v) v
 
  (* Variables `x` are looked up in the most recent row in the stream history *)
  | BSVar: latest: C.row c ->
-          prefix: list (C.row c) ->
-          x: C.index { C.has_index c x } ->
-          bigstep (latest :: prefix) (XBVar x) (C.row_index c latest x)
+          prefix: list (CR.row c) ->
+          x: C.index_lookup c ->
+          bigstep (latest :: prefix) (XBVar x) (CR.index c latest x)
 
  (* Element-wise application *)
  | BSApp: streams: list (C.row c) ->
@@ -86,8 +89,7 @@ type bigstep (#c: C.context): (#a: Type) -> list (C.row c) -> exp c a -> a -> Ty
  (* Reduction for recursive expressions proceeds by unfolding the recursion one step.
     If all recursive references are guarded by `pre` then the `pre` step will look
     at a shorter stream history prefix, and should eventually terminate. *)
- | BSMu: (i: inhabited 'a) ->
-         streams: list (C.row c)    ->
+ | BSMu: streams: list (C.row c)    ->
          e: exp (C.close1 c 'a) 'a ->
          v: 'a                       ->
          bigstep streams (subst1 e (XMu e)) v ->

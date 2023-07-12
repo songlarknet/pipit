@@ -1,13 +1,14 @@
 (* Translation from expressions to executable transition systems *)
 module Pipit.Exec.Exp
 
+open Pipit.Prim.Table
 open Pipit.Exec.Base
 open Pipit.Exp.Base
-open Pipit.Inhabited
 
-module C = Pipit.Context
+module C  = Pipit.Context.Base
+module CR = Pipit.Context.Row
 
-let row_cons (#c: C.context) (v: 'a) (values: C.row c): C.row (C.lift1 c 0 'a) = (v, values)
+let row_cons (#a: eqtype) (#c: context 't) (v: a) (values: row c): row (C.lift1 c 0 'a) = (v, values)
 
 let exec_index (c: C.context) (ix: C.index { C.has_index c ix }):
        exec (C.row c) unit (List.Tot.index c ix) =
@@ -51,7 +52,7 @@ let extractable_XApp (e1: exp 'c ('b -> 'a)) (e2: exp 'c 'b):
         assert_norm (extractable (XApp e1 e2) ==> extractable e1)
 
 noextract inline_for_extraction
-let rec exec_of_exp (e: exp 'c 'a { extractable e }): Tot (xexec e) (decreases e) =
+let rec exec_of_exp (e: exp 't 'c 'a { extractable e }): Tot (xexec e) (decreases e) =
   match e with
   | XVal v -> exec_const _ v
   | XBVar i -> exec_index 'c i
@@ -67,7 +68,7 @@ let rec exec_of_exp (e: exp 'c 'a { extractable e }): Tot (xexec e) (decreases e
   | XThen e1 e2 ->
     exec_then (exec_of_exp e1) (exec_of_exp e2)
   | XMu i e1 ->
-    exec_mu i.get_inhabited (fun i v -> row_cons v i) (exec_of_exp e1)
+    exec_mu (('t).val_default 'a) (fun i v -> row_cons v i) (exec_of_exp e1)
   | XLet b e1 e2 ->
     exec_let (fun i v -> row_cons v i) (exec_of_exp e1) (exec_of_exp e2)
   // | XContract assm guar body arg ->

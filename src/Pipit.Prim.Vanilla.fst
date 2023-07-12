@@ -20,11 +20,11 @@ let is_arithtype (t: valtype) = match t with
 
 let arithtype = t: valtype { is_arithtype t }
 
-let rec typ_sem (t: valtype): eqtype = match t with
+let rec ty_sem (t: valtype): eqtype = match t with
  | TBool -> bool
  | TInt  -> int
  | TReal -> R.real
- | TPair a b -> typ_sem a & typ_sem b
+ | TPair a b -> ty_sem a & ty_sem b
 
 
 type prim_bool =
@@ -48,38 +48,43 @@ type prim =
  | P'T: prim_tup -> valtype -> valtype -> prim
  | P'V: prim_valtype -> valtype -> prim
 
+let f1 (t: valtype) = FTFun t (FTVal t)
+let f2 (t: valtype) = FTFun t (FTFun t (FTVal t))
+let p1 (t: valtype) = FTFun t (FTVal t)
+let p2 (t: valtype) = FTFun t (FTFun t (FTVal TBool))
 
-let prim_bool_types (p: prim_bool): funty valtype = match p with
- | P'B'Not -> [TBool], TBool
- | _       -> [TBool; TBool], TBool
 
-let prim_arith_types (p: prim_arith) (at: arithtype): funty valtype = match p with
- | P'A'Add | P'A'Sub | P'A'Div | P'A'Mul -> [at; at], at
- | P'A'Lt  | P'A'Le  | P'A'Gt  | P'A'Ge  -> [at; at], TBool
+let prim_bool_ty (p: prim_bool): funty valtype = match p with
+ | P'B'Not -> f1 TBool
+ | _       -> f2 TBool
 
-let prim_tup_types (p: prim_tup) (a: valtype) (b: valtype): funty valtype = match p with
- | P'T'Pair -> [a; b], TPair a b
- | P'T'Fst  -> [TPair a b], a
- | P'T'Snd  -> [TPair a b], b
+let prim_arith_ty (p: prim_arith) (at: arithtype): funty valtype = match p with
+ | P'A'Add | P'A'Sub | P'A'Div | P'A'Mul -> f2 at
+ | P'A'Lt  | P'A'Le  | P'A'Gt  | P'A'Ge  -> p2 at
 
-let prim_valtype_types (p: prim_valtype) (a: valtype): funty valtype = match p with
- | P'V'Eq | P'V'Ne -> [a; a], TBool
- | P'V'IfThenElse  -> [TBool; a; a], a
+let prim_tup_ty (p: prim_tup) (a: valtype) (b: valtype): funty valtype = match p with
+ | P'T'Pair -> FTFun a (FTFun b (FTVal (TPair a b)))
+ | P'T'Fst  -> FTFun (TPair a b) (FTVal a)
+ | P'T'Snd  -> FTFun (TPair a b) (FTVal b)
 
-let prim_types (p: prim): funty valtype = match p with
- | P'B p'       -> prim_bool_types    p'
- | P'A p' at    -> prim_arith_types   p' at
- | P'T p' a b   -> prim_tup_types     p' a b
- | P'V p' a     -> prim_valtype_types p' a
+let prim_valtype_ty (p: prim_valtype) (a: valtype): funty valtype = match p with
+ | P'V'Eq | P'V'Ne -> p2 a
+ | P'V'IfThenElse  -> FTFun TBool (f2 a)
 
-let prim_bool_sem (p: prim_bool): funty_sem typ_sem (prim_bool_types p) = match p with
+let prim_ty (p: prim): funty valtype = match p with
+ | P'B p'       -> prim_bool_ty    p'
+ | P'A p' at    -> prim_arith_ty   p' at
+ | P'T p' a b   -> prim_tup_ty     p' a b
+ | P'V p' a     -> prim_valtype_ty p' a
+
+let prim_bool_sem (p: prim_bool): funty_sem ty_sem (prim_bool_ty p) = match p with
  | P'B'Not     -> fun (x: bool) -> not x
  // Low*/KRML doesn't like short-circuiting boolean operators (&&) (||) but it seems to be OK with if-then-else
  | P'B'And     -> fun x y -> if x then y else false
  | P'B'Or      -> fun x y -> if x then true else y
  | P'B'Implies -> fun x y -> if x then y else true
 
-let prim_arith_sem (p: prim_arith) (at: arithtype): funty_sem typ_sem (prim_arith_types p at) = match at with
+let prim_arith_sem (p: prim_arith) (at: arithtype): funty_sem ty_sem (prim_arith_ty p at) = match at with
  | TInt ->
   (match p with
   | P'A'Add -> fun x y -> x + y
@@ -101,26 +106,38 @@ let prim_arith_sem (p: prim_arith) (at: arithtype): funty_sem typ_sem (prim_arit
   | P'A'Gt  -> fun x y -> x >.  y
   | P'A'Ge  -> fun x y -> x >=. y)
 
-let prim_tup_sem (p: prim_tup) (a: valtype) (b: valtype): funty_sem typ_sem (prim_tup_types p a b) = match p with
- | P'T'Pair -> fun (x: typ_sem a) (y: typ_sem b) -> x, y
- | P'T'Fst  -> fun ((x, y) : typ_sem a & typ_sem b) -> x
- | P'T'Snd  -> fun ((x, y) : typ_sem a & typ_sem b) -> y
+let prim_tup_sem (p: prim_tup) (a: valtype) (b: valtype): funty_sem ty_sem (prim_tup_ty p a b) = match p with
+ | P'T'Pair -> fun (x: ty_sem a) (y: ty_sem b) -> x, y
+ | P'T'Fst  -> fun ((x, y) : ty_sem a & ty_sem b) -> x
+ | P'T'Snd  -> fun ((x, y) : ty_sem a & ty_sem b) -> y
 
-let prim_valtype_sem (p: prim_valtype) (a: valtype): funty_sem typ_sem (prim_valtype_types p a) = match p with
- | P'V'Eq         -> fun (x: typ_sem a) y -> x = y
- | P'V'Ne         -> fun (x: typ_sem a) y -> x <> y
- | P'V'IfThenElse -> fun p (x: typ_sem a) y -> if p then x else y
+let prim_valtype_sem (p: prim_valtype) (a: valtype): funty_sem ty_sem (prim_valtype_ty p a) = match p with
+ | P'V'Eq         -> fun (x: ty_sem a) y -> x = y
+ | P'V'Ne         -> fun (x: ty_sem a) y -> x <> y
+ | P'V'IfThenElse -> fun p (x: ty_sem a) y -> if p then x else y
 
-let prim_sem (p: prim): funty_sem typ_sem (prim_types p) = match p with
+let prim_sem (p: prim): funty_sem ty_sem (prim_ty p) = match p with
  | P'B p'     -> prim_bool_sem p'
  | P'A p' at  -> prim_arith_sem p' at
  | P'T p' a b -> prim_tup_sem p' a b
  | P'V p' a   -> prim_valtype_sem p' a
 
+let rec val_default (t: valtype): ty_sem t = match t with
+ | TBool     -> false
+ | TInt      -> 0
+ | TReal     -> R.zero
+ | TPair a b -> (val_default a, val_default b)
+
 let table: table = {
-   typ        = valtype;
-   typ_sem    = typ_sem;
-   prim       = prim;
-   prim_types = prim_types;
-   prim_sem   = prim_sem;
+   ty          = valtype;
+   ty_sem      = ty_sem;
+
+   prim        = prim;
+   prim_ty     = prim_ty;
+   prim_sem    = prim_sem;
+
+   val_default = val_default;
+
+   propty      = TBool;
+   propty_sem  = fun (x: bool) -> x == true
 }

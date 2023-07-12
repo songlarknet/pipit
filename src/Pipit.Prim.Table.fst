@@ -16,23 +16,41 @@ type funty (valty: eqtype) =
  | FTVal: t: valty -> funty valty
  | FTFun: t: valty -> rest: funty valty -> funty valty
 
-let rec funty_sem (#typ: eqtype) (typ_sem: typ -> Type) (ft: funty typ) =
+let rec funty_sem (#typ: eqtype) (ty_sem: typ -> Type) (ft: funty typ) =
   match ft with
-  | FTVal t -> typ_sem t
-  | FTFun t r -> typ_sem t -> funty_sem typ_sem r
+  | FTVal t -> ty_sem t
+  | FTFun t r -> ty_sem t -> funty_sem ty_sem r
 
 noeq
 type table = {
-  typ:        eqtype;
-  typ_sem:    typ -> eqtype;
-  prim:       eqtype;
-  prim_types: prim -> funty typ;
-  prim_sem:   p: prim -> funty_sem typ_sem (prim_types p);
+  ty:          eqtype;
+  ty_sem:      ty -> eqtype;
+
+  prim:        eqtype;
+  prim_ty:     prim -> funty ty;
+
+  prim_sem:    p: prim -> funty_sem ty_sem (prim_ty p);
   // val_eq_dec: t: typ -> a: typ_sem t -> b: typ_sem t -> eq: bool { eq <==> a == b }
 
   (* Default or bottom: some interpretations of recursive expressions need an
     initial value just to seed the computation, even though the value will
     never be inspected. When we support interesting refinements, we will
     probably only want to provide bottom for unrefined base types. *)
-  val_default: t: typ -> typ_sem t
+  val_default: t: ty -> ty_sem t;
+
+  propty:      ty;
+  propty_sem:  ty_sem propty -> prop;
+
+  // TODO: unit types?
 }
+
+(* Helpers for table-parameterised contexts *)
+module C  = Pipit.Context.Base
+module CR = Pipit.Context.Row
+
+module List = FStar.List.Tot
+
+let context (t: table) = C.context t.ty
+let context_sem (c: context 't): C.context eqtype = List.map ('t).ty_sem c
+
+let row (c: context 't) = CR.row (context_sem c)
