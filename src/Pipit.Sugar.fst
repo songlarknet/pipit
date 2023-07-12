@@ -20,6 +20,7 @@ module R = FStar.Real
 type s (t: valtype) = S.s table t
 type bools = s TBool
 type ints = s TInt
+type reals = s TReal
 
 let run (#a: valtype) (e: s a) : val_exp table [] a = S.run e
 let run1 (#a #b: valtype) (f: s a -> s b) : val_exp table [a] b = S.run1 f

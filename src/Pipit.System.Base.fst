@@ -1,8 +1,6 @@
 (* Transition systems *)
 module Pipit.System.Base
 
-module C = Pipit.Context
-
 type xprop = bool
 
 type checks (state: Type) = list (string & (state -> prop))

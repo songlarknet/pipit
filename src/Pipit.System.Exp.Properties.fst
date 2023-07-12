@@ -1,7 +1,9 @@
 (* Translation to transition system proof *)
 module Pipit.System.Exp.Properties
 
-module C = Pipit.Context
+open Pipit.Prim.Table
+module C  = Pipit.Context.Base
+module CR = Pipit.Context.Row
 
 open Pipit.System.Base
 open Pipit.System.Exp
@@ -16,7 +18,7 @@ open Pipit.Exp
    The invariant describes the transition system's state after it has been fed with all of `rows` as inputs.
 *)
 let rec system_of_exp_invariant
-  (rows: list (C.row 'c) { Cons? rows })
+  (rows: list (row 'c) { Cons? rows })
   (e: exp 'c 'a { causal e })
   (s: state_of_exp e):
     Tot prop (decreases e) =
@@ -47,14 +49,14 @@ let rec system_of_exp_invariant
   | XMu _ e1 ->
     let s: state_of_exp e1 = coerce_eq () s in
     let (| vs, hBSmus |) = lemma_bigsteps_total rows e in
-    let rows' = C.row_zip2_cons vs rows in
+    let rows' = CR.zip2_cons vs rows in
     system_of_exp_invariant rows' e1 s
 
   | XLet b e1 e2 ->
     let s: state_of_exp e1 & state_of_exp e2 = s in
     let (s1, s2) = s in
     let (| vlefts, hBSlefts |) = lemma_bigsteps_total rows e1 in
-    let rows' = C.row_zip2_cons vlefts rows in
+    let rows' = CR.zip2_cons vlefts rows in
     system_of_exp_invariant rows e1 s1 /\
       system_of_exp_invariant rows' e2 s2
 
@@ -66,7 +68,7 @@ let rec system_of_exp_invariant
       system_of_exp_invariant rows e2 s2
 
 let rec dstep0_ok
-    (row: C.row 'c)
+    (row: row 'c)
     (e: exp 'c 'a { causal e })
     (v: 'a)
     (hBS: bigstep [row] e v):
@@ -112,42 +114,42 @@ let rec dstep0_ok
 
     | XMu _ e1 ->
       let t1 = dsystem_of_exp e1 in
-      let t = dsystem_mu_causal #(C.row 'c) #('a & C.row 'c) (fun i v -> (v, i)) t1 in
+      let t = dsystem_mu_causal #(row 'c) #('a & row 'c) (fun i v -> (v, i)) t1 in
 
       let bottom = Pipit.Inhabited.get_inhabited <: 'a in
       let (s_scrap, v0) = t1.step (bottom, row) t1.init in
       let (s1', v') = t1.step (v0, row) t1.init in
 
       let hBSs0: bigsteps [] (XMu e1) [] = BSs0 (XMu e1) in
-      let (|v0x, hBSX |) = lemma_bigstep_total [C.row_cons bottom row] e1 in
+      let (|v0x, hBSX |) = lemma_bigstep_total [CR.cons bottom row] e1 in
       let hBSMu: bigstep [row] (XMu e1) v0x = lemma_bigstep_substitute_intros_XMu [] e1 [] row v0x bottom hBSs0 hBSX in
       let hBSMus: bigsteps [row] (XMu e1) [v0x] = BSsS _ _ _ _ _ hBSs0 hBSMu in
 
-      dstep0_ok (C.row_cons bottom row) e1 v0x hBSX;
+      dstep0_ok (CR.cons bottom row) e1 v0x hBSX;
       assert (v0 == v0x);
-      let hBSX': bigstep [C.row_cons v0x row] e1 v0x = lemma_bigstep_substitute_elim_XMu [row] e1 [v0x] hBSMus
+      let hBSX': bigstep [CR.cons v0x row] e1 v0x = lemma_bigstep_substitute_elim_XMu [row] e1 [v0x] hBSMus
         in
 
-      dstep0_ok (C.row_cons v0x row) e1 v0x hBSX';
+      dstep0_ok (CR.cons v0x row) e1 v0x hBSX';
       assert (v' == v0x);
       bigstep_deterministic hBSMu hBS;
       assert (v == v0x);
 
       assert (t.step row t.init == (s1', v'));
 
-      assert (system_of_exp_invariant [C.row_cons v0x row] e1 s1');
+      assert (system_of_exp_invariant [CR.cons v0x row] e1 s1');
       let s1'': state_of_exp (XMu e1) = coerce_eq () s1' in
       let (| v''', hBSMu''' |) = lemma_bigstep_total [row] e in
       bigstep_deterministic hBSMu''' hBSMu;
       // assert (v''' == v);
-      // assert ([C.row_cons v0x row] == C.row_zip2_cons [v'''] [row]);
+      // assert ([CR.cons v0x row] == CR.zip2_cons [v'''] [row]);
       assert (system_of_exp_invariant [row] (XMu e1) s1'');
       ()
 
     | XLet b e1 e2 ->
       let t1 = dsystem_of_exp e1 in
       let t2 = dsystem_of_exp e2 in
-      let t = dsystem_let #(C.row 'c) #(b & C.row 'c) (fun i v -> (v, i)) t1 t2 in
+      let t = dsystem_let #(row 'c) #(b & row 'c) (fun i v -> (v, i)) t1 t2 in
 
       let (s1', v1) = t1.step row t1.init in
       let (s2', v2) = t2.step (v1, row) t2.init in
@@ -160,8 +162,8 @@ let rec dstep0_ok
       let v1s = [v1] in
       assert_norm (List.Tot.length [row] == 1);
       assert_norm (List.Tot.length v1s == 1);
-      let rows' = C.row_zip2_cons v1s [row] in
-      assert_norm (rows' == [C.row_cons v1 row]);
+      let rows' = CR.zip2_cons v1s [row] in
+      assert_norm (rows' == [CR.cons v1 row]);
       let hBS1s: bigsteps [row] e1 v1s = BSsS _ _ _ _ _ (BSs0 e1) hBS1 in
       let hBS2: bigstep rows' e2 v = lemma_bigstep_substitute_elim_XLet [row] e1 v1s hBS1s e2 v hBS in
 
@@ -174,7 +176,7 @@ let rec dstep0_ok
         assert (vlefts == v1s)
       );
 
-      dstep0_ok (C.row_cons v1 row) e2 v hBS2;
+      dstep0_ok (CR.cons v1 row) e2 v hBS2;
       assert (v2 == v);
       assert (t.step row t.init == (s', v));
       assert (system_of_exp_invariant [row] e1 s1');
@@ -205,8 +207,8 @@ let rec dstep0_ok
       ()
 
 let rec dstepn_ok
-    (rows: list (C.row 'c) { Cons? rows })
-    (row: C.row 'c)
+    (rows: list (row 'c) { Cons? rows })
+    (row: row 'c)
     (e: exp 'c 'a { causal e })
     (v: 'a)
     (hBS: bigstep (row :: rows) e v)
@@ -279,35 +281,35 @@ let rec dstepn_ok
       let s: state_of_exp (XMu e1) = s in
       let s: state_of_exp e1 = coerce_eq () s in
       let t1 = dsystem_of_exp e1 in
-      let t = dsystem_mu_causal #(C.row 'c) #('a & C.row 'c) (fun i v -> (v, i)) t1 in
+      let t = dsystem_mu_causal #(row 'c) #('a & row 'c) (fun i v -> (v, i)) t1 in
 
       let bottom = Pipit.Inhabited.get_inhabited <: 'a in
       let (s_scrap, v0) = t1.step (bottom, row) s in
       let (s1', v') = t1.step (v0, row) s in
 
       let (| vpres, hBSs|) = lemma_bigsteps_total rows (XMu e1) in
-      let (| v0x, hBSX |) = lemma_bigstep_total (C.row_zip2_cons (bottom :: vpres) (row :: rows)) e1 in
+      let (| v0x, hBSX |) = lemma_bigstep_total (CR.zip2_cons (bottom :: vpres) (row :: rows)) e1 in
       let hBSMu: bigstep (row :: rows) (XMu e1) v0x = lemma_bigstep_substitute_intros_XMu rows e1 vpres row v0x bottom hBSs hBSX in
       let hBSMus: bigsteps (row :: rows) (XMu e1) (v0x :: vpres) = BSsS _ _ _ _ _ hBSs hBSMu in
 
-      dstepn_ok (C.row_zip2_cons vpres rows) (C.row_cons bottom row) e1 v0x hBSX s;
+      dstepn_ok (CR.zip2_cons vpres rows) (CR.cons bottom row) e1 v0x hBSX s;
       assert (v0 == v0x);
-      let hBSX': bigstep (C.row_cons v0x row :: C.row_zip2_cons vpres rows) e1 v0x = lemma_bigstep_substitute_elim_XMu (row :: rows) e1 (v0x :: vpres) hBSMus
+      let hBSX': bigstep (CR.cons v0x row :: CR.zip2_cons vpres rows) e1 v0x = lemma_bigstep_substitute_elim_XMu (row :: rows) e1 (v0x :: vpres) hBSMus
         in
 
-      dstepn_ok (C.row_zip2_cons vpres rows) (C.row_cons v0x row) e1 v0x hBSX' s;
+      dstepn_ok (CR.zip2_cons vpres rows) (CR.cons v0x row) e1 v0x hBSX' s;
       assert (v' == v0x);
       bigstep_deterministic hBSMu hBS;
       assert (v == v0x);
 
       assert (t.step row s == (s1', v'));
 
-      assert (system_of_exp_invariant (C.row_cons v0x row :: C.row_zip2_cons vpres rows) e1 s1');
+      assert (system_of_exp_invariant (CR.cons v0x row :: CR.zip2_cons vpres rows) e1 s1');
       let s1'': state_of_exp (XMu e1) = coerce_eq () s1' in
       let (| v''', hBSMu''' |) = lemma_bigstep_total (row :: rows) e in
       bigstep_deterministic hBSMu''' hBSMu;
       // assert (v''' == v);
-      // assert ([C.row_cons v0x row] == C.row_zip2_cons [v'''] [row]);
+      // assert ([CR.cons v0x row] == CR.zip2_cons [v'''] [row]);
       assert (system_of_exp_invariant (row :: rows) (XMu e1) s1'');
       ()
 
@@ -316,7 +318,7 @@ let rec dstepn_ok
       let (s1, s2) = s in
       let t1 = dsystem_of_exp e1 in
       let t2 = dsystem_of_exp e2 in
-      let t = dsystem_let #(C.row 'c) #(b & C.row 'c) (fun i v -> (v, i)) t1 t2 in
+      let t = dsystem_let #(row 'c) #(b & row 'c) (fun i v -> (v, i)) t1 t2 in
 
       let (s1', v1) = t1.step row s1 in
       let (s2', v2) = t2.step (v1, row) s2 in
@@ -329,12 +331,12 @@ let rec dstepn_ok
       let (| v1pres, hBS1s |) = lemma_bigsteps_total rows e1 in
       let v1s = v1 :: v1pres in
       assert_norm (List.Tot.length (row :: rows) == List.Tot.length v1s);
-      let rows' = C.row_zip2_cons v1s (row :: rows) in
-      assert_norm (rows' == (C.row_cons v1 row :: C.row_zip2_cons v1pres rows));
+      let rows' = CR.zip2_cons v1s (row :: rows) in
+      assert_norm (rows' == (CR.cons v1 row :: CR.zip2_cons v1pres rows));
       let hBS1s: bigsteps (row :: rows) e1 v1s = BSsS _ _ _ _ _ hBS1s hBS1 in
       let hBS2: bigstep rows' e2 v = lemma_bigstep_substitute_elim_XLet (row :: rows) e1 v1s hBS1s e2 v hBS in
 
-      dstepn_ok (C.row_zip2_cons v1pres rows) (C.row_cons v1 row) e2 v hBS2 s2;
+      dstepn_ok (CR.zip2_cons v1pres rows) (CR.cons v1 row) e2 v hBS2 s2;
       assert (v2 == v);
       assert (t.step row s == (s', v));
       assert (system_of_exp_invariant (row :: rows) e1 s1');
@@ -370,7 +372,7 @@ let rec dstepn_ok
 // #pop-options
 
 let rec dstep_many_ok
-  (rows: list (C.row 'c) { Cons? rows })
+  (rows: list (row 'c) { Cons? rows })
   (e: exp 'c 'a { causal e })
   (vs: list 'a { List.Tot.length rows == List.Tot.length vs })
   (hBSs: bigsteps rows e vs):
@@ -394,7 +396,7 @@ let rec dstep_many_ok
 #push-options "--fuel 2 --ifuel 1"
 
 let rec dstep_eval_complete'
-  (rvs: list (C.row 'c & 'a) { Cons? rvs })
+  (rvs: list (row 'c & 'a) { Cons? rvs })
   (e: exp 'c 'a { causal e })
   (hBSs: bigsteps (List.Tot.map fst rvs) e (List.Tot.map snd rvs)):
     Tot (s': state_of_exp e { system_of_exp_invariant (List.Tot.map fst rvs) e s' /\ xsystem_stepn (system_of_dsystem (dsystem_of_exp e)) rvs s' }) (decreases rvs) =
@@ -414,7 +416,7 @@ let rec dstep_eval_complete'
       s')
 
 let dstep_eval_complete
-  (rvs: list (C.row 'c & 'a))
+  (rvs: list (row 'c & 'a))
   (e: exp 'c 'a { causal e })
   (hBSs: bigsteps (List.Tot.map fst rvs) e (List.Tot.map snd rvs)):
     Tot (s': state_of_exp e { xsystem_stepn (system_of_dsystem (dsystem_of_exp e)) rvs s' }) (decreases rvs) =
@@ -425,7 +427,7 @@ let dstep_eval_complete
     dstep_eval_complete' rvs e hBSs
 
 // let system_eval_complete
-//   (rvs: list (C.row 'c & 'a))
+//   (rvs: list (row 'c & 'a))
 //   (e: exp 'c 'a { causal e })
 //   (hBS: bigsteps (List.Tot.map fst rvs) e (List.Tot.map snd rvs)):
 //     Lemma (exists (s': state_of_exp e). xsystem_stepn (system_of_dsystem (dsystem_of_exp e)) rvs s') =

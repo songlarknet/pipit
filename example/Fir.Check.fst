@@ -9,17 +9,17 @@ open Pipit.System.Exp
 
 module T = Pipit.Tactics
 
-open Pipit.Sugar.Real
+open Pipit.Sugar
 
 let rec fir (coeffs: list real) (input: reals): reals =
   match coeffs with
-  | [] -> pure 0.0R
-  | c :: coeffs' -> (input *. pure c) +. fir coeffs' (fby 0.0R input)
+  | [] -> zero
+  | c :: coeffs' -> (input *^ pure c) +^ fir coeffs' (fby 0.0R input)
 
 let fir2 (input: reals): reals = fir [0.7R; 0.3R] input
 
 let bibo2 (n: pos) (signal: reals): s unit =
-  check "bibo" (sofar (abs signal <=. pure n) => (abs (fir2 signal) <=. pure n))
+  check "bibo" (sofar (abs signal <=^ pure n) => (abs (fir2 signal) <=^ pure n))
 
 let bibo2' n =
   assert_norm (Pipit.Exp.Causality.causal (run1 (bibo2 n)));
@@ -33,7 +33,7 @@ let proof2 (n: pos): Lemma (ensures induct1 (bibo2' n)) =
 let fir3 (input: reals): reals = fir [0.7R; 0.2R; 0.1R] input
 
 let bibo3 (n: pos) (signal: reals): s unit =
-  check "bibo" (sofar (abs signal <=. pure n) => (abs (fir3 signal) <=. pure n))
+  check "bibo" (sofar (abs signal <=^ pure n) => (abs (fir3 signal) <=^ pure n))
 
 let bibo3' n =
   assert_norm (Pipit.Exp.Causality.causal (run1 (bibo3 n)));

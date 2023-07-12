@@ -114,7 +114,7 @@ let fby (#a: ('t).ty) (v: ('t).ty_sem a) (e: s 't a): s 't a = (fun s -> let (e,
  *)
 let pre (#a: ('t).ty) (e: s 't a): s 't a = fby (('t).val_default a) e
 
-(* "p -> q" in Lustre, first element of p followed by remainder of q *)
+(* "p -> q" in Lustre, first element of p then remainder of q *)
 let (-->) (#a: ('t).ty) (e1 e2: s 't a): s 't a =
   (fun s ->
     let (e1, s) = e1 s in

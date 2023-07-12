@@ -3,8 +3,6 @@ module Pipit.System.Ind
 
 open Pipit.System.Base
 
-module C = Pipit.Context
-
 let rec prop_for_all (l: list prop): prop =
  match l with
  | [] -> True
@@ -92,7 +90,7 @@ let induct_k (k: nat) (#input #state #value: Type)
     base_case_k k t /\ step_case_k k t
 
 (* The current formulation of the base case makes it difficult to prove
-   that induction is sound. The issue is that base_case_k 2 has the shape:
+   that k-induction is sound. The issue is that base_case_k 2 has the shape:
    >  forall s0 s1 s2.
    >    t.init s0 /\
    >    t.step s0 s1 /\

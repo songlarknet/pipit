@@ -30,21 +30,21 @@ module CP = Pipit.Context.Properties
  The stream history `streams` is in most-recent-first order.
  *)
 noeq
-type bigstep (#c: C.context): (#a: Type) -> list (CR.row c) -> exp c a -> a -> Type =
+type bigstep (#t: table) (#c: context t): (#a: funty t.ty) -> list (row c) -> exp t c a -> funty_sem t.ty_sem a -> Type =
  (* Values `v` always evaluate to the value *)
  | BSVal:
-          streams: list (CR.row c) ->
+          streams: list (row c) ->
           v: 'a ->
           bigstep streams (XVal v) v
 
  (* Variables `x` are looked up in the most recent row in the stream history *)
- | BSVar: latest: C.row c ->
-          prefix: list (CR.row c) ->
+ | BSVar: latest: row c ->
+          prefix: list (row c) ->
           x: C.index_lookup c ->
           bigstep (latest :: prefix) (XBVar x) (CR.index c latest x)
 
  (* Element-wise application *)
- | BSApp: streams: list (C.row c) ->
+ | BSApp: streams: list (row c) ->
           f: exp c ('a -> 'b)        ->
           e: exp c  'a             ->
           f_v: ('a -> 'b)            ->
@@ -54,14 +54,14 @@ type bigstep (#c: C.context): (#a: Type) -> list (CR.row c) -> exp c a -> a -> T
           bigstep streams (XApp f e) (f_v e_v)
 
  (* To compute `pre e` we evaluate `e` without the most recent element. *)
- | BSFby1: start: list (C.row c) { List.Tot.length start <= 1 }
+ | BSFby1: start: list (row c) { List.Tot.length start <= 1 }
                                     ->
            v0: 'a                    ->
            e: exp c 'a               ->
            bigstep start (XFby v0 e) v0
  (* To compute `pre e` we evaluate `e` without the most recent element. *)
- | BSFbyS: latest: C.row c          ->
-           prefix: list (C.row c) { List.Tot.length prefix >= 1 }
+ | BSFbyS: latest: row c          ->
+           prefix: list (row c) { List.Tot.length prefix >= 1 }
                                     ->
            v0: 'a                    ->
            v': 'a                    ->
@@ -70,7 +70,7 @@ type bigstep (#c: C.context): (#a: Type) -> list (CR.row c) -> exp c a -> a -> T
            bigstep (latest :: prefix) (XFby v0 e) v'
 
  (* First step of (p -> q) is p *)
- | BSThen1: start: list (C.row c) { List.Tot.length start <= 1 }
+ | BSThen1: start: list (row c) { List.Tot.length start <= 1 }
                                     ->
             e1: exp c 'a             ->
             e2: exp c 'a             ->
@@ -78,7 +78,7 @@ type bigstep (#c: C.context): (#a: Type) -> list (CR.row c) -> exp c a -> a -> T
             bigstep start        e1     v ->
             bigstep start (XThen e1 e2) v
  (* Subsequent steps of (p -> q) are q *)
- | BSThenS: streams: list (C.row c) { List.Tot.length streams > 1 }
+ | BSThenS: streams: list (row c) { List.Tot.length streams > 1 }
                                     ->
             e1: exp c 'a             ->
             e2: exp c 'a             ->
@@ -89,8 +89,8 @@ type bigstep (#c: C.context): (#a: Type) -> list (CR.row c) -> exp c a -> a -> T
  (* Reduction for recursive expressions proceeds by unfolding the recursion one step.
     If all recursive references are guarded by `pre` then the `pre` step will look
     at a shorter stream history prefix, and should eventually terminate. *)
- | BSMu: streams: list (C.row c)    ->
-         e: exp (C.close1 c 'a) 'a ->
+ | BSMu: streams: list (row c)    ->
+         e: exp t (C.close1 c 'a) 'a ->
          v: 'a                       ->
          bigstep streams (subst1 e (XMu e)) v ->
          bigstep streams (XMu e) v
@@ -99,17 +99,19 @@ type bigstep (#c: C.context): (#a: Type) -> list (CR.row c) -> exp c a -> a -> T
     We could also evaluate the definition e1 to a stream of values, and add each
     of these to the stream contexts - but this is a bit easier, and later we can
     prove that they're equivalent. *)
- | BSLet: streams: list (C.row c)   ->
-          e1: exp c 'b               ->
-          e2: exp (C.close1 c 'b) 'a
+ | BSLet:
+          a: t.ty -> b: t.ty ->
+          streams: list (row c)   ->
+          e1: val_exp t c 'b               ->
+          e2: val_exp t (C.close1 c 'b) 'a
                                     ->
-          v: 'a                      ->
+          v: t.ty_sem 'a                      ->
           bigstep streams (subst1 e2 e1) v
                                     ->
           bigstep streams (XLet 'b e1 e2) v
 
  // | BSContract:
- //          streams: list (C.row c)   ->
+ //          streams: list (row c)   ->
  //          ea: exp ['b]    xprop ->
  //          eg: exp ['a; 'b] xprop ->
  //          eb: exp ['b]    'a     ->
@@ -121,11 +123,12 @@ type bigstep (#c: C.context): (#a: Type) -> list (CR.row c) -> exp c a -> a -> T
  //          bigstep streams (XContract ea eg eb earg) v
 
  | BSCheck:
-          streams: list (C.row c)   ->
+          a: t.ty ->
+          streams: list (row c)   ->
           name:    string                       ->
-          eprop:   exp c                  xprop ->
-          e:       exp c                  'a     ->
-          v:                              'a     ->
+          eprop:   val_exp t c                  t.propty ->
+          e:       val_exp t c                  a     ->
+          v:                                t.ty_sem a     ->
           bigstep streams e v                   ->
           bigstep streams (XCheck name eprop e) v
 
@@ -133,15 +136,15 @@ type bigstep (#c: C.context): (#a: Type) -> list (CR.row c) -> exp c a -> a -> T
 (* Under streaming history `streams`, evaluate expression `e` at each step to
    produce stream of values `vs` *)
 noeq
-type bigsteps (#c: C.context) (#a: Type): list (C.row c) -> exp c a -> list a -> Type =
+type bigsteps (#c: C.context) (#a: Type): list (row c) -> exp c a -> list a -> Type =
  | BSs0:
     e: exp c a                          ->
     bigsteps [] e []
  | BSsS:
-    rows: list (C.row c)                ->
+    rows: list (row c)                ->
     e: exp c a                          ->
     vs: list a                          ->
-    row: C.row c                        ->
+    row: row c                        ->
     v: a                                ->
     bigsteps        rows  e      vs     ->
     bigstep  (row :: rows) e  v          ->
@@ -150,7 +153,7 @@ type bigsteps (#c: C.context) (#a: Type): list (C.row c) -> exp c a -> list a ->
 #push-options "--split_queries always"
 (* Properties *)
 let rec bigstep_proof_equivalence
-  (#streams: list (C.row 'c))
+  (#streams: list (row 'c))
   (#e: exp 'c 'a)
   (#v1 #v2: 'a)
   (hBS1: bigstep streams e v1) (hBS2: bigstep streams e v2):
@@ -191,7 +194,7 @@ let rec bigstep_proof_equivalence
     bigstep_proof_equivalence bs1 bs2
 
 let bigstep_deterministic
-  (#streams: list (C.row 'c))
+  (#streams: list (row 'c))
   (#e: exp 'c 'a)
   (#v1 #v2: 'a)
   (hBS1: bigstep streams e v1) (hBS2: bigstep streams e v2):

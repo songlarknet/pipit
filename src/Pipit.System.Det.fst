@@ -2,7 +2,6 @@
 module Pipit.System.Det
 
 open Pipit.System.Base
-module C = Pipit.Context
 
 (* Deterministic systems can't express the whole language, but they can do a subset of it much simpler *)
 noeq
