@@ -49,6 +49,10 @@ instance is_arithtype_real: is_arithtype R.real = {
   is_arithtype_get = TReal;
 }
 
+instance is_valtype_arithtype {| is_arithtype 'a |}: is_valtype 'a = {
+  is_valtype_get = is_arithtype_get #'a
+}
+
 // type s  (a: valtype)  = S.s table a
 type s (a: Type) = S.s' table a
 
@@ -123,30 +127,34 @@ let (>^) {| is_arithtype 'a |}: s 'a -> s 'a -> bools =
 let tup {| is_valtype 'a |} {| is_valtype 'b |}: s 'a -> s 'b -> s ('a & 'b) =
   S.liftP2 #table #(is_valtype_get #'a) #(is_valtype_get #'b) #(TPair (is_valtype_get #'a) (is_valtype_get #'b)) (P'T P'T'Pair (is_valtype_get #'a) (is_valtype_get #'b))
 
-let tup (#a #b: valtype): s a -> s b -> s (TPair a b) = S.liftP2 (P'T P'T'Pair a b)
-let fst (#a #b: valtype): s (TPair a b) -> s a = S.liftP1 (P'T P'T'Fst a b)
-let snd (#a #b: valtype): s (TPair a b) -> s b = S.liftP1 (P'T P'T'Snd a b)
+let fst {| is_valtype 'a |} {| is_valtype 'b |}: s ('a & 'b) -> s 'a =
+  S.liftP1 #table #(TPair (is_valtype_get #'a) (is_valtype_get #'b)) #(is_valtype_get #'a) (P'T P'T'Fst (is_valtype_get #'a) (is_valtype_get #'b))
+
+let snd {| is_valtype 'a |} {| is_valtype 'b |}: s ('a & 'b) -> s 'b =
+  S.liftP1 #table #(TPair (is_valtype_get #'a) (is_valtype_get #'b)) #(is_valtype_get #'b) (P'T P'T'Snd (is_valtype_get #'a) (is_valtype_get #'b))
 
 // let negate = 0
 
 (* if-then-else *)
-let ite (#t: valtype): bools -> s t -> s t -> s t = S.liftP3 (P'V P'V'IfThenElse t)
-let if_then_else (#t: valtype) = ite #t
+let ite {| is_valtype 'a |}: bools -> s 'a -> s 'a -> s 'a =
+  S.liftP3 #table #TBool #(is_valtype_get #'a) #(is_valtype_get #'a) #(is_valtype_get #'a) (P'V P'V'IfThenElse (is_valtype_get #'a))
+
+let if_then_else {| is_valtype 'a |} = ite #'a
 
 
 let sofar (e: bools): bools =
-  S.rec' (fun r -> e /\ S.fby true r)
+  rec' (fun r -> e /\ fby true r)
 
 let once (e: bools): bools =
-  S.rec' (fun r -> e \/ S.fby false r)
+  rec' (fun r -> e \/ fby false r)
 
 let countsecutive (e: bools): ints =
-  S.rec' (fun r -> if_then_else e (fby 0 r +^ z1) (fby 0 r))
+  rec' (fun r -> if_then_else e (fby 0 r +^ z1) (fby 0 r))
 
 (* last-n, true for last n ticks *)
 let last (n: nat) (e: bools): bools =
   countsecutive e <=^ z n
 
-let abs (#t: arithtype) (r: s t): s t =
+let abs {| is_arithtype 'a |} (r: s 'a): s 'a =
   let' r (fun r' ->
     if_then_else (r' >=^ zero) r' (zero -^ r'))
