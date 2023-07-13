@@ -41,7 +41,8 @@ type exp (t: table) (c: context t): Type0 -> Type =
   //  do we need default for this?
   | XMu    : #valty: t.ty -> exp t (valty :: c) (t.ty_sem valty) -> exp t c (t.ty_sem valty)
   // let x = e in e[x]
-  | XLet   : #valty: t.ty -> b: t.ty -> exp t c (t.ty_sem b) -> exp t (b :: c) (t.ty_sem valty) -> exp t c (t.ty_sem valty)
+  // XXX relax this from (valty: t.ty) to 'a: this makes it easier to infer `XLet e1 e2`. do we want to do same for XFby and XThen?
+  | XLet   : b: t.ty -> exp t c (t.ty_sem b) -> exp t (b :: c) 'a -> exp t c 'a
 
   // Proof terms
   // Contracts for hiding implementation:
