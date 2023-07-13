@@ -6,36 +6,42 @@ open Pipit.Prim.Table
 module C  = Pipit.Context.Base
 module CP = Pipit.Context.Properties
 
+#push-options "--print_implicits --print_universes"
 (* Expressions `exp t c a`
   expressions are indexed by the primitive table, the environment mapping
   variable indices to value types, and the result type. The primitive table
   describes the allowed value types and primitive operations. The result type
-  is a `funty` describing a real value type (`FTVal t`) or a partial primitive
-  application (`FTFun arg rest`). Handling primitive applications this way
+  is a type at universe 1 and can contain functions (the types of primops) and
+  propositions. Handling primitive applications this way
   means that we only have one recursive datatype, rather than mutual recursion
   between this and a list-of-applications, or something. I don't know if it's
   a good idea or not.
 *)
 noeq
-type exp (t: table) (c: context t): funty t.ty -> Type =
+type exp (t: table) (c: context t): Type0 -> Type =
   // v
-  | XVal   : #a: t.ty -> v: t.ty_sem a -> exp t c (FTVal a)
+  //  the type of value must be eqtype
+  | XVal   : #valty: t.ty -> v: t.ty_sem valty -> exp t c (t.ty_sem valty)
   // bound variable (de Bruijn index)
-  | XBVar  : i: C.index_lookup c -> exp t c (FTVal (C.get_index c i))
+  | XBVar  : i: C.index_lookup c -> exp t c (t.ty_sem (C.get_index c i))
   // free variables
-  | XVar   : #a: t.ty -> x: C.var a -> exp t c (FTVal a)
+  //  the types in the variable must be t.ty (which is eqtype) because we need to compare the types of variables
+  | XVar   : #valty: t.ty -> x: C.var valty -> exp t c (t.ty_sem valty)
   // primitives
-  | XPrim  : p: t.prim -> exp t c (t.prim_ty p)
+  | XPrim  : p: t.prim -> exp t c (funty_sem t.ty_sem (t.prim_ty p))
   // f(e,...)
-  | XApp   : #arg: t.ty -> #ret: funty t.ty -> exp t c (FTFun arg ret) -> exp t c (FTVal arg) -> exp t c ret
+  | XApp   : #arg: Type -> #ret: Type -> exp t c (arg -> ret) -> exp t c arg -> exp t c ret
   // v fby e
-  | XFby   : #a: t.ty -> v: t.ty_sem a -> exp t c (FTVal a) -> exp t c (FTVal a)
+  // the type of value must be `eqtype`
+  | XFby   : #valty: t.ty -> v: t.ty_sem valty -> exp t c (t.ty_sem valty) -> exp t c (t.ty_sem valty)
   // e -> e'
-  | XThen  : #a: t.ty -> exp t c (FTVal a) -> exp t c (FTVal a) -> exp t c (FTVal a)
+  //  the type here could be relaxed to anything (!!)
+  | XThen  : #valty: t.ty -> exp t c (t.ty_sem valty) -> exp t c (t.ty_sem valty) -> exp t c (t.ty_sem valty)
   // µx. e[x]
-  | XMu    : #a: t.ty -> exp t (a :: c) (FTVal a) -> exp t c (FTVal a)
+  //  do we need default for this?
+  | XMu    : #valty: t.ty -> exp t (valty :: c) (t.ty_sem valty) -> exp t c (t.ty_sem valty)
   // let x = e in e[x]
-  | XLet   : #a: t.ty -> b: t.ty -> exp t c (FTVal b) -> exp t (b :: c) (FTVal a) -> exp t c (FTVal a)
+  | XLet   : #valty: t.ty -> b: t.ty -> exp t c (t.ty_sem b) -> exp t (b :: c) (t.ty_sem valty) -> exp t c (t.ty_sem valty)
 
   // Proof terms
   // Contracts for hiding implementation:
@@ -49,9 +55,11 @@ type exp (t: table) (c: context t): funty t.ty -> Type =
   //          exp c 'a
 
   // check "" e
-  | XCheck : #a: t.ty -> string -> exp t c (FTVal t.propty) -> exp t c (FTVal a) -> exp t c (FTVal a)
+  | XCheck : string -> exp t c (t.ty_sem t.propty) -> exp t c 'a -> exp t c 'a
 
-let rec weaken (#a: funty ('t).ty) (#c c': context 't) (e: exp 't c a): Tot (exp 't (C.append c c') a) (decreases e) =
+type val_exp (t: table) (c: context t) (a: t.ty) = exp t c (t.ty_sem a)
+
+let rec weaken (#c c': context 't) (e: exp 't c 'a): Tot (exp 't (C.append c c') 'a) (decreases e) =
   match e with
   | XVal v -> XVal v
   | XBVar i' ->
@@ -63,17 +71,16 @@ let rec weaken (#a: funty ('t).ty) (#c c': context 't) (e: exp 't c a): Tot (exp
   | XFby v e -> XFby v (weaken c' e)
   | XThen e1 e2 -> XThen (weaken c' e1) (weaken c' e2)
   | XMu e1 ->
-      let e1': exp 't (C.append (C.lift1 c 0 (FTVal?.t a)) c') a = weaken c' e1 in
-      let e1'': exp 't (C.lift1 (C.append c c') 0 (FTVal?.t a)) a = e1' in
+      let aa = XMu?.valty e in
+      let e1': exp 't (C.append (C.lift1 c 0 aa) c') 'a = weaken c' e1 in
+      let e1'': exp 't (C.lift1 (C.append c c') 0 aa) 'a = e1' in
       XMu e1''
   | XLet b e1 e2 -> XLet b (weaken c' e1) (weaken c' e2)
   | XCheck name e1 e2 -> XCheck name (weaken c' e1) (weaken c' e2)
 
 
-let is_base_exp (#c: context 't) (#a: funty ('t).ty) (e: exp 't c a): bool = match e with
+let is_base_exp (#c: context 't) (e: exp 't c 'a): bool = match e with
  | XVal _ | XVar _ | XBVar _ | XPrim _ -> true
  | _ -> false
 
-let base_exp (t: table) (c: context t) (a: funty t.ty)  = e: exp t c a { is_base_exp e }
-
-let val_exp (t: table) (c: context t) (a: t.ty) = exp t c (FTVal a)
+let base_exp (t: table) (c: context t) (a: Type)  = e: exp t c a { is_base_exp e }

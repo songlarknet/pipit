@@ -16,13 +16,20 @@ type funty (valty: eqtype) =
  | FTVal: t: valty -> funty valty
  | FTFun: t: valty -> rest: funty valty -> funty valty
 
-let rec funty_sem (#typ: eqtype) (ty_sem: typ -> Type) (ft: funty typ) =
+let rec funty_sem (#ty: eqtype) (ty_sem: ty -> Type) (ft: funty ty) =
   match ft with
   | FTVal t -> ty_sem t
-  | FTFun t r -> ty_sem t -> funty_sem ty_sem r
+  | FTFun t r -> (ty_sem t -> funty_sem ty_sem r)
+
+let lemma_funty_sem_FTFun (#ty: eqtype)
+  (ty_sem: ty -> Type)
+  (a: ty) (b: funty ty):
+  Lemma (funty_sem ty_sem (FTFun a b) == (ty_sem a -> funty_sem ty_sem b)) =
+  assert_norm (funty_sem ty_sem (FTFun a b) == (ty_sem a -> funty_sem ty_sem b))
+
 
 noeq
-type table = {
+type table: Type u#1 = {
   ty:          eqtype;
   ty_sem:      ty -> eqtype;
 
@@ -38,6 +45,8 @@ type table = {
     probably only want to provide bottom for unrefined base types. *)
   val_default: t: ty -> ty_sem t;
 
+  // We can't directly embed props because it requires a bigger universe, so
+  // instead we describe how to interpret a particular value type as a prop.
   propty:      ty;
   propty_sem:  ty_sem propty -> prop;
 

@@ -21,10 +21,11 @@ type state = {
 type m (a: Type) =
   s: state -> (a & state)
 
-type s (t: table) (a: t.ty) = m (val_exp t [] a)
-type s' (t: table) (a: funty t.ty) = m (exp t [] a)
+type s (t: table) (a: t.ty)  = m (exp t [] (t.ty_sem a))
+type s' (t: table) (a: Type) = m (exp t [] a)
 
 type prim (t: table) (ty: funty t.ty) = p: t.prim { t.prim_ty p == ty }
+
 
 let m_pure (#a: Type) (x: a): m a =
   fun s -> (x, s)
@@ -39,17 +40,17 @@ let fresh (t: table) (ty: t.ty): s t ty =
     let (x, s') = fresh' ty s in
     (XVar x, s'))
 
-let run (#a: ('t).ty) (e: s 't a) : val_exp 't [] a =
+let run (e: s' 't 'a) : exp 't [] 'a =
   let (a, _) = e { fresh = 0 } in
   a
 
-let run1 (#a #b: ('t).ty) (f: s 't a -> s 't b) : val_exp 't [a] b =
+let run1 (#a: ('t).ty) (f: s 't a -> s' 't 'b) : exp 't [a] 'b =
   let (ax, s) = fresh' a { fresh = 0 } in
   let a       = XVar ax in
   let (b,  s) = f (m_pure a) s in
   close1 b ax
 
-let run2 (#a #b #c: ('t).ty) (f: s 't a -> s 't b -> s 't c) : val_exp 't [a; b] c =
+let run2 (#a #b: ('t).ty) (f: s 't a -> s 't b -> s' 't 'c) : exp 't [a; b] 'c =
   let s       = { fresh = 0 } in
   let (ax, s) = fresh' a s in
   let (bx, s) = fresh' b s in
@@ -121,22 +122,23 @@ let (-->) (#a: ('t).ty) (e1 e2: s 't a): s 't a =
     let (e2, s) = e2 s in
     (XThen e1 e2, s))
 
+// #push-options "--ifuel 0 --fuel 0"
 let (<$>)
   (#a: ('t).ty)
   (#b: funty ('t).ty)
   (f: prim 't (FTFun a b))
   (e: s 't a):
-      s' 't b =
+      s' 't (funty_sem ('t).ty_sem b) =
+  let sem = ('t).ty_sem in
+  lemma_funty_sem_FTFun ('t).ty_sem a b;
   (fun s ->
-    let (a, s) = e s in
-    (XApp (XPrim f) a, s))
+    let (aa, s) = e s in
+    (XApp (XPrim f) aa, s))
 
 let (<*>)
-  (#a: ('t).ty)
-  (#b: funty ('t).ty)
-  (f: s' 't (FTFun a b))
-  (e: s 't a):
-      s' 't b =
+  (f: s' 't ('a -> 'b))
+  (e: s' 't 'a):
+      s' 't 'b =
   (fun s ->
     let (f, s) = f s in
     let (a, s) = e s in

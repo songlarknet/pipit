@@ -37,7 +37,7 @@ module CP = Pipit.Context.Properties
 
 (* Close an expression so that a free variable becomes bound.
    This is used by the syntactic sugar, but not in the semantics. *)
-let rec close1' (#a: funty ('t).ty) (#b: ('t).ty) (#c: context 't) (e: exp 't c a) (x: C.var b) (n: C.index_insert c): Tot (exp 't (C.close1' c b n) a) (decreases e) =
+let rec close1' (#b: ('t).ty) (#c: context 't) (e: exp 't c 'a) (x: C.var b) (n: C.index_insert c): Tot (exp 't (C.close1' c b n) 'a) (decreases e) =
   match e with
   | XVal v -> XVal v
   | XBVar i ->
@@ -58,13 +58,13 @@ let rec close1' (#a: funty ('t).ty) (#b: ('t).ty) (#c: context 't) (e: exp 't c 
   | XLet b e1 e2 -> XLet b (close1' e1 x n) (close1' e2 x (n + 1))
   | XCheck name e1 e2 -> XCheck name (close1' e1 x n) (close1' e2 x n)
 
-let close1 (#a: funty ('t).ty) (#b: ('t).ty) (#c: context 't) (e: exp 't c a) (x: C.var b): exp 't (b :: c) a = close1' e x 0
+let close1 (#b: ('t).ty) (#c: context 't) (e: exp 't c 'a) (x: C.var b): exp 't (b :: c) 'a = close1' e x 0
 
 (* Lift an expression by incrementing bound variable indices at or above n.
    This is used directly by substitution, so we need to prove some properties
    about it. Could we implement this in terms of close1' with a dummy free
    variable? *)
-let rec lift1' (#a: funty ('t).ty) (#c: context 't) (e: exp 't c a) (n: C.index_insert c) (t: ('t).ty): Tot (exp 't (C.lift1 c n t) a) (decreases e) =
+let rec lift1' (#c: context 't) (e: exp 't c 'a) (n: C.index_insert c) (t: ('t).ty): Tot (exp 't (C.lift1 c n t) 'a) (decreases e) =
   match e with
   | XVal v -> XVal v
   | XBVar i ->
@@ -81,15 +81,15 @@ let rec lift1' (#a: funty ('t).ty) (#c: context 't) (e: exp 't c a) (n: C.index_
   | XLet b e1 e2 -> XLet b (lift1' e1 n t) (lift1' e2 (n + 1) t)
   | XCheck name e1 e2 -> XCheck name (lift1' e1 n t) (lift1' e2 n t)
 
-let lift1 (#a: funty ('t).ty) (#c: context 't) (e: exp 't c a) (t: ('t).ty): exp 't (t :: c) a =
+let lift1 (#c: context 't) (e: exp 't c 'a) (t: ('t).ty): exp 't (t :: c) 'a =
   lift1' e 0 t
 
-let lift_under (#a: ('t).ty) (#c: context 't) (e: exp 't (a :: c) (FTVal a)) (n: C.index { n <= List.Tot.length c }) (t: ('t).ty): exp 't (a :: C.lift1 c n t) (FTVal a) =
+let lift_under (#t0: ('t).ty) (#c: context 't) (e: exp 't (t0 :: c) 'a) (n: C.index { n <= List.Tot.length c }) (t: ('t).ty): exp 't (t0 :: C.lift1 c n t) 'a =
   lift1' e (n + 1) t
 
 (* Substitute one bound variable for a bound expression.
    This is used by the semantics, so we need to prove that it commutes. *)
-let rec subst1' (#a: funty ('t).ty) (#c: context 't) (e: exp 't c a) (i: C.index { C.has_index c i }) (payload: val_exp 't (C.drop1 c i) (C.get_index c i)): Tot (exp 't (C.drop1 c i) a) (decreases e) =
+let rec subst1' (#c: context 't) (e: exp 't c 'a) (i: C.index { C.has_index c i }) (payload: val_exp 't (C.drop1 c i) (C.get_index c i)): Tot (exp 't (C.drop1 c i) 'a) (decreases e) =
   match e with
   | XVal v -> XVal v
   | XBVar i' ->
@@ -104,9 +104,9 @@ let rec subst1' (#a: funty ('t).ty) (#c: context 't) (e: exp 't c a) (i: C.index
   | XFby v e -> XFby v (subst1' e i payload)
   | XThen e1 e2 -> XThen (subst1' e1 i payload) (subst1' e2 i payload)
   | XMu e1 ->
-    XMu (subst1' e1 (i + 1) (lift1 payload (FTVal?.t a)))
+    XMu (subst1' e1 (i + 1) (lift1 payload (XMu?.valty e)))
   | XLet b e1 e2 -> XLet b (subst1' e1 i payload) (subst1' e2 (i + 1) (lift1 payload b))
   | XCheck name e1 e2 -> XCheck name (subst1' e1 i payload) (subst1' e2 i payload)
 
-let subst1 (#a: funty ('t).ty) (#c: context 't { C.has_index c 0 }) (e: exp 't c a) (payload: val_exp 't (C.drop1 c 0) (C.get_index c 0)): Tot (exp 't (List.Tot.tl c) a) (decreases e) =
+let subst1 (#c: context 't { C.has_index c 0 }) (e: exp 't c 'a) (payload: val_exp 't (C.drop1 c 0) (C.get_index c 0)): Tot (exp 't (List.Tot.tl c) 'a) (decreases e) =
   subst1' e 0 payload
