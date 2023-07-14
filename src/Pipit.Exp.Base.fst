@@ -33,15 +33,17 @@ type exp (t: table) (c: context t): Type0 -> Type =
   | XApp   : #arg: Type -> #ret: Type -> exp t c (arg -> ret) -> exp t c arg -> exp t c ret
   // v fby e
   // the type of value must be `eqtype`
-  | XFby   : #valty: t.ty -> v: t.ty_sem valty -> exp t c (t.ty_sem valty) -> exp t c (t.ty_sem valty)
+  | XFby   : #a: eqtype -> v: a -> exp t c a -> exp t c a
   // e -> e'
-  //  the type here could be relaxed to anything (!!)
-  | XThen  : #valty: t.ty -> exp t c (t.ty_sem valty) -> exp t c (t.ty_sem valty) -> exp t c (t.ty_sem valty)
+  //  the type here could be relaxed to allow non-eqtypes:
+  //  with a non-eqtype you could write locally-higher-order expressions such as `((+0) -> (+1)) i`
+  //  this is kind of weird though
+  | XThen  : #a: eqtype -> exp t c a -> exp t c a -> exp t c a
   // µx. e[x]
   //  do we need default for this?
   | XMu    : #valty: t.ty -> exp t (valty :: c) (t.ty_sem valty) -> exp t c (t.ty_sem valty)
   // let x = e in e[x]
-  // XXX relax this from (valty: t.ty) to 'a: this makes it easier to infer `XLet e1 e2`. do we want to do same for XFby and XThen?
+  // XXX relax this from (valty: t.ty) to 'a: this makes it easier to infer `XLet e1 e2`
   | XLet   : b: t.ty -> exp t c (t.ty_sem b) -> exp t (b :: c) 'a -> exp t c 'a
 
   // Proof terms

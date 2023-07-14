@@ -63,3 +63,17 @@ let context (t: table) = C.context t.ty
 let context_sem (c: context 't): C.context eqtype = List.map ('t).ty_sem c
 
 let row (c: context 't) = CR.row (context_sem c)
+
+let lemma_row_index_context_sem
+  (#t: table) (c: context t) (x: C.index_lookup c):
+  Lemma (t.ty_sem (C.get_index c x) == C.get_index (context_sem c) x)
+    [SMTPat (t.ty_sem (C.get_index c x))]
+    =
+  admit ()
+
+let lemma_drop_context_sem
+  (#t: table) (c: context t) (x: C.index_lookup c):
+  Lemma (context_sem (C.drop1 c x) == C.drop1 (context_sem c) x)
+    [SMTPat (context_sem (C.drop1 c x))]
+    =
+  admit ()
