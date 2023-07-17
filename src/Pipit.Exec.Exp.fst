@@ -17,7 +17,10 @@ let exec_index (#t: table) (c: context t) (ix: C.index_lookup c):
   ; update = (fun i s -> ())
   }
 
-[@@strict_on_arguments [2]]
+(* XXX: the strict_on_arguments annotation makes it hard to prove that
+   > state_of_exp (XApp f e) = (state_of_exp f & state_of_exp e)
+   which is trivial without it. What's up? *)
+// [@@strict_on_arguments [2]]
 let rec state_of_exp (#t: table) (#c: context t) (e: exp t c 'a): Tot Type (decreases e) =
   match e with
   | XVal v -> unit
@@ -61,7 +64,6 @@ let rec exec_of_exp (#t: table) (#c: context t) (e: exp t c 'a { extractable e }
   | XVal v -> exec_const _ v
   | XPrim p -> exec_const _ (t.prim_sem p)
   | XBVar i -> exec_index c i
-  // | XVar x ->
   | XApp e1 e2 ->
     extractable_XApp e1 e2;
     let t1 = exec_of_exp e1 in
