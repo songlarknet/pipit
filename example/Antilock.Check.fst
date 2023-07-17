@@ -100,6 +100,8 @@ let previously_n (n: nat) (e: Sugar.s bool): Sugar.s bool =
   let open Sugar in
   previously e /\ count_when_previously e <=^ z n
 
+(* Shelved: TODO: rewrite to use pairs and fst/snd instead of (comparatively) nice applicative records. Sad. *)
+(*
 let veh_speed_estimate (i: Sugar.s inputs): Sugar.s estimate =
   let open Sugar in
   let wheel_front = (fun i -> i.wheel_front) <$> i    in
@@ -149,3 +151,4 @@ let prove (): Lemma (ensures base_case sys) =
   // only really necessary for k-induction, so just use norm_full.
   assert (base_case sys) by (T.norm_full ()); // by (T.pipit_simplify ());
   assert (step_case sys) by (T.norm_full ())
+*)

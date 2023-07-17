@@ -9,16 +9,18 @@ open Pipit.System.Exp
 
 module T = Pipit.Tactics
 
-open Pipit.Sugar
+module R = FStar.Real
 
-let rec fir (coeffs: list real) (input: reals): reals =
+type pos = r: R.real { R.(r >. 0.0R) }
+
+let rec fir (coeffs: list R.real) (input: reals): reals =
   match coeffs with
   | [] -> zero
   | c :: coeffs' -> (input *^ pure c) +^ fir coeffs' (fby 0.0R input)
 
 let fir2 (input: reals): reals = fir [0.7R; 0.3R] input
 
-let bibo2 (n: pos) (signal: reals): s unit =
+let bibo2 (n: pos) (signal: reals): s bool =
   check "bibo" (sofar (abs signal <=^ pure n) => (abs (fir2 signal) <=^ pure n))
 
 let bibo2' n =
@@ -32,7 +34,7 @@ let proof2 (n: pos): Lemma (ensures induct1 (bibo2' n)) =
 
 let fir3 (input: reals): reals = fir [0.7R; 0.2R; 0.1R] input
 
-let bibo3 (n: pos) (signal: reals): s unit =
+let bibo3 (n: pos) (signal: reals): s bool =
   check "bibo" (sofar (abs signal <=^ pure n) => (abs (fir3 signal) <=^ pure n))
 
 let bibo3' n =

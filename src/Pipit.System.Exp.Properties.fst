@@ -18,12 +18,14 @@ open Pipit.Exp
    The invariant describes the transition system's state after it has been fed with all of `rows` as inputs.
 *)
 let rec system_of_exp_invariant
-  (rows: list (row 'c) { Cons? rows })
-  (e: exp 'c 'a { causal e })
+  (#t: table) (#c: context t)
+  (rows: list (row c) { Cons? rows })
+  (e: exp t c 'a { causal e })
   (s: state_of_exp e):
     Tot prop (decreases e) =
   match e with
   | XVal _ -> True
+  | XPrim _ -> True
   | XVar _ -> false_elim ()
   | XBVar _ -> True
   | XApp e1 e2 ->
@@ -46,7 +48,7 @@ let rec system_of_exp_invariant
         system_of_exp_invariant rows e1 s.s1 /\
         system_of_exp_invariant rows e2 s.s2)
 
-  | XMu _ e1 ->
+  | XMu e1 ->
     let s: state_of_exp e1 = coerce_eq () s in
     let (| vs, hBSmus |) = lemma_bigsteps_total rows e in
     let rows' = CR.zip2_cons vs rows in
@@ -61,15 +63,16 @@ let rec system_of_exp_invariant
       system_of_exp_invariant rows' e2 s2
 
   | XCheck _ e1 e2 ->
-    let s: (xprop & state_of_exp e1) & state_of_exp e2 = s in
+    let s: (t.ty_sem t.propty & state_of_exp e1) & state_of_exp e2 = s in
     let ((xp, s1), s2) = s in
     xp == lemma_bigstep_total_v rows e1 /\
       system_of_exp_invariant rows e1 s1 /\
       system_of_exp_invariant rows e2 s2
 
 let rec dstep0_ok
-    (row: row 'c)
-    (e: exp 'c 'a { causal e })
+    (#t: table) (#c: context t)
+    (row: row c)
+    (e: exp t c 'a { causal e })
     (v: 'a)
     (hBS: bigstep [row] e v):
       Lemma (ensures (
@@ -79,6 +82,7 @@ let rec dstep0_ok
           (decreases e) =
     match e with
     | XVal _ -> ()
+    | XPrim _ -> ()
     | XBVar _ -> ()
     | XVar _ -> false_elim ()
     | XApp e1 e2 ->
@@ -112,11 +116,11 @@ let rec dstep0_ok
       assert (s'.init == false);
       ()
 
-    | XMu _ e1 ->
+    | XMu e1 ->
+      let bottom = t.val_default (XMu?.valty e) in
       let t1 = dsystem_of_exp e1 in
-      let t = dsystem_mu_causal #(row 'c) #('a & row 'c) (fun i v -> (v, i)) t1 in
+      let t' = dsystem_mu_causal bottom (fun i v -> (v, i)) t1 in
 
-      let bottom = Pipit.Inhabited.get_inhabited <: 'a in
       let (s_scrap, v0) = t1.step (bottom, row) t1.init in
       let (s1', v') = t1.step (v0, row) t1.init in
 
@@ -135,7 +139,7 @@ let rec dstep0_ok
       bigstep_deterministic hBSMu hBS;
       assert (v == v0x);
 
-      assert (t.step row t.init == (s1', v'));
+      assert (t'.step row t'.init == (s1', v'));
 
       assert (system_of_exp_invariant [CR.cons v0x row] e1 s1');
       let s1'': state_of_exp (XMu e1) = coerce_eq () s1' in
@@ -149,7 +153,7 @@ let rec dstep0_ok
     | XLet b e1 e2 ->
       let t1 = dsystem_of_exp e1 in
       let t2 = dsystem_of_exp e2 in
-      let t = dsystem_let #(row 'c) #(b & row 'c) (fun i v -> (v, i)) t1 t2 in
+      let t = dsystem_let (fun i v -> (v, i)) t1 t2 in
 
       let (s1', v1) = t1.step row t1.init in
       let (s2', v2) = t2.step (v1, row) t2.init in
@@ -207,9 +211,10 @@ let rec dstep0_ok
       ()
 
 let rec dstepn_ok
-    (rows: list (row 'c) { Cons? rows })
-    (row: row 'c)
-    (e: exp 'c 'a { causal e })
+    (#t: table) (#c: context t)
+    (rows: list (row c) { Cons? rows })
+    (row: row c)
+    (e: exp t c 'a { causal e })
     (v: 'a)
     (hBS: bigstep (row :: rows) e v)
     (s: state_of_exp e { system_of_exp_invariant rows e s }):
@@ -220,6 +225,7 @@ let rec dstepn_ok
           (decreases e) =
     match e with
     | XVal _ -> ()
+    | XPrim _ -> ()
     | XBVar _ -> ()
     | XVar _ -> false_elim ()
 
@@ -276,14 +282,14 @@ let rec dstepn_ok
       assert (v' == v);
       ()
 
-    | XMu _ e1 ->
+    | XMu e1 ->
       assert_norm (state_of_exp (XMu e1) == state_of_exp e1);
       let s: state_of_exp (XMu e1) = s in
       let s: state_of_exp e1 = coerce_eq () s in
+      let bottom = t.val_default (XMu?.valty e) in
       let t1 = dsystem_of_exp e1 in
-      let t = dsystem_mu_causal #(row 'c) #('a & row 'c) (fun i v -> (v, i)) t1 in
+      let t' = dsystem_mu_causal bottom (fun i v -> (v, i)) t1 in
 
-      let bottom = Pipit.Inhabited.get_inhabited <: 'a in
       let (s_scrap, v0) = t1.step (bottom, row) s in
       let (s1', v') = t1.step (v0, row) s in
 
@@ -302,7 +308,7 @@ let rec dstepn_ok
       bigstep_deterministic hBSMu hBS;
       assert (v == v0x);
 
-      assert (t.step row s == (s1', v'));
+      assert (t'.step row s == (s1', v'));
 
       assert (system_of_exp_invariant (CR.cons v0x row :: CR.zip2_cons vpres rows) e1 s1');
       let s1'': state_of_exp (XMu e1) = coerce_eq () s1' in
@@ -318,7 +324,7 @@ let rec dstepn_ok
       let (s1, s2) = s in
       let t1 = dsystem_of_exp e1 in
       let t2 = dsystem_of_exp e2 in
-      let t = dsystem_let #(row 'c) #(b & row 'c) (fun i v -> (v, i)) t1 t2 in
+      let t = dsystem_let (fun i v -> (v, i)) t1 t2 in
 
       let (s1', v1) = t1.step row s1 in
       let (s2', v2) = t2.step (v1, row) s2 in
@@ -345,7 +351,7 @@ let rec dstepn_ok
       ()
 
     | XCheck p e1 e2 ->
-      let s: (xprop & state_of_exp e1) & state_of_exp e2 = s in
+      let s: (t.ty_sem t.propty & state_of_exp e1) & state_of_exp e2 = s in
       let ((xp, s1), s2) = s in
       // assert_norm (List.Tot.length (row :: rows) == );
 
@@ -372,8 +378,9 @@ let rec dstepn_ok
 // #pop-options
 
 let rec dstep_many_ok
-  (rows: list (row 'c) { Cons? rows })
-  (e: exp 'c 'a { causal e })
+  (#t: table) (#c: context t)
+  (rows: list (row c) { Cons? rows })
+  (e: exp t c 'a { causal e })
   (vs: list 'a { List.Tot.length rows == List.Tot.length vs })
   (hBSs: bigsteps rows e vs):
     Tot (s': state_of_exp e { system_of_exp_invariant rows e s' }) (decreases rows) =
@@ -396,8 +403,9 @@ let rec dstep_many_ok
 #push-options "--fuel 2 --ifuel 1"
 
 let rec dstep_eval_complete'
-  (rvs: list (row 'c & 'a) { Cons? rvs })
-  (e: exp 'c 'a { causal e })
+  (#t: table) (#c: context t)
+  (rvs: list (row c & 'a) { Cons? rvs })
+  (e: exp t c 'a { causal e })
   (hBSs: bigsteps (List.Tot.map fst rvs) e (List.Tot.map snd rvs)):
     Tot (s': state_of_exp e { system_of_exp_invariant (List.Tot.map fst rvs) e s' /\ xsystem_stepn (system_of_dsystem (dsystem_of_exp e)) rvs s' }) (decreases rvs) =
   let t = dsystem_of_exp e in
@@ -416,8 +424,9 @@ let rec dstep_eval_complete'
       s')
 
 let dstep_eval_complete
-  (rvs: list (row 'c & 'a))
-  (e: exp 'c 'a { causal e })
+  (#t: table) (#c: context t)
+  (rvs: list (row c & 'a))
+  (e: exp t c 'a { causal e })
   (hBSs: bigsteps (List.Tot.map fst rvs) e (List.Tot.map snd rvs)):
     Tot (s': state_of_exp e { xsystem_stepn (system_of_dsystem (dsystem_of_exp e)) rvs s' }) (decreases rvs) =
   let t = dsystem_of_exp e in

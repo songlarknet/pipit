@@ -1,8 +1,6 @@
 (* Transition systems *)
 module Pipit.System.Base
 
-type xprop = bool
-
 type checks (state: Type) = list (string & (state -> prop))
 
 (* Step functions are relations so that we can express non-deterministic systems.
@@ -63,14 +61,17 @@ let system_const (#input #result: Type) (v: result): system input unit result =
 // why is this necessary? issue with type inference for prop vs logical
 let prop_holds (p: prop): prop = p
 
-let system_check (#input #state: Type) (name: string)
+let system_check (#input #state: Type) (#xprop: eqtype)
+  (xprop_sem: xprop -> prop)
+  (xprop_true: xprop)
+  (name: string)
   (t1: system input state xprop):
        system input (xprop & state) xprop =
-  { init = (fun s -> fst s = true /\ t1.init (snd s));
+  { init = (fun s -> fst s = xprop_true /\ t1.init (snd s));
     step = (fun i s s' r ->
         t1.step i (snd s) (snd s') r /\
         r = fst s');
-    chck = (name, (fun s -> fst s == true)) :: map_checks snd t1.chck;
+    chck = (name, (fun s -> xprop_sem (fst s))) :: map_checks snd t1.chck;
   }
 
 let system_ap2 (#input #state1 #state2 #value1 #value2: Type)

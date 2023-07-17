@@ -96,11 +96,11 @@ let check'
 // I really want a monadic/effectful interface that collects a list of checks.
 // when I tried this before I had trouble reifying effectful expressions inside
 // tactics. need to work that out.
-// let check
-//   (name: string)
-//   (e: s 't ('t).propty):
-//     s 't ('t).unitty =
-//   check' name e (m_pure (XVal ()))
+let check
+  (name: string)
+  (e: s 't ('t).propty):
+    s 't ('t).propty =
+  let' e (fun p -> check' name p p)
 
 let pure (#a: ('t).ty) (v: ('t).ty_sem a): s 't a =
   m_pure (XVal v)

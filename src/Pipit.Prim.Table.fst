@@ -49,6 +49,7 @@ type table: Type u#1 = {
   // instead we describe how to interpret a particular value type as a prop.
   propty:      ty;
   propty_sem:  ty_sem propty -> prop;
+  propty_of_bool: bool -> ty_sem propty;
 
   // TODO: unit types?
 }

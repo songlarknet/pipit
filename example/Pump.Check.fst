@@ -67,10 +67,6 @@ let lastn (n: int) (p: Sugar.s bool) =
 let settle_time: int = 1000
 let stuck_time:  int = 6000
 
-let pair a b =
-  let open Sugar in
-  (fun a b -> (a, b)) <$> a <*> b
-
 (*
   node pump(
     estop_ok:  bool;
@@ -98,34 +94,27 @@ let pair a b =
 
  We will rewrite this slightly to make it easier to state and prove. First, we
  will inline the two occurrences of lastn(_, pump_en) to share a binding for
- countsecutive(pump_en) so it's obvious they refer to the same count. Second,
- Pipit only allows a single integer result (yet), so we'll add a result that
- encodes both results as a bitfield. The updated version is:
+ countsecutive(pump_en) so it's obvious they refer to the same count.
 
   node pump(
     estop_ok:  bool;
     level_low: bool;
   ) returns (
-    return:    int;
+    pump_en:   bool;
+    nok_stuck: bool;
   )
   var
     pump_try:  bool;
-    pump_en:   bool;
     count_en:  int;
-    nok_stuck: bool;
   let
     pump_try  = lastn(SETTLE, estop_ok and level_low);
 
     count_en  = countsecutive(pump_try);
 
     nok_stuck =
-        ancount_en >= STUCK);
+        any(count_en >= STUCK);
 
     pump_en   = pump_try and not nok_stuck;
-
-    result    =
-        (if pump_en then PUMP else 0) +
-        (if nok_stuck then STUCK else 0);
 
     --%PROPERTY "pump can never be engaged too long":
     --           count_en <= STUCK + 1;
@@ -135,25 +124,16 @@ let pair a b =
     --          not level_low => not pump_en;
   tel
 *)
-// let controller (estop level_low: Sugar.s bool) =
-//   let open Sugar in
-//   // XXX: nesting is not working properly, for some reason inlining lastn helps
-//   let' (lastn settle_time (not_ estop /\ level_low)) (fun sol_try ->
-//   let' (once (lastn stuck_time sol_try)) (fun nok_stuck ->
-//   let' (sol_try /\ not_ nok_stuck) (fun sol_en ->
-//   let' (pair sol_en nok_stuck) (fun result ->
-//   check' "ESTOP OK" (estop => not_ sol_try) (
-//   check' "LEVEL HIGH OK"   (not_ level_low => not_ sol_try) (
-//     result))))))
 
 let controller' (estop level_low: Sugar.s bool) =
   let open Sugar in
-  let' (countsecutive' (not_ estop /\ level_low)) (fun sol_try_c   ->
-  let' (sol_try_c >=^ z settle_time)             (fun sol_try     ->
-  let' (countsecutive' sol_try)                  (fun nok_stuck_c ->
-  let' (once (nok_stuck_c >=^ z stuck_time))     (fun nok_stuck   ->
-  let' (sol_try /\ not_ nok_stuck)                (fun sol_en      ->
-  let' (pair sol_en nok_stuck)                   (fun result      ->
+  // XXX: explicit lets need type annotations for now, but this should be less of a problem once we have sharing recovery and don't need explicit lets as much
+  let' #_ #(bool & bool) (countsecutive' (not_ estop /\ level_low)) (fun sol_try_c   ->
+  let' #_ #(bool & bool) (sol_try_c >=^ z settle_time)              (fun sol_try     ->
+  let' #_ #(bool & bool) (countsecutive' sol_try)                   (fun nok_stuck_c ->
+  let' #_ #(bool & bool) (once (nok_stuck_c >=^ z stuck_time))      (fun nok_stuck   ->
+  let' #_ #(bool & bool) (sol_try /\ not_ nok_stuck)                (fun sol_en      ->
+  let' #_ #(bool & bool) (tup sol_en nok_stuck)                     (fun result      ->
   check' "ESTOP OK"      (estop => not_ sol_en) (
   check' "LEVEL HIGH OK" (not_ level_low => not_ sol_en) (
     result))))))))

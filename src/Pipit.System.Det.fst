@@ -42,14 +42,17 @@ let dsystem_const (#input #result: Type) (v: result): dsystem input unit result 
     chck = [];
   }
 
-let dsystem_check (#input #state: Type) (name: string)
+let dsystem_check (#input #state: Type) (#xprop: eqtype)
+  (xprop_sem: xprop -> prop)
+  (xprop_true: xprop)
+  (name: string)
   (t1: dsystem input state xprop):
        dsystem input (xprop & state) xprop =
-  { init = (true, t1.init);
+  { init = (xprop_true, t1.init);
     step = (fun i s ->
         let (s2', r) = t1.step i (snd s) in
         ((r, s2'), r));
-    chck = (name, (fun s -> fst s == true)) :: map_checks snd t1.chck;
+    chck = (name, (fun s -> xprop_sem (fst s))) :: map_checks snd t1.chck;
   }
 
 let dsystem_ap2 (#input #state1 #state2 #value1 #value2: Type)

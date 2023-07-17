@@ -32,7 +32,7 @@ type exp (t: table) (c: context t): Type0 -> Type =
   // f(e,...)
   | XApp   : #arg: Type -> #ret: Type -> exp t c (arg -> ret) -> exp t c arg -> exp t c ret
   // v fby e
-  // the type of value must be `eqtype`
+  // XXX: the type of value must be at least `eqtype`, but really it should be a pure value type (t.ty) since we should only store pure values in buffers (not, eg, a mutable buffer, if we had such values)
   | XFby   : #a: eqtype -> v: a -> exp t c a -> exp t c a
   // e -> e'
   //  the type here could be relaxed to allow non-eqtypes:
@@ -40,10 +40,10 @@ type exp (t: table) (c: context t): Type0 -> Type =
   //  this is kind of weird though
   | XThen  : #a: eqtype -> exp t c a -> exp t c a -> exp t c a
   // µx. e[x]
-  //  do we need default for this?
+  //  this has to be a pure value type for the same reason as fby: recursive occurrences must be guarded by a fby, so any values will almost certainly need to be stored in a buffer
   | XMu    : #valty: t.ty -> exp t (valty :: c) (t.ty_sem valty) -> exp t c (t.ty_sem valty)
   // let x = e in e[x]
-  // XXX relax this from (valty: t.ty) to 'a: this makes it easier to infer `XLet e1 e2`
+  // XXX: I have relaxed this from (valty: t.ty) to arbitrary type 'a: this makes it easier to infer `XLet e1 e2`
   | XLet   : b: t.ty -> exp t c (t.ty_sem b) -> exp t (b :: c) 'a -> exp t c 'a
 
   // Proof terms
