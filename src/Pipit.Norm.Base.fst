@@ -37,22 +37,50 @@ type nexp (t: table) (c: context t) (ty: t.ty) =
   bindings as their value is not available at the time to evaluate the pure
   expression.
 *)
-type ndef (t: table) (cbound crest: context t) (valty: t.ty): Type =
- | NDLet: e: nexp t cbound valty ->
-          ndef t cbound crest valty
- | NDFby: v: t.ty_sem valty ->
-          e: nexp t (crest `List.Tot.rev_acc` cbound) valty ->
-          ndef t cbound crest valty
- | NDFree: ndef t cbound crest valty
+type ncontext (t: table) = | NC:
+  available: context t ->
+  remainder: context t ->
+  ncontext t
+
+type ncontext_focus (t: table) = | NCF:
+  available: context t ->
+  valty:     t.ty ->
+  remainder: context t ->
+  ncontext_focus t
+
+let ncf_next (#t: table) (ncf: ncontext_focus t): ncontext t =
+  NC (ncf.valty :: ncf.available) ncf.remainder
+
+let ncf_prev (#t: table) (ncf: ncontext_focus t): ncontext t =
+  NC ncf.available (ncf.valty :: ncf.remainder)
+
+let ncf_available (#t: table) (ncf: ncontext_focus t): context t =
+  ncf.available
+
+let ncf_all (#t: table) (ncf: ncontext_focus t): context t =
+  List.Tot.rev_acc ncf.remainder (ncf.valty :: ncf.available)
+  // == List.Tot.rev_acc (ncf.valty :: ncf.remainder) ncf.available
+
+let nc_all (#t: table) (nc: ncontext t): context t =
+  List.Tot.rev_acc nc.remainder nc.available
+  // ncf_all ncf == nc_all (ncf_next ncf) == nc_all (ncf_prev ncf)
+
+type ndef (t: table) (ncf: ncontext_focus t): Type =
+ | NDLet: e: nexp t (ncf_available ncf) ncf.valty ->
+          ndef t ncf
+ | NDFby: v: t.ty_sem ncf.valty ->
+          e: nexp t (ncf_all ncf) ncf.valty ->
+          ndef t ncf
+ | NDFree: ndef t ncf
 
 
-type ndefs (t: table) (cbound: context t): context t -> Type =
- | NDNil: ndefs t cbound []
+type ndefs (t: table): ncontext t -> Type =
+ | NDNil: #cbound: context t -> ndefs t (NC cbound [])
  | NDCons:
-      #valty: t.ty -> #crest: context t ->
-      def:  ndef  t cbound (valty :: crest) valty ->
-      rest: ndefs t (valty :: cbound) crest ->
-      ndefs t cbound (valty :: crest)
+      #ncf: ncontext_focus t ->
+      def:  ndef  t ncf ->
+      rest: ndefs t (ncf_next ncf) ->
+      ndefs t (ncf_prev ncf)
 
 type nprop (t: table) (c: context t) = {
   name: string;
@@ -60,92 +88,127 @@ type nprop (t: table) (c: context t) = {
   consequent: nexp t c t.propty;
 }
 
-type nsys (t: table) (c c': context t) = {
-  defs:   ndefs t c c';
-  checks: list (nprop t (c' `List.Tot.rev_acc` c));
+type nsys (t: table) (nc: ncontext t) = {
+  defs:   ndefs t nc;
+  checks: list (nprop t (nc_all nc));
 }
 
-type norm (t: table) (c c': context t) (ty: t.ty) = {
-  sys: nsys t c c';
-  exp: nexp t (c' `List.Tot.rev_acc` c) ty;
+type norm (t: table) (nc: ncontext t) (ty: t.ty) = {
+  sys: nsys t nc;
+  exp: nexp t (nc_all nc) ty;
 }
 
-type norm_apps (t: table) (c c': context t) (ty: funty t.ty) = {
-  sys: nsys t c c';
-  exp: nexp_apps t (c' `List.Tot.rev_acc` c) ty;
+type norm_apps (t: table) (nc: ncontext t) (ty: funty t.ty) = {
+  sys: nsys t nc;
+  exp: nexp_apps t (nc_all nc) ty;
 }
 
-assume val nsys_is_deterministic (#t: table) (#c #c': context t) (n: nsys t c c'): bool
+assume val nsys_is_deterministic (#t: table) (#nc: ncontext t) (n: nsys t nc): bool
 // check if any NDFree
 
 assume val nexp_lift (#t: table) (#c: context t) (#ty: t.ty) (n: nexp t c ty) (c': context t): nexp t (c' `List.Tot.rev_acc` c) ty
 assume val nexp_sem (#t: table) (#c: context t) (#ty: t.ty) (i: row c) (n: nexp t c ty): t.ty_sem ty
 
-let rec state_of_ndefs (#t: table) (#c #c': context t) (n: ndefs t c c'): Tot (context t) (decreases n)
+let rec state_of_ndefs (#t: table) (#nc: ncontext t) (n: ndefs t nc): Tot (context t) (decreases n)
  = match n with
  | NDNil -> []
  | NDCons (NDFby _ _) rest ->
-    NDCons?.valty n :: state_of_ndefs rest
+    (NDCons?.ncf n).valty :: state_of_ndefs rest
  | NDCons _ rest -> state_of_ndefs rest
 
 noeq
-type ndefs_sem (t: table) (c: context t) (inputs: row c):
-  c': context t ->
-  n: ndefs t c c' ->
-  row (state_of_ndefs n) ->
-  row (state_of_ndefs n) ->
-  row (c' `List.Tot.rev_acc` c) -> Type =
-  | NDSNil: ndefs_sem t c inputs [] NDNil () () inputs
+type ndefs_sem (t: table):
+  // Program `n`, typed with definition context `nc`
+  nc: ncontext t -> n: ndefs t nc ->
+  // with given input environment and state
+     row nc.available -> row (state_of_ndefs n) ->
+  // evaluates to new state, and collected output environment
+     row (nc_all nc)  -> row (state_of_ndefs n) -> Type =
+  // To evaluate an empty definition context:
+  | NDSNil:
+      c:       context t ->
+      inputs:  row c ->
+      // a program with no definitions `NDNil`
+      // with environment `inputs` and empty state `()`
+      // evaluates to empty state `()` and copies output environment `inputs`.
+      ndefs_sem t (NC c []) NDNil
+        inputs ()
+        inputs ()
+  // To evaluate a let or pure expression:
   | NDSLet:
-      ty: t.ty ->
-      e: nexp t c ty ->
-      c': context t ->
-      n': ndefs t (ty :: c) c' ->
-      st: row (state_of_ndefs n') ->
-      st': row (state_of_ndefs n') ->
-      r': row (List.Tot.rev_acc c' (ty :: c)) ->
-      ndefs_sem t (ty :: c) (nexp_sem inputs e, inputs) c' n' st st' r' ->
-      ndefs_sem t c inputs (ty :: c') (NDCons (NDLet e) n') st st' r'
+      // for a focussed context `ncf`,
+      ncf:     ncontext_focus t ->
+      // we have an expression `e` that can refer to the current bindings in `ncf`
+      e:       nexp t (ncf_available ncf) ncf.valty ->
+      // and the remaining definitions `n'`
+      n':      ndefs t (ncf_next ncf) ->
+      // with environment `inputs` and initial state `st`
+      inputs:  row (ncf_available ncf) ->
+      st:      row (state_of_ndefs n') ->
+      // output environment `outputs` and result state `st'`
+      outputs: row (ncf_all ncf) ->
+      st':     row (state_of_ndefs n') ->
+      // we evaluate the current expression `nexp_sem inputs e` and add it to the input environment;
+      // we then evaluate the remaining definitions `n'` to result state `st'` and environment `outputs`.
+      ndefs_sem t (ncf_next ncf) n'
+        (nexp_sem inputs e, inputs) st
+         outputs                    st' ->
+      // So that's how you evaluate a let definition.
+      ndefs_sem t (ncf_prev ncf) (NDCons (NDLet e) n')
+        inputs  st
+        outputs st'
+  // To evaluate a follow-by definition:
   | NDSFby:
-      ty: t.ty ->
-      v_init:   t.ty_sem ty ->
-      v_state:  t.ty_sem ty ->
-      c': context t ->
-      e: nexp t ((ty :: c') `List.Tot.rev_acc` c) ty ->
-      n': ndefs t (ty :: c) c' ->
-      st: row (state_of_ndefs n') ->
-      st': row (state_of_ndefs n') ->
-      r': row (List.Tot.rev_acc c' (ty :: c)) ->
-      ndefs_sem t (ty :: c) (v_state, inputs) c' n' st st' r' ->
-      ndefs_sem t c inputs (ty :: c') (NDCons (NDFby v_init e) n') (v_state, st) (nexp_sem r' e, st') r'
+      // for a focussed context `ncf`,
+      ncf:     ncontext_focus t ->
+      // the pieces of the follow-by: initial value and expression
+      v_init:  t.ty_sem ncf.valty ->
+      // the expression can refer to all bindings, including later definitions - unlike pure expressions which can only refer to previously-bound definitions
+      e:       nexp t (ncf_all ncf) ncf.valty ->
+      // for remaining definitions `n'`
+      n':      ndefs t (ncf_next ncf) ->
+
+      // with environment `inputs`
+      inputs:  row (ncf_available ncf) ->
+      // our starting state includes the current state for the follow-by `v_state`, as well as the state for the remaining definitions `st`
+      v_state: t.ty_sem ncf.valty ->
+      st:      row (state_of_ndefs n') ->
+
+      // and we get a result environment `outputs` and result state `st'`
+      outputs: row (ncf_all ncf) ->
+      st':     row (state_of_ndefs n') ->
+      // we evaluate the remaining definitions, binding the current value of our follow-by to `v_state`
+      ndefs_sem t (ncf_next ncf) n'
+        (v_state, inputs) st
+         outputs          st' ->
+      // and finally, in the updated state, we evaluate the follow-by expression, allowing it to refer to the results of all of the definitions (`outputs`)
+      ndefs_sem t (ncf_prev ncf) (NDCons (NDFby v_init e) n')
+         inputs  (v_state,            st)
+         outputs (nexp_sem outputs e, st')
+  // To evaluate a free definition:
   | NDSFree:
-      ty: t.ty ->
-      v_free:   t.ty_sem ty ->
-      c': context t ->
-      n': ndefs t (ty :: c) c' ->
-      st: row (state_of_ndefs n') ->
-      st': row (state_of_ndefs n') ->
-      r': row (List.Tot.rev_acc c' (ty :: c)) ->
-      ndefs_sem t (ty :: c) (v_free, inputs) c' n' st st' r' ->
-      ndefs_sem t c inputs (ty :: c') (NDCons NDFree n') st st' r'
+      // for a focussed context `ncf`,
+      ncf:     ncontext_focus t ->
+      // free definitions have no expression or anything, so we just need the remaining definitions `n'`
+      n':      ndefs t (ncf_next ncf) ->
 
-// TODO try zipper for c' / c movement. make contexts implicit? write on paper
+      // with environment `inputs` and starting state `st`,
+      inputs:  row (ncf_available ncf) ->
+      st:      row (state_of_ndefs n') ->
 
-// let rec norm_get_defs' (#t: table) (#c #c': context t) (n: norm_defs t c c'):
-//   Tot (cdefs: context t { c' = cdefs `C.append` c }) (decreases n) =
-//   match n with
-//   | NDNil -> []
-//   | NDCons _ rest ->
-//     let ty = NDCons?.valty n in
-//     let cdefs = norm_get_defs' rest in
-//     // ASSUME snoc/append easy list stuff
-//     assume ((cdefs `C.append` (ty :: c)) == (List.Tot.snoc (cdefs, ty)) `C.append` c);
-//     List.Tot.snoc (cdefs, ty)
+      // we get back a result environment `outputs` and result state `st'`
+      outputs: row (ncf_all ncf) ->
+      st':     row (state_of_ndefs n') ->
 
-// let norm_get_defs (#t: table) (#c: context t) (#r: context t -> eqtype) (n: norm t c r):
-//   (cdefs: context t { n.c' = cdefs `C.append` c }) =
-//   norm_get_defs' n.defs
-
+      // and, finally, we need some arbitrary value to give the definition
+      v_free: t.ty_sem ncf.valty ->
+      // we evaluate the remaining definitions, binding our definition to `v_free` in the `inputs` environment.
+      ndefs_sem t (ncf_next ncf) n'
+        (v_free, inputs) st
+         outputs         st' ->
+      ndefs_sem t (ncf_prev ncf) (NDCons NDFree n')
+         inputs  st
+         outputs st'
 
 // let union (#t: table) (#c: context t) (n: norm t c) (n': norm t c):
 //   norm t c // { sem u = n <+> n' }
