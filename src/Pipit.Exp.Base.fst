@@ -33,6 +33,7 @@ type exp (t: table) (c: context t): Type0 -> Type =
   | XApp   : #arg: Type -> #ret: Type -> exp t c (arg -> ret) -> exp t c arg -> exp t c ret
   // v fby e
   // XXX: the type of value must be at least `eqtype`, but really it should be a pure value type (t.ty) since we should only store pure values in buffers (not, eg, a mutable buffer, if we had such values)
+  // in fact, for translation to normalised systems, we need it to be a value type
   | XFby   : #a: eqtype -> v: a -> exp t c a -> exp t c a
   // e -> e'
   //  the type here could be relaxed to allow non-eqtypes:

@@ -22,6 +22,15 @@ let rec index (l: C.context eqtype) (r: row l) (i: C.index_lookup l): C.get_inde
         let res: C.get_index ts (i - 1) = index ts rs (i - 1) in
         coerce_eq #_ #(List.index l i) () res)
 
+let rec rev_acc (r: row 'c) (r': row 'd): row (C.rev_acc 'c 'd) =
+  match 'c with
+  | [] -> r'
+  | t :: ts ->
+    let rr: (t & row ts) = r in
+    let (rt, rts) = rr in
+    let r'': (row (t :: 'd)) = (rt, r') in
+    rev_acc rts r''
+
 let rec append (r: row 'c) (r': row 'd): row (C.append 'c 'd) =
   match 'c with
   | [] -> r'

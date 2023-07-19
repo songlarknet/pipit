@@ -27,6 +27,8 @@ let empty = []
 
 let append (c c': context 'a): context 'a = List.append c c'
 
+let rev_acc (c c': context 'a): context 'a = List.rev_acc c c'
+
 let rec drop1 (l: context 'a) (i: index_lookup l): (l': context 'a { List.length l' == List.length l - 1 }) =
   match l, i with
   | _ :: l', 0 -> l'

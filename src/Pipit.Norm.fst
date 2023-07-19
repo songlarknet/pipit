@@ -22,11 +22,12 @@
 
   What needs doing:
   * definition of norm, norm_defs, expressions, etc
-    - norm_defs: fby, pure lets, free/unbound
-    - pure non-streaming expressions in ANF
+    ✅ norm_defs: fby, pure lets, free/unbound
+    ✅ pure non-streaming expressions in ANF
     - norm_det, deterministic variant, which disallows 'FREE' definitions
   * semantics of norm: total, non-deterministic;
-    - expressions can be function
+    ✅ expressions can be function
+    ✅ norm_defs is relation
     - system is relation
     - deterministic if no frees
   * translation from exp:
