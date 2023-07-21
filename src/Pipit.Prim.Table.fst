@@ -86,6 +86,14 @@ let lemma_rev_acc_context_sem
     =
   admit ()
 
+let lemma_append_context_sem
+  (#t: table) (c c': context t):
+  Lemma (context_sem (C.append c c') == C.append (context_sem c) (context_sem c'))
+    [SMTPat (context_sem (C.append c c'));
+     SMTPat (C.append (context_sem c) (context_sem c'))]
+    =
+  admit ()
+
 // TODO clean
 assume val lemma_context_sem_length (t: table) (c: context t):
   Lemma (List.Tot.length (context_sem c) == List.Tot.length c)

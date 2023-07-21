@@ -172,10 +172,7 @@ let nsys_union (#t: table) (#c #c1 #c2: context t) (n1: nsys t (NC c c1)) (n2: n
   admit ()
 
 (* applicative functor style <*> *)
-let norm_apps_apply (#t: table) (#c #c1 #c2: context t) (#arg: t.ty) (res: funty t.ty) (nf: norm_apps t (NC c c1) (FTFun arg res)) (na: norm t (NC c c2) arg):
-  // This might actually have definitions:
-  // > c1 `C.append` c2 `C.append` [arg]
-  // because we cannot apply norm_apps to an arbitrary expression; nested applications are not allowed
+let norm_apps_apply (#t: table) (#c #c1 #c2: context t) (#arg: t.ty) (res: funty t.ty) (nf: norm_apps t (NC c c1) (FTFun arg res)) (na: norm_base t (NC c c2) arg):
   norm_apps t (NC c (c1 `C.append` c2)) res =
   admit ()
 

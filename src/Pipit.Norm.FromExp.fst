@@ -8,42 +8,85 @@ open Pipit.Norm.Exp
 
 module C  = Pipit.Context.Base
 module CP = Pipit.Context.Properties
+module CR = Pipit.Context.Row
 
 module X  = Pipit.Exp.Base
 
-// Hard to write down definitions ahead of time, as it depends on how the
-// recursive definitions are split
-// let rec dcontext_of_exp
-//   (#t: table) (#c: context t) (#ty: t.ty)
-//   (e: X.exp t c ty)
-//     : context t =
-//   match e with
-//   | X.XVal _ -> []
-//   | X.XBVar _ -> []
-//   | X.XVar _ -> []
-//   | X.XPrim _ -> []
-//   | X.XApp e e' ->
-//     let c0 = dcontext_of_exp e `C.append` dcontext_of_exp e' in
-//     c0 // `C.append` result type...
-//   | X.XFby v e' ->
-//     // (X.XFby?.valty e) ::
-//       dcontext_of_exp e'
-//   | X.XThen e e' ->
-//     dcontext_of_exp e `C.append` dcontext_of_exp e'
-//   | X.XMu e' ->
-//     dcontext_of_exp
 
-// let split
-//   (#t: table) (#c #cd: context t) (#ty: t.ty)
-//   (n: norm_base t (NC c (ty :: cd)) ty):
-//     cd1: context t & cd2: context t { cd = cd1 `C.append` cd2 } &
-//     d1: norm_base t (NC c cd1) ty &
-//     // e1: nexp_base t (NC c cd1) ty &
-//     d2: nsys t (NC c cd2)
+let rec dstate_of_exp
+  (#t: table) (#c: context t)
+  (e: X.exp t c 'a)
+    : Tot (context t) (decreases e) =
+  match e with
+  | X.XVal _ | X.XBVar _ | X.XVar _ | X.XPrim _ -> []
+  | X.XApp e e' ->
+    dstate_of_exp e `C.append` dstate_of_exp e'
+  | X.XFby v e' ->
+    // TODO need valty for fby buf
+    // (X.XFby?.valty e) ::
+      dstate_of_exp e'
+  | X.XThen e e' ->
+    dstate_of_exp e `C.append` dstate_of_exp e'
+  | X.XMu e' ->
+    dstate_of_exp e'
+  | X.XLet b e e' ->
+    dstate_of_exp e `C.append` dstate_of_exp e'
+  | X.XCheck p e e' ->
+    dstate_of_exp e `C.append` dstate_of_exp e'
 
+let split
+  (#t: table) (#ci #cd: context t) (#ty: t.ty)
+  (n: norm_base t (NC ci (ty :: cd)) ty):
+    cd1: context t & cd2: context t &
+    d1:  ndefs   t (NC ci cd1)     &
+    d2:  ndefs   t (NC (C.rev_acc cd1 ci) (ty :: cd2))
+      { cd = cd1 `C.append` cd2 /\
+        state_of_ndefs d1 == state_of_ndefs n.sys.defs /\
+        Nil? (state_of_ndefs d2)
+        /\ (forall (ri: row ci) (st: row (state_of_ndefs n.sys.defs)) (st': row (state_of_ndefs n.sys.defs)) (r1: row cd1) (r2: row cd2) (v: t.ty_sem ty).
+        (
+          let rd: row cd = coerce_eq () (CR.append r1 r2) in
+          let rtd: row (ty :: cd) = (v, rd) in
+          let ritd: row (nc_all (NC ci (ty :: (cd1 `C.append` cd2)))) = CR.rev_acc rtd ri in
+          let rt2: row (ty :: cd2) = (v, r2) in
+          let ri1: row (C.rev_acc cd1 ci) = CR.rev_acc r1 ri in
+          let ri1t2: row (nc_all (NC (C.rev_acc cd1 ci) ((ty :: cd2)))) = CR.rev_acc rt2 ri1 in
+          ndefs_sem _ _ n.sys.defs ri st ritd st' <==>
+            (ndefs_sem _ _ d1 ri st (CR.rev_acc r1 ri) st' /\ ndefs_sem _ _ d2 (CR.rev_acc r1 ri) () ri1t2 ())))
+      }
+  = admit ()
 
-let translate
+(*
+let rec translate
   (#t: table) (#c: context t) (#ty: t.ty)
   (e: X.val_exp t c ty):
-    c': context t & norm_base t (NC c c') ty =
-  admit ()
+    c': context t & n: norm_base t (NC c c') ty { state_of_ndefs n.sys.defs = dstate_of_exp e } =
+  match e with
+  | X.XVal v -> { sys = empty; exp = NXVal v }
+  | X.XBVar i -> {sys = empty; exp = NXBVar i }
+  | X.XVar _ -> false_elim ()
+  | X.XPrim _ -> xxx
+  | X.XApp _ _ -> xxx
+  | X.XFby v e' ->
+    let (| c', n' |) = translate e' in
+    let nx: nexp_base t (C.rev_acc c (ty :: c')) = lift n'.exp (length c') in
+    let d: ndefs t (NC c (ty :: c')) =
+      NDCons (NDFby v nx) n'.sys.defs
+      in
+    xxx
+  | X.XThen _ _ -> xxx
+  | X.XMu e' ->
+    let (| c', n' |) = translate e' in
+    let (| cd1, cd2, n1, n2 |) = split n' in
+    let n'' = nbinds n1 n2 in
+    let nx = NXBVar (List.length cd2) in
+    { sys = n''; exp = nx }
+  | X.XLet b e1 e2 ->
+    let (| c1, n1 |) = translate e1 in
+    let (| c2, n2 |) = translate e2 in
+    nbinds n1 (nLet n1.exp (nlifts 1 (List.length c1) n2))
+  | X.XCheck p e1 e2 ->
+    let (| c1, n1 |) = translate e1 in
+    let (| c2, n2 |) = translate e2 in
+    nbinds n1 (nprop p n1.exp (nlifts 0 (List.length c1) n2))
+*)

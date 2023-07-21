@@ -54,7 +54,7 @@ let nexp_base_lift (#t: table) (#c: context t) (#ty: t.ty) (n: nexp_base t c ty)
   | NXVal v -> NXVal v
   | NXBVar i ->
     lemma_rev_acc_index_lift c' c i;
-    // TODO row indexing lemma why need ===?
+    // ASSUME row indexing lemma why need ===?
     assume (forall (r: row c) (r': row c'). CR.index (context_sem c) r i === (CR.index (context_sem (c' `C.rev_acc` c)) (r' `CR.rev_acc` r) (i + List.Tot.length c')));
     NXBVar (i + List.Tot.length c')
 
