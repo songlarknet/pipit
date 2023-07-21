@@ -1,6 +1,7 @@
 (* Translation to transition system *)
 module Pipit.System.Exp
 
+(*SHELVED: use Pipit.Norm.System
 open Pipit.Prim.Table
 open Pipit.Exp.Base
 module Causal = Pipit.Exp.Causality
@@ -110,3 +111,4 @@ let rec system_of_exp_rel
 
 let system_of_exp (#t: table) (#c: context t) (e: exp t c 'a { Causal.causal e }) =
   system_of_dsystem (dsystem_of_exp e)
+*)

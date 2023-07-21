@@ -55,6 +55,12 @@ type norm (t: table) (nc: ncontext t) (ty: t.ty) = {
 assume val nsys_is_deterministic (#t: table) (#nc: ncontext t) (n: nsys t nc): bool
 // check if any NDFree
 
+type norm_det (t: table) (c: context t) (ty: t.ty) = {
+  defs: context t;
+  sys: sys: nsys t (NC c defs) { nsys_is_deterministic sys };
+  exp: nexp t (nc_all (NC c defs)) ty;
+}
+
 let rec state_of_ndefs (#t: table) (#nc: ncontext t) (n: ndefs t nc): Tot (context t) (decreases n)
  = match n with
  | NDNil -> []

@@ -64,3 +64,31 @@
     because things won't be duplicated by default.
 *)
 module Pipit.Norm
+
+include Pipit.Norm.Defs
+
+open Pipit.Prim.Table
+
+let norm_contract_prop
+  (#t: table) (#valty #argty: t.ty)
+  (rely: norm_det t [argty]        t.propty)
+  (guar: norm_det t [argty; valty] t.propty)
+  (impl: norm_det t [argty]        valty): prop =
+ True
+//  (forall (args: list (row argty)).
+//    norm_det_always args rely ==>
+//    norm_det_always (row_zip2 r (norm_det_sems args impl)) guar)
+
+type norm_contract (t: table) (valty argty: t.ty) = {
+  rely: norm_det t [argty]        t.propty;
+  guar: norm_det t [argty; valty] t.propty;
+  impl: norm_det t [argty]        valty;
+  wit:  norm_contract_prop rely guar impl;
+}
+
+let norm_contract_sem
+  (#t: table) (#valty #argty: t.ty)
+  (streams: list (t.ty_sem argty))
+  (c: norm_contract t valty argty):
+    t.ty_sem valty =
+  admit ()

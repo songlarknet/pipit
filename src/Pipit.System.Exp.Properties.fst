@@ -1,6 +1,6 @@
 (* Translation to transition system proof *)
 module Pipit.System.Exp.Properties
-
+(*SHELVED: use Pipit.Norm.System
 open Pipit.Prim.Table
 module C  = Pipit.Context.Base
 module CR = Pipit.Context.Row
@@ -452,3 +452,4 @@ let dstep_eval_complete
 //   match outer with
 //   | 0 -> assert (system_stepn' (system_of_exp e vars) (C.Table?._0 streams) vs None)
 //   | _ -> system_eval_complete e streams vs hBS
+*)

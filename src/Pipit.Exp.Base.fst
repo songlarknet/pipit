@@ -6,7 +6,8 @@ open Pipit.Prim.Table
 module C  = Pipit.Context.Base
 module CP = Pipit.Context.Properties
 
-#push-options "--print_implicits --print_universes"
+module N  = Pipit.Norm
+
 (* Expressions `exp t c a`
   expressions are indexed by the primitive table, the environment mapping
   variable indices to value types, and the result type. The primitive table
@@ -17,74 +18,83 @@ module CP = Pipit.Context.Properties
   between this and a list-of-applications, or something. I don't know if it's
   a good idea or not.
 *)
-noeq
-type exp (t: table) (c: context t): Type0 -> Type =
+type exp_base (t: table) (c: context t): t.ty -> Type =
   // v
   //  the type of value must be eqtype
-  | XVal   : #valty: t.ty -> v: t.ty_sem valty -> exp t c (t.ty_sem valty)
+  | XVal   : #valty: t.ty -> v: t.ty_sem valty -> exp_base t c valty
   // bound variable (de Bruijn index)
-  | XBVar  : i: C.index_lookup c -> exp t c (t.ty_sem (C.get_index c i))
+  | XBVar  : i: C.index_lookup c -> exp_base t c (C.get_index c i)
   // free variables
   //  the types in the variable must be t.ty (which is eqtype) because we need to compare the types of variables
-  | XVar   : #valty: t.ty -> x: C.var valty -> exp t c (t.ty_sem valty)
-  // primitives
-  | XPrim  : p: t.prim -> exp t c (funty_sem t.ty_sem (t.prim_ty p))
-  // f(e,...)
-  | XApp   : #arg: Type -> #ret: Type -> exp t c (arg -> ret) -> exp t c arg -> exp t c ret
+  | XVar   : #valty: t.ty -> x: C.var valty -> exp_base t c valty
+
+noeq
+type exp (t: table) (c: context t): t.ty -> Type =
+  | XBase: #valty: t.ty -> exp_base t c valty -> exp t c valty
+  | XApps: #valty: t.ty -> exp_apps t c (FTVal valty) -> exp t c valty
+
   // v fby e
   // XXX: the type of value must be at least `eqtype`, but really it should be a pure value type (t.ty) since we should only store pure values in buffers (not, eg, a mutable buffer, if we had such values)
   // in fact, for translation to normalised systems, we need it to be a value type
-  | XFby   : #a: eqtype -> v: a -> exp t c a -> exp t c a
+  | XFby   : #valty: t.ty -> v: t.ty_sem valty -> exp t c valty -> exp t c valty
   // e -> e'
-  //  the type here could be relaxed to allow non-eqtypes:
-  //  with a non-eqtype you could write locally-higher-order expressions such as `((+0) -> (+1)) i`
-  //  this is kind of weird though
-  | XThen  : #a: eqtype -> exp t c a -> exp t c a -> exp t c a
+  // Disabled: do we get anything from this? Not yet - maybe if we want unguarded `pre` later
+  // | XThen  : #valty: t.ty -> exp t c valty -> exp t c valty -> exp t c valty
   // µx. e[x]
   //  this has to be a pure value type for the same reason as fby: recursive occurrences must be guarded by a fby, so any values will almost certainly need to be stored in a buffer
-  | XMu    : #valty: t.ty -> exp t (valty :: c) (t.ty_sem valty) -> exp t c (t.ty_sem valty)
+  | XMu    : #valty: t.ty -> exp t (valty :: c) valty -> exp t c valty
   // let x = e in e[x]
   // XXX: I have relaxed this from (valty: t.ty) to arbitrary type 'a: this makes it easier to infer `XLet e1 e2`
-  | XLet   : b: t.ty -> exp t c (t.ty_sem b) -> exp t (b :: c) 'a -> exp t c 'a
+  | XLet   : #valty: t.ty -> b: t.ty -> exp t c b -> exp t (b :: c) valty -> exp t c valty
 
   // Proof terms
   // Contracts for hiding implementation:
   //   (λx. { assumptions } body { λr. guarantees })(arg)
-  // LATER: assumptions and guarantees should probably be in context c, so they can be CSEd with the main expression. body should be separate to allow separate codegen
-  // | XContract:
-  //          (assumptions: exp ['b] xprop) ->
-  //          (guarantees: exp ['a; 'b] xprop) ->
-  //          (body: exp ['b] 'a) ->
-  //          (arg: exp c 'b) ->
-  //          exp c 'a
+  // The rely, guarantee and implementation are *normalised deterministic systems*.
+  // We need to be able to talk about their semantics in the definition here to
+  // bundle up the proof that the implementation satisfies its contract:
+  //   ALWAYS rely(arg) ==> ALWAYS guar(arg, impl(arg))
+  //
+  // If we made these expressions, it would be difficult to state the contract
+  // because we haven't defined the semantics of expressions yet.
+  | XContract:
+    #valty: t.ty ->
+    #argty: t.ty ->
+    contract: N.norm_contract t valty argty ->
+    xarg:  exp t c argty                    ->
+    exp t c valty
 
   // check "" e
-  | XCheck : string -> exp t c (t.ty_sem t.propty) -> exp t c 'a -> exp t c 'a
+  | XCheck : string -> exp t c t.propty -> exp t c t.propty
+and
+ exp_apps (t: table) (c: context t): funty t.ty -> Type =
+  // primitives
+  | XPrim  : p: t.prim -> exp_apps t c (t.prim_ty p)
+  // f(e,...)
+  | XApp   : #arg: t.ty -> #ret: funty t.ty -> exp_apps t c (FTFun arg ret) -> exp t c arg -> exp_apps t c ret
 
-type val_exp (t: table) (c: context t) (a: t.ty) = exp t c (t.ty_sem a)
-
-let rec weaken (#c c': context 't) (e: exp 't c 'a): Tot (exp 't (C.append c c') 'a) (decreases e) =
+let weaken_base (#c c': context 't) (#a: ('t).ty) (e: exp_base 't c a): Tot (exp_base 't (C.append c c') a) =
   match e with
   | XVal v -> XVal v
   | XBVar i' ->
     CP.lemma_append_preserves_get_index c c' i';
     XBVar (i' <: C.index_lookup (C.append c c'))
   | XVar x' -> XVar x'
-  | XPrim p -> XPrim p
-  | XApp f e -> XApp (weaken c' f) (weaken c' e)
+
+let rec weaken (#c c': context 't) (#a: ('t).ty) (e: exp 't c a): Tot (exp 't (C.append c c') a) (decreases e) =
+  match e with
+  | XBase e1 -> XBase (weaken_base c' e1)
+  | XApps e1 -> XApps (weaken_apps c' e1)
   | XFby v e -> XFby v (weaken c' e)
-  | XThen e1 e2 -> XThen (weaken c' e1) (weaken c' e2)
   | XMu e1 ->
-      let aa = XMu?.valty e in
-      let e1': exp 't (C.append (C.lift1 c 0 aa) c') 'a = weaken c' e1 in
-      let e1'': exp 't (C.lift1 (C.append c c') 0 aa) 'a = e1' in
-      XMu e1''
+      // let aa = XMu?.valty e in
+      // let e1': exp 't (C.append (C.lift1 c 0 aa) c') a = weaken c' e1 in
+      // let e1'': exp 't (C.lift1 (C.append c c') 0 aa) a = e1' in
+      XMu (weaken c' e1)
   | XLet b e1 e2 -> XLet b (weaken c' e1) (weaken c' e2)
-  | XCheck name e1 e2 -> XCheck name (weaken c' e1) (weaken c' e2)
-
-
-let is_base_exp (#c: context 't) (e: exp 't c 'a): bool = match e with
- | XVal _ | XVar _ | XBVar _ | XPrim _ -> true
- | _ -> false
-
-let base_exp (t: table) (c: context t) (a: Type)  = e: exp t c a { is_base_exp e }
+  | XCheck name e1 -> XCheck name (weaken c' e1)
+  | XContract c e1 -> XContract c (weaken c' e1)
+and weaken_apps (#c c': context 't) (#a: funty ('t).ty) (e: exp_apps 't c a): Tot (exp_apps 't (C.append c c') a) (decreases e) =
+  match e with
+  | XPrim p -> XPrim p
+  | XApp f e -> XApp (weaken_apps c' f) (weaken c' e)

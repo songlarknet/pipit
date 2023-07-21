@@ -1,6 +1,7 @@
 (* Translation from expressions to executable transition systems *)
 module Pipit.Exec.Exp
 
+(*SHELVED: rewrite to translate from Pipit.Norm
 open Pipit.Prim.Table
 open Pipit.Exec.Base
 open Pipit.Exp.Base
@@ -80,3 +81,4 @@ let rec exec_of_exp (#t: table) (#c: context t) (e: exp t c 'a { extractable e }
     exec_let (fun i v -> row_cons v i) (exec_of_exp e1) (exec_of_exp e2)
   // | XContract assm guar body arg ->
   | XCheck p e1 e2 -> exec_of_exp e2
+*)
