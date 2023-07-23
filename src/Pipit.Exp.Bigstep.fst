@@ -168,7 +168,6 @@ and bigsteps (#t: table) (#c: context t) (#a: t.ty): list (row c) -> exp t c a -
     bigstep  (row :: rows) e  v         ->
     bigsteps (row :: rows) e (v :: vs)
 
-#push-options "--split_queries always"
 (* Properties *)
 let bigstep_base_proof_equivalence
   (#t: table)
@@ -218,8 +217,7 @@ let rec bigstep_proof_equivalence
 
   | BSContract _ _ _ _ bs1 ->
     let BSContract _ _ _ _ bs2 = hBS2 in
-    // TODO apps
-    admit ()
+    bigsteps_proof_equivalence bs1 bs2
 
   | BSCheck _ _ _ _ bs1 ->
     let BSCheck _ _ _ _ bs2 = hBS2 in
@@ -237,11 +235,26 @@ and bigstep_apps_proof_equivalence
   match hBS1 with
   | BSPrim _ _ ->
     ()
-    // let BSPrim _ _ _ bs21 = hBS2 in
-    // bigstep_base_proof_equivalence bs11 bs21
   | BSApp _ _ _ _ _ bs11 bs12 ->
     let BSApp _ _ _ _ _ bs21 bs22 = hBS2 in
     bigstep_apps_proof_equivalence bs11 bs21;
+    bigstep_proof_equivalence bs12 bs22
+
+and bigsteps_proof_equivalence
+  (#t: table)
+  (#c: context t)
+  (#a: t.ty)
+  (#streams: list (row c))
+  (#e: exp t c a)
+  (#vs1 #vs2: list (t.ty_sem a))
+  (hBS1: bigsteps streams e vs1) (hBS2: bigsteps streams e vs2):
+    Lemma (ensures hBS1 === hBS2) (decreases hBS1) =
+  match hBS1 with
+  | BSs0 _ ->
+    ()
+  | BSsS _ _ _ _ _ bs11 bs12 ->
+    let BSsS _ _ _ _ _ bs21 bs22 = hBS2 in
+    bigsteps_proof_equivalence bs11 bs21;
     bigstep_proof_equivalence bs12 bs22
 
 

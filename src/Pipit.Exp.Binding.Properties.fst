@@ -14,48 +14,42 @@ module C  = Pipit.Context.Base
 module CR = Pipit.Context.Row
 module CP = Pipit.Context.Properties
 
-#push-options "--split_queries always"
-
+// #push-options "--split_queries always"
+// #push-options "--quake 5"
 #push-options "--fuel 1 --ifuel 1"
 
-private
-let lemma_lift_lift_commute_XApp (#c: context 't) (e1: exp 't c ('b -> 'a)) (e2: exp 't c 'b) (i1: C.index_insert c) (i2: C.index { i2 <= i1 }) (t1 t2: ('t).ty):
-  Lemma
-    (requires (lift1' (lift1' e1 i1 t1) i2 t2 === lift1' (lift1' e1 i2 t2) (i1 + 1) t1) /\
-              (lift1' (lift1' e2 i1 t1) i2 t2 === lift1' (lift1' e2 i2 t2) (i1 + 1) t1))
-    (ensures (lift1' (lift1' (XApp e1 e2) i1 t1) i2 t2 === lift1' (lift1' (XApp e1 e2) i2 t2) (i1 + 1) t1))
-     =
-  CP.lemma_lift_lift_commute c i1 i2 t1 t2;
-  assert_norm (lift1' (lift1' (XApp e1 e2) i1 t1) i2 t2 == XApp (lift1' (lift1' e1 i1 t1) i2 t2) (lift1' (lift1' e2 i1 t1) i2 t2) );
-  assert_norm ((lift1' (lift1' (XApp e1 e2) i2 t2) (i1 + 1) t1) == XApp (lift1' (lift1' e1 i2 t2) (i1 + 1) t1) (lift1' (lift1' e2 i2 t2) (i1 + 1) t1));
-  ()
+let lemma_lift_lift_commute_base (#a: ('t).ty) (#c: context 't) (e: exp_base 't c a) (i1: C.index_insert c) (i2: C.index { i2 <= i1 }) (t1 t2: ('t).ty):
+  Lemma (ensures (lift1_base' (lift1_base' e i1 t1) i2 t2 === lift1_base' (lift1_base' e i2 t2) (i1 + 1) t1)) =
+  CP.lemma_lift_lift_commute c i1 i2 t1 t2
 
-let rec lemma_lift_lift_commute (#c: context 't) (e: exp 't c 'a) (i1: C.index_insert c) (i2: C.index { i2 <= i1 }) (t1 t2: ('t).ty):
+let rec lemma_lift_lift_commute (#a: ('t).ty) (#c: context 't) (e: exp 't c a) (i1: C.index_insert c) (i2: C.index { i2 <= i1 }) (t1 t2: ('t).ty):
   Lemma (ensures (lift1' (lift1' e i1 t1) i2 t2 === lift1' (lift1' e i2 t2) (i1 + 1) t1))
     (decreases e) =
   CP.lemma_lift_lift_commute c i1 i2 t1 t2;
   match e with
-  | XVal _ -> ()
-  | XBVar _ -> ()
-  | XVar _ -> ()
-  | XPrim _ -> ()
-  | XApp e1 e2 ->
-    lemma_lift_lift_commute e1 i1 i2 t1 t2;
-    lemma_lift_lift_commute e2 i1 i2 t1 t2;
-    lemma_lift_lift_commute_XApp e1 e2 i1 i2 t1 t2
+  | XBase b -> lemma_lift_lift_commute_base b i1 i2 t1 t2
+  | XApps e1 -> lemma_lift_lift_commute_apps e1 i1 i2 t1 t2
   | XFby v e1 ->
     lemma_lift_lift_commute e1 i1 i2 t1 t2
-  | XThen e1 e2 ->
-    lemma_lift_lift_commute e1 i1 i2 t1 t2;
-    lemma_lift_lift_commute e2 i1 i2 t1 t2
   | XMu e1 ->
     lemma_lift_lift_commute e1 (i1 + 1) (i2 + 1) t1 t2
   | XLet _ e1 e2 ->
     lemma_lift_lift_commute e1 i1 i2 t1 t2;
     lemma_lift_lift_commute e2 (i1 + 1) (i2 + 1) t1 t2
-  | XCheck _ e1 e2 ->
-    lemma_lift_lift_commute e1 i1 i2 t1 t2;
-    lemma_lift_lift_commute e2 i1 i2 t1 t2
+  | XCheck _ e1 ->
+    lemma_lift_lift_commute e1 i1 i2 t1 t2
+  | XContract _ _ ->
+    admit ()
+
+and lemma_lift_lift_commute_apps (#a: funty ('t).ty) (#c: context 't) (e: exp_apps 't c a) (i1: C.index_insert c) (i2: C.index { i2 <= i1 }) (t1 t2: ('t).ty):
+  Lemma (ensures (lift1_apps' (lift1_apps' e i1 t1) i2 t2 === lift1_apps' (lift1_apps' e i2 t2) (i1 + 1) t1))
+    (decreases e) =
+  CP.lemma_lift_lift_commute c i1 i2 t1 t2;
+  match e with
+  | XPrim _ -> ()
+  | XApp f e1 ->
+    lemma_lift_lift_commute_apps f  i1 i2 t1 t2;
+    lemma_lift_lift_commute      e1 i1 i2 t1 t2
 
 let rec lemma_subst_lift_id (#c: context 't) (e: exp 't c 'a) (i: C.index_insert c) (t: ('t).ty) (p: val_exp 't c t):
   Lemma (ensures (
