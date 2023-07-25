@@ -32,7 +32,7 @@ let rec close1' (#a #b: ('t).ty) (#c: context 't) (e: exp 't c a) (x: C.var b) (
   | XFby v e -> XFby v (close1' e x n)
   | XMu e -> XMu (close1' e x (n + 1))
   | XLet b e1 e2 -> XLet b (close1' e1 x n) (close1' e2 x (n + 1))
-  | XContract c e1 -> XContract c (close1' e1 x n)
+  | XContract r g i -> XContract (close1' r x n) (close1' g x (n + 1)) (close1' i x n)
   | XCheck name e1 -> XCheck name (close1' e1 x n)
 and close1_apps' (#a: funty ('t).ty) (#b: ('t).ty) (#c: context 't) (e: exp_apps 't c a) (x: C.var b) (n: C.index_insert c): Tot (exp_apps 't (C.close1' c b n) a) (decreases e) =
   match e with
@@ -62,7 +62,7 @@ let rec lift1' (#a: ('t).ty) (#c: context 't) (e: exp 't c a) (n: C.index_insert
   | XMu e1 ->
     XMu (lift1' e1 (n + 1) t)
   | XLet b e1 e2 -> XLet b (lift1' e1 n t) (lift1' e2 (n + 1) t)
-  | XContract c e1 -> XContract c (lift1' e1 n t)
+  | XContract r g i -> XContract (lift1' r n t) (lift1' g (n + 1) t) (lift1' i n t)
   | XCheck name e1 -> XCheck name (lift1' e1 n t)
 and lift1_apps' (#a: funty ('t).ty) (#c: context 't) (e: exp_apps 't c a) (n: C.index_insert c) (t: ('t).ty): Tot (exp_apps 't (C.lift1 c n t) a) (decreases e) =
   match e with
@@ -95,9 +95,9 @@ let rec subst1' (#a: ('t).ty) (#c: context 't) (e: exp 't c a) (i: C.index { C.h
   | XApps e1 -> XApps (subst1_apps' e1 i payload)
   | XFby v e -> XFby v (subst1' e i payload)
   | XMu e1 ->
-    XMu (subst1' e1 (i + 1) (lift1 payload (XMu?.valty e)))
+    XMu (subst1' e1 (i + 1) (lift1 payload a))
   | XLet b e1 e2 -> XLet b (subst1' e1 i payload) (subst1' e2 (i + 1) (lift1 payload b))
-  | XContract c e1 -> XContract c (subst1' e1 i payload)
+  | XContract r g impl -> XContract (subst1' r i payload) (subst1' g (i + 1) (lift1 payload a)) (subst1' impl i payload)
   | XCheck name e1 -> XCheck name (subst1' e1 i payload)
 and subst1_apps' (#a: funty ('t).ty) (#c: context 't) (e: exp_apps 't c a) (i: C.index { C.has_index c i }) (payload: exp 't (C.drop1 c i) (C.get_index c i)): Tot (exp_apps 't (C.drop1 c i) a) (decreases e) =
   match e with

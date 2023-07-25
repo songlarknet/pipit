@@ -14,8 +14,7 @@ module C  = Pipit.Context.Base
 module CR = Pipit.Context.Row
 module CP = Pipit.Context.Properties
 
-// #push-options "--split_queries always"
-// #push-options "--quake 5"
+#push-options "--split_queries always"
 #push-options "--fuel 1 --ifuel 1"
 
 let lemma_lift_lift_commute_base (#a: ('t).ty) (#c: context 't) (e: exp_base 't c a) (i1: C.index_insert c) (i2: C.index { i2 <= i1 }) (t1 t2: ('t).ty):
@@ -38,8 +37,10 @@ let rec lemma_lift_lift_commute (#a: ('t).ty) (#c: context 't) (e: exp 't c a) (
     lemma_lift_lift_commute e2 (i1 + 1) (i2 + 1) t1 t2
   | XCheck _ e1 ->
     lemma_lift_lift_commute e1 i1 i2 t1 t2
-  | XContract _ _ ->
-    admit ()
+  | XContract r g i ->
+    lemma_lift_lift_commute r i1 i2 t1 t2;
+    lemma_lift_lift_commute g (i1 + 1) (i2 + 1) t1 t2;
+    lemma_lift_lift_commute i i1 i2 t1 t2
 
 and lemma_lift_lift_commute_apps (#a: funty ('t).ty) (#c: context 't) (e: exp_apps 't c a) (i1: C.index_insert c) (i2: C.index { i2 <= i1 }) (t1 t2: ('t).ty):
   Lemma (ensures (lift1_apps' (lift1_apps' e i1 t1) i2 t2 === lift1_apps' (lift1_apps' e i2 t2) (i1 + 1) t1))
@@ -51,37 +52,43 @@ and lemma_lift_lift_commute_apps (#a: funty ('t).ty) (#c: context 't) (e: exp_ap
     lemma_lift_lift_commute_apps f  i1 i2 t1 t2;
     lemma_lift_lift_commute      e1 i1 i2 t1 t2
 
-let rec lemma_subst_lift_id (#c: context 't) (e: exp 't c 'a) (i: C.index_insert c) (t: ('t).ty) (p: val_exp 't c t):
-  Lemma (ensures (
-    subst1' (lift1' e i t) i p == e))
+let lemma_subst_lift_id_base (#a: ('t).ty) (#c: context 't) (e: exp_base 't c a) (i: C.index_insert c) (t: ('t).ty) (p: exp 't c t):
+  Lemma (ensures (subst1_base' (lift1_base' e i t) i p == XBase e)) =
+    ()
+
+let rec lemma_subst_lift_id (#a: ('t).ty) (#c: context 't) (e: exp 't c a) (i: C.index_insert c) (t: ('t).ty) (p: exp 't c t):
+  Lemma (ensures (subst1' (lift1' e i t) i p == e))
     (decreases e) =
   match e with
-  | XVal _ -> ()
-  | XBVar _ -> ()
-  | XVar _ -> ()
-  | XPrim _ -> ()
-  | XApp e1 e2 ->
-    assert_norm (subst1' (lift1' (XApp e1 e2) i t) i p ==
-      XApp (subst1' (lift1' e1 i t) i p) (subst1' (lift1' e2 i t) i p) );
-    lemma_subst_lift_id e1 i t p;
-    lemma_subst_lift_id e2 i t p
+  | XBase e1 -> lemma_subst_lift_id_base e1 i t p
+  | XApps e1 -> lemma_subst_lift_id_apps e1 i t p
   | XFby v e1 ->
     lemma_subst_lift_id e1 i t p
-  | XThen e1 e2 ->
-    lemma_subst_lift_id e1 i t p;
-    lemma_subst_lift_id e2 i t p
   | XMu e1 ->
-    lemma_subst_lift_id e1 (i + 1) t (lift1 p (XMu?.valty e))
+    lemma_subst_lift_id e1 (i + 1) t (lift1 p a)
   | XLet b e1 e2 ->
     lemma_subst_lift_id e1 i t p;
     lemma_subst_lift_id e2 (i + 1) t (lift1 p b)
-  | XCheck _ e1 e2 ->
-    lemma_subst_lift_id e1 i t p;
+  | XCheck _ e1 ->
+    lemma_subst_lift_id e1 i t p
+  | XContract r g impl ->
+    lemma_subst_lift_id r i t p;
+    lemma_subst_lift_id g (i + 1) t (lift1 p a);
+    lemma_subst_lift_id impl i t p
+
+and lemma_subst_lift_id_apps (#a: funty ('t).ty) (#c: context 't) (e: exp_apps 't c a) (i: C.index_insert c) (t: ('t).ty) (p: exp 't c t):
+  Lemma (ensures (subst1_apps' (lift1_apps' e i t) i p == e))
+    (decreases e) =
+  match e with
+  | XPrim _ -> ()
+  | XApp e1 e2 ->
+    lemma_subst_lift_id_apps e1 i t p;
     lemma_subst_lift_id e2 i t p
 
+// DEAD?
 private
-let _lift_of_drop (#c: context 't) (i1: C.index_lookup c) (p: val_exp 't (C.drop1 c i1) (C.get_index c i1)) (t: ('t).ty):
-  val_exp 't (C.drop1 (t :: c) (i1 + 1)) (C.get_index (t :: c) (i1 + 1)) =
+let _lift_of_drop (#c: context 't) (i1: C.index_lookup c) (p: exp 't (C.drop1 c i1) (C.get_index c i1)) (t: ('t).ty):
+  exp 't (C.drop1 (t :: c) (i1 + 1)) (C.get_index (t :: c) (i1 + 1)) =
   lift1 p t
 
 (* Lift distributes over subst:
@@ -90,7 +97,7 @@ let _lift_of_drop (#c: context 't) (i1: C.index_lookup c) (p: val_exp 't (C.drop
    These proofs are a bit involved, so I've split them out into separate lemmas
    for different cases.
 *)
-let lemma_lift_subst_distribute_le_def (#c: context 't) (e: exp 't c 'a) (i1: C.index_lookup c) (i2: C.index { i2 <= i1 }) (t2: ('t).ty) (p: val_exp 't (C.drop1 c i1) (C.get_index c i1)): prop =
+let lemma_lift_subst_distribute_le_def (#a: ('t).ty) (#c: context 't) (e: exp 't c a) (i1: C.index_lookup c) (i2: C.index { i2 <= i1 }) (t2: ('t).ty) (p: exp 't (C.drop1 c i1) (C.get_index c i1)): prop =
     CP.lemma_lift_drop_commute_le c i1 i2 t2;
     lift1' (subst1' e i1 p) i2 t2 == subst1' (lift1' e i2 t2) (i1 + 1) (lift1' p i2 t2)
 
@@ -98,151 +105,116 @@ let lemma_lift_subst_distribute_le_def (#c: context 't) (e: exp 't c 'a) (i1: C.
    inversion is necessary for the induction / termination proof. So we prove the
    separate lemmas with inversion disabled. *)
 #push-options "--fuel 1 --ifuel 0"
-private
-let lemma_lift_subst_distribute_le_base (#c: context 't) (e: base_exp 't c 'a) (i1: C.index_lookup c) (i2: C.index { i2 <= i1 }) (t2: ('t).ty) (p: val_exp 't (C.drop1 c i1) (C.get_index c i1)):
-  Lemma (ensures (lemma_lift_subst_distribute_le_def e i1 i2 t2 p))
-    (decreases e) =
+
+let lemma_lift_subst_distribute_le_base (#a: ('t).ty) (#c: context 't) (e: exp_base 't c a) (i1: C.index_lookup c) (i2: C.index { i2 <= i1 }) (t2: ('t).ty) (p: exp 't (C.drop1 c i1) (C.get_index c i1)):
+  Lemma (ensures (lemma_lift_subst_distribute_le_def (XBase e) i1 i2 t2 p)) =
   CP.lemma_lift_drop_commute_le c i1 i2 t2;
   CP.lemma_lift_get_index_gt c i1 i2 t2;
   match e with
   | XVal _ -> ()
   | XVar _ -> ()
   | XBVar i -> ()
-  | XPrim _ -> ()
-
-private
-let lemma_lift_subst_distribute_le_XApp (#c: context 't) (e1: exp 't c ('b -> 'a)) (e2: exp 't c 'b) (i1: C.index_lookup c) (i2: C.index { i2 <= i1 }) (t2: ('t).ty) (p: val_exp 't (C.drop1 c i1) (C.get_index c i1)):
-  Lemma
-    (requires (lemma_lift_subst_distribute_le_def e1 i1 i2 t2 p /\
-               lemma_lift_subst_distribute_le_def e2 i1 i2 t2 p))
-    (ensures (lemma_lift_subst_distribute_le_def (XApp e1 e2) i1 i2 t2 p)) =
-  CP.lemma_lift_drop_commute_le c i1 i2 t2;
-  CP.lemma_lift_get_index_gt c i1 i2 t2;
-  assert_norm (lift1' (subst1' (XApp e1 e2) i1 p) i2 t2 ==
-    XApp (lift1' (subst1' e1 i1 p) i2 t2) (lift1' (subst1' e2 i1 p) i2 t2));
-  assert_norm (subst1' (lift1' (XApp e1 e2) i2 t2) (i1 + 1) (lift1' p i2 t2) ==
-    XApp (subst1' (lift1' e1 i2 t2) (i1 + 1) (lift1' p i2 t2)) (subst1' (lift1' e2 i2 t2) (i1 + 1) (lift1' p i2 t2)));
-  assert (lift1' (subst1' (XApp e1 e2) i1 p) i2 t2 ==
-      subst1' (lift1' (XApp e1 e2) i2 t2) (i1 + 1) (lift1' p i2 t2));
-  ()
 
 #pop-options
 
-
-let rec lemma_lift_subst_distribute_le (#c: context 't) (e: exp 't c 'a) (i1: C.index_lookup c) (i2: C.index { i2 <= i1 }) (t2: ('t).ty) (p: val_exp 't (C.drop1 c i1) (C.get_index c i1)):
+let rec lemma_lift_subst_distribute_le (#a: ('t).ty) (#c: context 't) (e: exp 't c a) (i1: C.index_lookup c) (i2: C.index { i2 <= i1 }) (t2: ('t).ty) (p: exp 't (C.drop1 c i1) (C.get_index c i1)):
   Lemma (ensures (lemma_lift_subst_distribute_le_def e i1 i2 t2 p))
     (decreases e) =
   CP.lemma_lift_drop_commute_le c i1 i2 t2;
   CP.lemma_lift_get_index_gt c i1 i2 t2;
   match e with
-  | XVal _ | XVar _ | XBVar _ | XPrim _ ->
-    lemma_lift_subst_distribute_le_base e i1 i2 t2 p
-  | XApp e1 e2 ->
-    lemma_lift_subst_distribute_le e1 i1 i2 t2 p;
-    lemma_lift_subst_distribute_le e2 i1 i2 t2 p;
-    lemma_lift_subst_distribute_le_XApp e1 e2 i1 i2 t2 p
+  | XBase e1 -> lemma_lift_subst_distribute_le_base e1 i1 i2 t2 p
+  | XApps e1 -> lemma_lift_subst_distribute_le_apps e1 i1 i2 t2 p
   | XFby v e1 ->
     lemma_lift_subst_distribute_le e1 i1 i2 t2 p;
     ()
-  | XThen e1 e2 ->
-    lemma_lift_subst_distribute_le e1 i1 i2 t2 p;
-    lemma_lift_subst_distribute_le e2 i1 i2 t2 p;
-    ()
   | XMu e1 ->
-    let a' = XMu?.valty e in
-    CP.lemma_lift_drop_commute_le c i1 0 a';
-    lemma_lift_lift_commute p i2 0 t2 a';
-    let p' = _lift_of_drop i1 p a' in
-    lemma_lift_subst_distribute_le e1 (i1 + 1) (i2 + 1) t2 p';
-    assert (lift1' (subst1' (XMu e1) i1 p) i2 t2 ==
-        subst1' (lift1' (XMu e1) i2 t2) (i1 + 1) (lift1' p i2 t2));
-    ()
-
+    lemma_lift_lift_commute p i2 0 t2 a;
+    let p' = _lift_of_drop i1 p a in
+    lemma_lift_subst_distribute_le e1 (i1 + 1) (i2 + 1) t2 p'
   | XLet b e1 e2 ->
     lemma_lift_lift_commute p i2 0 t2 b;
     let p' = _lift_of_drop i1 p b in
+    lemma_lift_subst_distribute_le e1 i1 i2 t2 p;
+    lemma_lift_subst_distribute_le e2 (i1 + 1) (i2 + 1) t2 p'
+  | XCheck _ e1 ->
+    lemma_lift_subst_distribute_le e1 i1 i2 t2 p
+  | XContract r g i ->
+    lemma_lift_lift_commute p i2 0 t2 a;
+    let p' = _lift_of_drop i1 p a in
+    lemma_lift_subst_distribute_le r i1 i2 t2 p;
+    lemma_lift_subst_distribute_le g (i1 + 1) (i2 + 1) t2 p';
+    lemma_lift_subst_distribute_le i i1 i2 t2 p
 
+and lemma_lift_subst_distribute_le_apps (#a: funty ('t).ty) (#c: context 't) (e: exp_apps 't c a) (i1: C.index_lookup c) (i2: C.index { i2 <= i1 }) (t2: ('t).ty) (p: exp 't (C.drop1 c i1) (C.get_index c i1)):
+  Lemma (ensures (
     CP.lemma_lift_drop_commute_le c i1 i2 t2;
+    lift1_apps' (subst1_apps' e i1 p) i2 t2 == subst1_apps' (lift1_apps' e i2 t2) (i1 + 1) (lift1' p i2 t2)))
+    (decreases e) =
+  CP.lemma_lift_drop_commute_le c i1 i2 t2;
+  match e with
+  | XPrim _ -> ()
+  | XApp e1 e2 ->
+    lemma_lift_subst_distribute_le_apps e1 i1 i2 t2 p;
+    lemma_lift_subst_distribute_le e2 i1 i2 t2 p
 
-    lemma_lift_subst_distribute_le e1 i1 i2 t2 p;
-    lemma_lift_subst_distribute_le e2 (i1 + 1) (i2 + 1) t2 p';
 
-    assert (lift1' (subst1' (XLet b e1 e2) i1 p) i2 t2 ==
-        subst1' (lift1' (XLet b e1 e2) i2 t2) (i1 + 1) (lift1' p i2 t2));
-    ()
-
-  | XCheck _ e1 e2 ->
-    lemma_lift_subst_distribute_le e1 i1 i2 t2 p;
-    lemma_lift_subst_distribute_le e2 i1 i2 t2 p;
-    ()
-
-let lemma_subst_subst_distribute_le_def (#c: context 't) (e: exp 't c 'a) (i1: C.index_lookup c) (i2: C.index { i1 <= i2 /\ i2 < List.Tot.length c - 1 }) (p1: val_exp 't (C.drop1 c i1) (C.get_index c i1)) (p2: val_exp 't (C.drop1 (C.drop1 c i1) i2) (C.get_index (C.drop1 c i1) i2)) =
+let lemma_subst_subst_distribute_le_def (#a: ('t).ty) (#c: context 't) (e: exp 't c a) (i1: C.index_lookup c) (i2: C.index { i1 <= i2 /\ i2 < List.Tot.length c - 1 }) (p1: exp 't (C.drop1 c i1) (C.get_index c i1)) (p2: exp 't (C.drop1 (C.drop1 c i1) i2) (C.get_index (C.drop1 c i1) i2)) =
     CP.lemma_drop_drop_commute c i1 i2;
     CP.lemma_drop_get_index_lt c (i2 + 1) i1;
     subst1' (subst1' e i1 p1) i2 p2 ==
     subst1' (subst1' e (i2 + 1) (lift1' p2 i1 (C.get_index c i1))) i1 (subst1' p1 i2 p2)
 
-let lemma_exp_invert_XBVar (#c: context 't) (e: exp 't c 'a { XBVar? e }):
-  Lemma ('a == ('t).ty_sem (C.get_index c (XBVar?.i e))) =
-  ()
-
 #push-options "--fuel 1 --ifuel 0"
 
 private
-let lemma_subst_subst_distribute_le_base (#c: context 't) (e: base_exp 't c 'a) (i1: C.index_lookup c) (i2: C.index { i1 <= i2 /\ i2 < List.Tot.length c - 1 }) (p1: val_exp 't (C.drop1 c i1) (C.get_index c i1)) (p2: val_exp 't (C.drop1 (C.drop1 c i1) i2) (C.get_index (C.drop1 c i1) i2)):
+let lemma_subst_subst_distribute_le_base_XBVar_Si2 (#c: context 't) (i1: C.index_lookup c) (i2: C.index { i1 <= i2 /\ i2 < List.Tot.length c - 1 }) (p1: exp 't (C.drop1 c i1) (C.get_index c i1)) (p2: exp 't (C.drop1 (C.drop1 c i1) i2) (C.get_index (C.drop1 c i1) i2)):
+  Lemma (ensures lemma_subst_subst_distribute_le_def (XBase (XBVar (i2 + 1))) i1 i2 p1 p2) =
+  CP.lemma_lift_drop_commute_le (C.drop1 c i1) i2 i1 (C.get_index c i1);
+  CP.lemma_lift_drop_eq c i1;
+  // XXX calc is very slow!
+  // calc (==) {
+  //   C.lift1 (C.drop1 (C.drop1 c i1) i2) i1 (C.get_index c i1);
+  //   (==) { CP.lemma_lift_drop_commute_le (C.drop1 c i1) i2 i1 (C.get_index c i1) }
+  //   C.drop1 (C.lift1 (C.drop1 c i1) i1 (C.get_index c i1)) (i2 + 1);
+  //   (==) { CP.lemma_lift_drop_eq c i1 }
+  //   C.drop1 c (i2 + 1);
+  // };
+  // let p2': exp 't (C.drop1 c (i2 + 1)) (C.get_index (C.drop1 c i1) i2) = coerce_eq () (lift1' p2 i1 (C.get_index c i1)) in
+  lemma_subst_lift_id p2 i1 (C.get_index c i1) (subst1' p1 i2 p2);
+  // calc (==) {
+  //   subst1' (subst1_base' (XBVar (i2 + 1)) (i2 + 1) p2') i1 (subst1' p1 i2 p2);
+  //   (==) { }
+  //   subst1' (lift1' p2 i1 (C.get_index c i1)) i1 (subst1' p1 i2 p2);
+  //   (==) { lemma_subst_lift_id p2 i1 (C.get_index c i1) (subst1' p1 i2 p2) }
+  //   p2;
+  // };
+  ()
+
+#pop-options
+
+private
+let lemma_subst_subst_distribute_le_base (#a: ('t).ty) (#c: context 't) (e: exp_base 't c a) (i1: C.index_lookup c) (i2: C.index { i1 <= i2 /\ i2 < List.Tot.length c - 1 }) (p1: exp 't (C.drop1 c i1) (C.get_index c i1)) (p2: exp 't (C.drop1 (C.drop1 c i1) i2) (C.get_index (C.drop1 c i1) i2)):
   Lemma (ensures
-    lemma_subst_subst_distribute_le_def e i1 i2 p1 p2) =
+    lemma_subst_subst_distribute_le_def (XBase e) i1 i2 p1 p2) =
   CP.lemma_drop_drop_commute c i1 i2;
   CP.lemma_drop_get_index_lt c (i2 + 1) i1;
   match e with
   | XVal v -> ()
   | XVar _ -> ()
-  | XPrim _ -> ()
   | XBVar i' ->
-    if i' = i1
+    if i' = i2 + 1
+    then lemma_subst_subst_distribute_le_base_XBVar_Si2 i1 i2 p1 p2
+    else if i' = i1
     then ()
-    else if i' = i2 + 1
-    then begin
-      lemma_exp_invert_XBVar e;
-      calc (==) {
-        C.lift1 (C.drop1 (C.drop1 c i1) i2) i1 (C.get_index c i1);
-        (==) { CP.lemma_lift_drop_commute_le (C.drop1 c i1) i2 i1 (C.get_index c i1) }
-        C.drop1 (C.lift1 (C.drop1 c i1) i1 (C.get_index c i1)) (i2 + 1);
-        (==) { CP.lemma_lift_drop_eq c i1 }
-        C.drop1 c (i2 + 1);
-      };
-      let p2': val_exp 't (C.drop1 c (i2 + 1)) (C.get_index (C.drop1 c i1) i2) = coerce_eq () (lift1' p2 i1 (C.get_index c i1)) in
-      calc (==) {
-        subst1' (subst1' e (i2 + 1) p2') i1 (subst1' p1 i2 p2);
-        (==) { }
-        subst1' (lift1' p2 i1 (C.get_index c i1)) i1 (subst1' p1 i2 p2);
-        (==) { lemma_subst_lift_id p2 i1 (C.get_index c i1) (subst1' p1 i2 p2) }
-        p2;
-      };
-      ()
-    end
     else ()
 
-private
-let lemma_subst_subst_distribute_le_XApp (#c: context 't)
-  (e1: exp 't c ('b -> 'a)) (e2: exp 't c 'b) (i1: C.index_lookup c) (i2: C.index { i1 <= i2 /\ i2 < List.Tot.length c - 1 }) (p1: val_exp 't (C.drop1 c i1) (C.get_index c i1)) (p2: val_exp 't (C.drop1 (C.drop1 c i1) i2) (C.get_index (C.drop1 c i1) i2)):
-  Lemma
-    (requires (lemma_subst_subst_distribute_le_def e1 i1 i2 p1 p2 /\
-               lemma_subst_subst_distribute_le_def e2 i1 i2 p1 p2))
-    (ensures (lemma_subst_subst_distribute_le_def (XApp e1 e2) i1 i2 p1 p2)) =
-  CP.lemma_drop_drop_commute c i1 i2;
-  CP.lemma_drop_get_index_lt c (i2 + 1) i1;
-  assert_norm (subst1' (subst1' (XApp e1 e2) i1 p1) i2 p2 ==
-    XApp (subst1' (subst1' e1 i1 p1) i2 p2) (subst1' (subst1' e2 i1 p1) i2 p2));
-  assert_norm (subst1' (subst1' (XApp e1 e2) (i2 + 1) (lift1' p2 i1 (C.get_index c i1))) i1 (subst1' p1 i2 p2) ==
-    XApp (subst1' (subst1' e1 (i2 + 1) (lift1' p2 i1 (C.get_index c i1))) i1 (subst1' p1 i2 p2)) (subst1' (subst1' e2 (i2 + 1) (lift1' p2 i1 (C.get_index c i1))) i1 (subst1' p1 i2 p2)));
-  ()
 
 private
 let lemma_subst_subst_distribute_le_XMu
   (#c: context 't)
   (#te: ('t).ty)
-  (e: val_exp 't (te :: c) te) (i1: C.index_lookup c) (i2: C.index { i1 <= i2 /\ i2 < List.Tot.length c - 1 }) (p1: val_exp 't (C.drop1 c i1) (C.get_index c i1)) (p2: val_exp 't (C.drop1 (C.drop1 c i1) i2) (C.get_index (C.drop1 c i1) i2)):
+  (e: exp 't (te :: c) te) (i1: C.index_lookup c) (i2: C.index { i1 <= i2 /\ i2 < List.Tot.length c - 1 }) (p1: exp 't (C.drop1 c i1) (C.get_index c i1)) (p2: exp 't (C.drop1 (C.drop1 c i1) i2) (C.get_index (C.drop1 c i1) i2)):
   Lemma
     (requires (lemma_subst_subst_distribute_le_def e (i1 + 1) (i2 + 1) (_lift_of_drop i1 p1 te) (_lift_of_drop i2 p2 te)))
     (ensures (lemma_subst_subst_distribute_le_def (XMu e) i1 i2 p1 p2)) =
@@ -256,11 +228,11 @@ let lemma_subst_subst_distribute_le_XMu
 
     CP.lemma_dropCons te c (i2 + 2);
     CP.lemma_dropCons te (C.drop1 c (i2 + 1)) (i1 + 1);
-    // ASSUME why are these flaky? clean.
-    assume (te :: C.drop1 (C.drop1 c (i2 + 1)) i1 == C.drop1 (C.drop1 (te :: c) (i2 + 2)) (i1 + 1));
-    assume (C.get_index (te :: c) (i2 + 2) == C.get_index (te :: C.drop1 c i1) (i2 + 1));
     CP.lemma_dropCons te c (i2 + 1);
     CP.lemma_dropCons te (C.drop1 c i1) (i2 + 1);
+    // ASSUME why are these flaky? clean.
+    assert (te :: C.drop1 (C.drop1 c (i2 + 1)) i1 == C.drop1 (C.drop1 (te :: c) (i2 + 2)) (i1 + 1));
+    assert (C.get_index (te :: c) (i2 + 2) == C.get_index (te :: C.drop1 c i1) (i2 + 1));
     assert (C.drop1 (te :: c) (i2 + 2) == C.lift1 (C.drop1 (te :: C.drop1 c i1) (i2 + 1)) (i1 + 1) (C.get_index c i1));
 
     CP.lemma_drop_drop_commute c i1 i2;

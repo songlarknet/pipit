@@ -50,18 +50,18 @@ type exp (t: table) (c: context t): t.ty -> Type =
   // Proof terms
   // Contracts for hiding implementation:
   //   (λx. { assumptions } body { λr. guarantees })(arg)
-  // The rely, guarantee and implementation are *normalised deterministic systems*.
-  // We need to be able to talk about their semantics in the definition here to
-  // bundle up the proof that the implementation satisfies its contract:
-  //   ALWAYS rely(arg) ==> ALWAYS guar(arg, impl(arg))
+  // The rely, guarantee and implementation are *expressions*
+  // X We need to be able to talk about their semantics in the definition here to
+  // X bundle up the proof that the implementation satisfies its contract:
+  //   ALWAYS rely ==> ALWAYS guar(impl)
   //
-  // If we made these expressions, it would be difficult to state the contract
-  // because we haven't defined the semantics of expressions yet.
+  // X If we made these expressions, it would be difficult to state the contract
+  // X because we haven't defined the semantics of expressions yet.
   | XContract:
     #valty: t.ty ->
-    #argty: t.ty ->
-    contract: N.norm_contract t valty argty ->
-    xarg:  exp t c argty                    ->
+    rely: exp t c            t.propty ->
+    guar: exp t (valty :: c) t.propty ->
+    impl: exp t c            valty    ->
     exp t c valty
 
   // check "" e
@@ -86,14 +86,10 @@ let rec weaken (#c c': context 't) (#a: ('t).ty) (e: exp 't c a): Tot (exp 't (C
   | XBase e1 -> XBase (weaken_base c' e1)
   | XApps e1 -> XApps (weaken_apps c' e1)
   | XFby v e -> XFby v (weaken c' e)
-  | XMu e1 ->
-      // let aa = XMu?.valty e in
-      // let e1': exp 't (C.append (C.lift1 c 0 aa) c') a = weaken c' e1 in
-      // let e1'': exp 't (C.lift1 (C.append c c') 0 aa) a = e1' in
-      XMu (weaken c' e1)
+  | XMu e1 -> XMu (weaken c' e1)
   | XLet b e1 e2 -> XLet b (weaken c' e1) (weaken c' e2)
   | XCheck name e1 -> XCheck name (weaken c' e1)
-  | XContract c e1 -> XContract c (weaken c' e1)
+  | XContract r g i -> XContract (weaken c' r) (weaken c' g) (weaken c' i)
 and weaken_apps (#c c': context 't) (#a: funty ('t).ty) (e: exp_apps 't c a): Tot (exp_apps 't (C.append c c') a) (decreases e) =
   match e with
   | XPrim p -> XPrim p

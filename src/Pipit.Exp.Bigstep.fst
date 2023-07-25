@@ -113,13 +113,14 @@ type bigstep (#t: table) (#c: context t): (#a: t.ty) -> list (row c) -> exp t c 
 
  // TODO BSContract: it is a pain, but we need bigsteps here:
  | BSContract:
-          #valty: t.ty -> #argty: t.ty        ->
+          #valty: t.ty                        ->
           streams: list (row c)               ->
-          ctr: N.norm_contract t valty argty  ->
-          e1: exp t c argty                   ->
-          args: list (t.ty_sem argty)         ->
-          bigsteps streams e1 args            ->
-          bigstep  streams (XContract ctr e1) (N.norm_contract_sem args ctr)
+          rely: exp t c            t.propty   ->
+          guar: exp t (valty :: c) t.propty   ->
+          impl: exp t c            valty      ->
+          v: t.ty_sem valty                   ->
+          bigstep streams impl v              ->
+          bigstep streams (XContract rely guar impl) v
 
  (* We evaluate properties, but we don't actually check that the properties are
     true in this semantics. We want to be able to prove that the transition
@@ -153,8 +154,8 @@ and bigstep_apps (#t: table) (#c: context t): (#a: funty t.ty) -> list (row c) -
 
 (* Under streaming history `streams`, evaluate expression `e` at each step to
    produce stream of values `vs` *)
-// TODO merge with bigstep doh
-and bigsteps (#t: table) (#c: context t) (#a: t.ty): list (row c) -> exp t c a -> list (t.ty_sem a) -> Type =
+noeq
+type bigsteps (#t: table) (#c: context t) (#a: t.ty): list (row c) -> exp t c a -> list (t.ty_sem a) -> Type =
  | BSs0:
     e: exp t c a                        ->
     bigsteps [] e []
@@ -215,9 +216,9 @@ let rec bigstep_proof_equivalence
     let BSLet _ _ _ _ bs2 = hBS2 in
     bigstep_proof_equivalence bs1 bs2
 
-  | BSContract _ _ _ _ bs1 ->
-    let BSContract _ _ _ _ bs2 = hBS2 in
-    bigsteps_proof_equivalence bs1 bs2
+  | BSContract _ _ _ _ _ bs1 ->
+    let BSContract _ _ _ _ _ bs2 = hBS2 in
+    bigstep_proof_equivalence bs1 bs2
 
   | BSCheck _ _ _ _ bs1 ->
     let BSCheck _ _ _ _ bs2 = hBS2 in
@@ -240,7 +241,7 @@ and bigstep_apps_proof_equivalence
     bigstep_apps_proof_equivalence bs11 bs21;
     bigstep_proof_equivalence bs12 bs22
 
-and bigsteps_proof_equivalence
+let rec bigsteps_proof_equivalence
   (#t: table)
   (#c: context t)
   (#a: t.ty)
