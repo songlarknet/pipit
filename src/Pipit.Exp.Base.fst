@@ -73,6 +73,11 @@ and
   // f(e,...)
   | XApp   : #arg: t.ty -> #ret: funty t.ty -> exp_apps t c (FTFun arg ret) -> exp t c arg -> exp_apps t c ret
 
+
+let
+ exp_bind (t: table) (b: t.ty) (c: context t) (valty: t.ty): Type =
+   exp t (b :: c) valty
+
 let weaken_base (#c c': context 't) (#a: ('t).ty) (e: exp_base 't c a): Tot (exp_base 't (C.append c c') a) =
   match e with
   | XVal v -> XVal v
