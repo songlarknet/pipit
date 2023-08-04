@@ -139,6 +139,4 @@ let table: table = {
    val_default = val_default;
 
    propty      = TBool;
-   propty_sem  = (fun (x: bool) -> x == true);
-   propty_of_bool = (fun (x: bool) -> x);
 }
