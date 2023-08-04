@@ -21,7 +21,7 @@ module Sugar = Pipit.Sugar
      m = if a <= b then a else b;
    tel
 *)
-let min (a b: Sugar.s int) =
+let min (a b: Sugar.ints) =
  let open Sugar in
  (if_then_else (a <=^ b) a b)
 
@@ -42,7 +42,7 @@ let count_max = 65535
         else 0;
    tel
 *)
-let countsecutive' (p: Sugar.s bool) =
+let countsecutive' (p: Sugar.bools) =
  let open Sugar in
  rec' (fun count ->
    if_then_else p
@@ -60,7 +60,7 @@ let countsecutive' (p: Sugar.s bool) =
      ok = countsecutive(p) >= n;
    tel
 *)
-let lastn (n: int) (p: Sugar.s bool) =
+let lastn (n: int) (p: Sugar.bools) =
  let open Sugar in
  let' (countsecutive p) (fun c -> c >=^ z n)
 
@@ -125,15 +125,15 @@ let stuck_time:  int = 6000
   tel
 *)
 
-let controller' (estop level_low: Sugar.s bool) =
+let controller' (estop level_low: Sugar.bools) =
   let open Sugar in
   // XXX: explicit lets need type annotations for now, but this should be less of a problem once we have sharing recovery and don't need explicit lets as much
-  let' #_ #(bool & bool) (countsecutive' (not_ estop /\ level_low)) (fun sol_try_c   ->
-  let' #_ #(bool & bool) (sol_try_c >=^ z settle_time)              (fun sol_try     ->
-  let' #_ #(bool & bool) (countsecutive' sol_try)                   (fun nok_stuck_c ->
-  let' #_ #(bool & bool) (once (nok_stuck_c >=^ z stuck_time))      (fun nok_stuck   ->
-  let' #_ #(bool & bool) (sol_try /\ not_ nok_stuck)                (fun sol_en      ->
-  let' #_ #(bool & bool) (tup sol_en nok_stuck)                     (fun result      ->
+  let' (countsecutive' (not_ estop /\ level_low)) (fun sol_try_c   ->
+  let' (sol_try_c >=^ z settle_time)              (fun sol_try     ->
+  let' (countsecutive' sol_try)                   (fun nok_stuck_c ->
+  let' (once (nok_stuck_c >=^ z stuck_time))      (fun nok_stuck   ->
+  let' (sol_try /\ not_ nok_stuck)                (fun sol_en      ->
+  let' (tup sol_en nok_stuck)                     (fun result      ->
   check' "ESTOP OK"      (estop => not_ sol_en) (
   check' "LEVEL HIGH OK" (not_ level_low => not_ sol_en) (
     result))))))))

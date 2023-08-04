@@ -85,18 +85,18 @@ let estimate_update_accuracy_degrades (i: inputs) (pre: estimate) (tol: speed):
 module Exp = Pipit.Exp.Base
 module Sugar = Pipit.Sugar
 
-let previously (e: Sugar.s bool): Sugar.s bool =
+let previously (e: Sugar.bools): Sugar.bools =
   let open Sugar in
   rec' (fun p -> fby false p \/ e)
 
-let count_when_previously (e: Sugar.s bool): Sugar.s int =
+let count_when_previously (e: Sugar.bools): Sugar.ints =
   let open Sugar in
   rec' (fun count ->
     let prev = fby 0 count in
     if_then_else e z0 (prev +^ z1)
   )
 
-let previously_n (n: nat) (e: Sugar.s bool): Sugar.s bool =
+let previously_n (n: nat) (e: Sugar.bools): Sugar.bools =
   let open Sugar in
   previously e /\ count_when_previously e <=^ z n
 

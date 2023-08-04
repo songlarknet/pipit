@@ -20,7 +20,7 @@ let rec fir (coeffs: list R.real) (input: reals): reals =
 
 let fir2 (input: reals): reals = fir [0.7R; 0.3R] input
 
-let bibo2 (n: pos) (signal: reals): s bool =
+let bibo2 (n: pos) (signal: reals): bools =
   check "bibo" (sofar (abs signal <=^ pure n) => (abs (fir2 signal) <=^ pure n))
 
 let bibo2' n =

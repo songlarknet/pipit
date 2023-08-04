@@ -17,7 +17,7 @@ module PPV = Pipit.Prim.Vanilla
    level). We do not want the expression's internal representation to show up in
    the C code, so we mark it as noextract.
    Annotate with result type (bool & bool) so system is clearer. If we leave
-   out the type annotation, then the generated KRML code can infer the result
+   out the type annotation, then the generated KRML code may infer the result
    of the `step` function to be `any`, which breaks compilation.
    *)
 noextract
