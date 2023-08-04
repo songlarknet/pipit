@@ -6,8 +6,6 @@ open Pipit.Prim.Table
 module C  = Pipit.Context.Base
 module CP = Pipit.Context.Properties
 
-module N  = Pipit.Norm
-
 (* Expressions `exp t c a`
   expressions are indexed by the primitive table, the environment mapping
   variable indices to value types, and the result type. The primitive table

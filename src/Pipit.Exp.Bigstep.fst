@@ -23,8 +23,6 @@ module C  = Pipit.Context.Base
 module CR = Pipit.Context.Row
 module CP = Pipit.Context.Properties
 
-module N  = Pipit.Norm
-
 (* bigstep_base streams e v
 
  Bigstep semantics: in streaming history `streams`, which is a sequence of
@@ -168,6 +166,25 @@ type bigsteps (#t: table) (#c: context t) (#a: t.ty): list (row c) -> exp t c a 
     bigsteps        rows  e      vs     ->
     bigstep  (row :: rows) e  v         ->
     bigsteps (row :: rows) e (v :: vs)
+
+let rec bigstep_always (#t: table) (#c: context t)
+  (rows: list (row c))
+  (e: exp t c t.propty): Tot prop (decreases rows) =
+  match rows with
+  | [] -> True
+  | _ :: rows' ->
+    bigstep rows e (t.propty_of_bool true) /\
+    bigstep_always rows' e
+
+let bigstep_contract_valid (#t: table) (#c: context t) (#a: t.ty)
+  (rely: exp t      c  t.propty)
+  (guar: exp t (a :: c) t.propty)
+  (impl: exp t      c  a): prop =
+  forall (rows: list (row c)) (vs: list (t.ty_sem a) { List.Tot.length rows == List.Tot.length vs }).
+    bigstep_always rows rely ==>
+    bigsteps rows impl vs ==>
+    bigstep_always (CR.zip2_cons vs rows) guar
+
 
 (* Properties *)
 let bigstep_base_proof_equivalence

@@ -72,6 +72,8 @@ let let' {| is_valtype 'a |} {| is_valtype 'b |} (e: s 'a) (f: s 'a -> s 'b) = S
 
 let rec' {| is_valtype 'a |} (f: s 'a -> s 'a): s 'a = S.rec' #table #(is_valtype_get #'a) f
 
+let letrec' {| is_valtype 'a |} {| is_valtype 'b |} (f: s 'a -> s 'a) (g: s 'a -> s 'b): s 'b = let' (rec' f) g
+
 let check' {| is_valtype 'a |} (name: string) (e: bools) (f: s 'a): s 'a =
   S.check' #table #(is_valtype_get #'a) name e f
 let check (name: string) (e: bools): bools =

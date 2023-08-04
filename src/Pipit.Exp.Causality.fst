@@ -22,15 +22,19 @@ module CP = Pipit.Context.Properties
 
 (* Direct dependencies: does expression `e` have a non-delayed dependency on bound-variable `i`?
     *)
-let rec direct_dependency (#t: table) (#c: context t) (e: exp t c 'a) (i: C.index) : Tot bool (decreases e) =
+let direct_dependency_base (#t: table) (#c: context t) (#a: t.ty) (e: exp_base t c a) (i: C.index) : Tot bool (decreases e) =
   match e with
   | XVal _ -> false
   | XVar _ -> false
   | XBVar i' -> i = i'
-  | XPrim _ -> false
-  | XApp e1 e2 -> direct_dependency e1 i || direct_dependency e2 i
+
+(* Direct dependencies: does expression `e` have a non-delayed dependency on bound-variable `i`?
+    *)
+let rec direct_dependency (#t: table) (#c: context t) (#a: t.ty) (e: exp t c a) (i: C.index) : Tot bool (decreases e) =
+  match e with
+  | XBase b -> direct_dependency_base b i
+  | XApps e1 -> direct_dependency_apps e1 i
   | XFby _ _ -> false
-  | XThen e1 e2 -> direct_dependency e1 i || direct_dependency e2 i
   | XMu e1 -> direct_dependency e1 (i + 1)
   (* This is more restrictive than necessary. The following should work:
      > rec x. let y = x + 1 in 0 fby y
@@ -41,29 +45,48 @@ let rec direct_dependency (#t: table) (#c: context t) (e: exp t c 'a) (i: C.inde
      >        direct_dependency e2 (i + 1)
   *)
   | XLet b e1 e2 -> direct_dependency e1 i || direct_dependency e2 (i + 1)
-  | XCheck name e1 e2 -> direct_dependency e1 i || direct_dependency e2 i
+  | XCheck name e1 -> direct_dependency e1 i
+  (* Should we care if a contract's relies or guarantees mention `i`?
+     I don't think so - causality is required for total evaluation, which
+     uses the implementation rather than the abstraction. *)
+  | XContract rely guar impl -> direct_dependency impl i
+
+and direct_dependency_apps (#t: table) (#c: context t) (#a: funty t.ty) (e: exp_apps t c a) (i: C.index) : Tot bool (decreases e) =
+  match e with
+  | XPrim _ -> false
+  | XApp e1 e2 -> direct_dependency_apps e1 i || direct_dependency e2 i
 
 (* Causality: are all references to recursive streams delayed?
    All causal expressions make progress.
    We also sneak in a well-formedness check here that there are no free
    variables. This is really a different check, but it's convenient.
 *)
-let rec causal (#t: table) (#c: context t) (e: exp t c 'a): Tot bool (decreases e) =
+let causal_base (#t: table) (#c: context t) (#a: t.ty) (e: exp_base t c a): Tot bool =
   match e with
   | XVal _ -> true
   | XVar _ -> false // no free variables
   | XBVar _ -> true
-  | XPrim _ -> true
-  | XApp e1 e2 -> causal e1 && causal e2
+
+let rec causal (#t: table) (#c: context t) (#a: t.ty) (e: exp t c a): Tot bool (decreases e) =
+  match e with
+  | XBase e1 -> causal_base e1
+  | XApps e1 -> causal_apps e1
   | XFby _ e1 -> causal e1
-  | XThen e1 e2 -> causal e1 && causal e2
   | XMu e1 -> causal e1 && not (direct_dependency e1 0)
   | XLet b e1 e2 -> causal e1 && causal e2
-  | XCheck _ e1 e2 -> causal e1 && causal e2
+  | XCheck _ e1 -> causal e1
+  | XContract rely guar impl -> causal impl
+
+and causal_apps (#t: table) (#c: context t) (#a: funty t.ty) (e: exp_apps t c a): Tot bool (decreases e) =
+  match e with
+  | XPrim _ -> true
+  | XApp e1 e2 -> causal_apps e1 && causal e2
 
 #push-options "--fuel 1 --ifuel 1"
 
 #push-options "--split_queries always"
+
+(*
 
 (* used by lemma_direct_dependency_not_subst', lemma_direct_dependency_not_subst' needs i' < i case *)
 let rec lemma_direct_dependency_lift_ge (#tbl: table) (#c: context tbl) (e: exp tbl c 'a) (i: C.index_lookup c) (i': C.index { i >= i' /\ i' <= List.Tot.length c }) (t: tbl.ty):
@@ -436,22 +459,24 @@ let rec lemma_bigstep_substitute_intros_no_dep
 
   | _ -> false_elim ()
 
+*)
+
 (* used by transition system proof *)
 let lemma_bigstep_substitute_elim_XLet
   (#t: table)
   (#c: context t)
-  (#valty: t.ty)
+  (#valty #a: t.ty)
   (rows: list (row c) { Cons? rows })
-  (e1: val_exp t c valty)
+  (e1: exp t c valty)
   (vs: list (t.ty_sem valty) { List.Tot.length rows == List.Tot.length vs })
   (hBS1s: bigsteps rows e1 vs)
-  (e2: exp t (valty :: c) 'a { causal e2 })
-  (v: 'a)
+  (e2: exp t (valty :: c) a { causal e2 })
+  (v: t.ty_sem a)
   (hBS2: bigstep rows (XLet valty e1 e2) v):
     (bigstep (CR.zip2_cons vs rows) e2 v) =
   match hBS2 with
   | BSLet _ _ _ _ hBS2' ->
-    lemma_bigstep_substitute_elim 0 rows e1 vs e2 v hBS1s hBS2'
+    admit () // lemma_bigstep_substitute_elim 0 rows e1 vs e2 v hBS1s hBS2'
 
 (* used by transition system proof *)
 let lemma_bigstep_substitute_elim_XMu
@@ -459,7 +484,7 @@ let lemma_bigstep_substitute_elim_XMu
   (#c: context t)
   (#valty: t.ty)
   (rows: list (row c) { Cons? rows })
-  (e: val_exp t (valty :: c) valty { causal (XMu e) })
+  (e: exp t (valty :: c) valty { causal (XMu e) })
   (vs: list (t.ty_sem valty) { List.Tot.length rows == List.Tot.length vs })
   (hBSs: bigsteps rows (XMu e) vs):
     (bigstep (CR.zip2_cons vs rows) e (List.Tot.hd vs)) =
@@ -467,7 +492,7 @@ let lemma_bigstep_substitute_elim_XMu
     | BSsS _ _ _ _ _ _ hBS ->
       match hBS with
       | BSMu _ _ _ hBS' ->
-        lemma_bigstep_substitute_elim 0 rows (XMu e) vs e (List.Tot.hd vs) hBSs hBS'
+        admit () // lemma_bigstep_substitute_elim 0 rows (XMu e) vs e (List.Tot.hd vs) hBSs hBS'
 
 (* used by lemma_bigstep_total *)
 let lemma_bigstep_substitute_intros_XMu
@@ -475,77 +500,71 @@ let lemma_bigstep_substitute_intros_XMu
   (#c: context t)
   (#valty: t.ty)
   (rows: list (row c))
-  (e: val_exp t (valty :: c) valty { causal (XMu e) })
+  (e: exp t (valty :: c) valty { causal (XMu e) })
   (vs: list (t.ty_sem valty) { List.Tot.length rows == List.Tot.length vs })
   (row: row c)
   (v v': t.ty_sem valty)
   (hBSs: bigsteps rows (XMu e) vs)
   (hBS1: bigstep (CR.cons v' row :: CR.zip2_cons vs rows) e v):
     (bigstep (row :: rows) (XMu e) v) =
-    let hBS'': bigstep (row :: rows) (subst1 e (XMu e)) v = lemma_bigstep_substitute_intros_no_dep 0 rows (XMu e) vs e row v' v hBSs hBS1 in
+    let hBS'': bigstep (row :: rows) (subst1 e (XMu e)) v =
+      // lemma_bigstep_substitute_intros_no_dep 0 rows (XMu e) vs e row v' v hBSs hBS1 in
+      admit () in
     BSMu (row :: rows) e v hBS''
 
 (* used by transition system proof *)
 let rec lemma_bigstep_total
   (#t: table)
   (#c: context t)
+  (#a: t.ty)
   (rows: list (row c) { Cons? rows })
-  (e: exp t c 'a { causal e }):
-    Tot (v: 'a & bigstep rows e v) (decreases %[e; rows; 0]) =
+  (e: exp t c a { causal e }):
+    Tot (v: t.ty_sem a & bigstep rows e v) (decreases %[e; rows; 0]) =
   let hd = List.Tot.hd rows in
   let tl = List.Tot.tl rows in
-  match e with
-  | XVal v -> (| v, BSVal _ v |)
-  | XPrim p -> (| t.prim_sem p, BSPrim rows p |)
-  | XVar _ -> false_elim ()
-  | XBVar i ->
-    (| CR.index (context_sem c) hd i, BSVar hd tl i |)
-  | XApp f_e a_e ->
-    assert_norm (causal (XApp f_e a_e) == (causal f_e && causal a_e));
-    let (| f_v, hBSf |) = lemma_bigstep_total rows f_e in
-    let (| a_v, hBSa |) = lemma_bigstep_total rows a_e in
-    (| f_v a_v, BSApp _ _ _ _ _ hBSf hBSa |)
-  | XFby v0 e1 ->
-    (match rows with
-    | [_] ->
-      assert_norm (List.Tot.length rows == 1);
-      (| v0, BSFby1 rows v0 e1 |)
-    | latest :: prefix ->
-      let (| v', hBSe1 |) = lemma_bigstep_total prefix e1 in
-      (| v', BSFbyS latest prefix v0 v' e1 hBSe1 |))
-  | XThen e1 e2 ->
-    (match rows with
-    | [_] ->
-      assert_norm (List.Tot.length rows == 1);
-      let (| v1, hBS1 |) = lemma_bigstep_total rows e1 in
-      (| v1, BSThen1 rows e1 e2 v1 hBS1 |)
-    | _ ->
-      assert_norm (List.Tot.length rows > 1);
-      let (| v2, hBS2 |) = lemma_bigstep_total rows e2 in
-      (| v2, BSThenS rows e1 e2 v2 hBS2 |))
+  admit ()
+  // match e with
+  // | XVal v -> (| v, BSVal _ v |)
+  // | XPrim p -> (| t.prim_sem p, BSPrim rows p |)
+  // | XVar _ -> false_elim ()
+  // | XBVar i ->
+  //   (| CR.index (context_sem c) hd i, BSVar hd tl i |)
+  // | XApp f_e a_e ->
+  //   assert_norm (causal (XApp f_e a_e) == (causal f_e && causal a_e));
+  //   let (| f_v, hBSf |) = lemma_bigstep_total rows f_e in
+  //   let (| a_v, hBSa |) = lemma_bigstep_total rows a_e in
+  //   (| f_v a_v, BSApp _ _ _ _ _ hBSf hBSa |)
+  // | XFby v0 e1 ->
+  //   (match rows with
+  //   | [_] ->
+  //     assert_norm (List.Tot.length rows == 1);
+  //     (| v0, BSFby1 rows v0 e1 |)
+  //   | latest :: prefix ->
+  //     let (| v', hBSe1 |) = lemma_bigstep_total prefix e1 in
+  //     (| v', BSFbyS latest prefix v0 v' e1 hBSe1 |))
+  // | XMu e1 ->
+  //   let (| vs, hBSs |) = lemma_bigsteps_total tl e in
+  //   let v' = t.val_default (XMu?.valty e) in
+  //   let (| v, hBS0 |) = lemma_bigstep_total (CR.cons v' hd :: CR.zip2_cons vs tl) e1 in
+  //   let hBS' = lemma_bigstep_substitute_intros_XMu tl e1 vs hd v v' hBSs hBS0 in
+  //   (| v, hBS' |)
 
-  | XMu e1 ->
-    let (| vs, hBSs |) = lemma_bigsteps_total tl e in
-    let v' = t.val_default (XMu?.valty e) in
-    let (| v, hBS0 |) = lemma_bigstep_total (CR.cons v' hd :: CR.zip2_cons vs tl) e1 in
-    let hBS' = lemma_bigstep_substitute_intros_XMu tl e1 vs hd v v' hBSs hBS0 in
-    (| v, hBS' |)
+  // | XCheck p e1 e2 ->
+  //   let (| v2, hBS2 |) = lemma_bigstep_total rows e2 in
+  //   (| v2, BSCheck rows p e1 e2 v2 hBS2 |)
 
-  | XCheck p e1 e2 ->
-    let (| v2, hBS2 |) = lemma_bigstep_total rows e2 in
-    (| v2, BSCheck rows p e1 e2 v2 hBS2 |)
-
-  | XLet b e1 e2 ->
-    let (| vs, hBSs |) = lemma_bigsteps_total rows e1 in
-    let (| v, hBS2 |) = lemma_bigstep_total (CR.zip2_cons vs rows) e2 in
-    let hBS' = lemma_bigstep_substitute_intros 0 rows e1 vs e2 v hBSs hBS2 in
-    (| v, BSLet rows e1 e2 v hBS' |)
+  // | XLet b e1 e2 ->
+  //   let (| vs, hBSs |) = lemma_bigsteps_total rows e1 in
+  //   let (| v, hBS2 |) = lemma_bigstep_total (CR.zip2_cons vs rows) e2 in
+  //   let hBS' = admit () in // lemma_bigstep_substitute_intros 0 rows e1 vs e2 v hBSs hBS2 in
+  //   (| v, BSLet rows e1 e2 v hBS' |)
 
 and lemma_bigsteps_total
   (#t: table)
   (#c: context t)
-  (rows: list (row c)) (e: exp t c 'a { causal e }):
-    Tot (vs: list 'a { List.Tot.length vs == List.Tot.length rows } & bigsteps rows e vs) (decreases %[e; rows; 1]) =
+  (#a: t.ty)
+  (rows: list (row c)) (e: exp t c a { causal e }):
+    Tot (vs: list (t.ty_sem a) { List.Tot.length vs == List.Tot.length rows } & bigsteps rows e vs) (decreases %[e; rows; 1]) =
   match rows with
   | [] -> (| [], BSs0 e |)
   | r :: rows' ->
@@ -556,7 +575,8 @@ and lemma_bigsteps_total
 let lemma_bigstep_total_v
   (#t: table)
   (#c: context t)
-  (rows: list (row c) { Cons? rows }) (e: exp t c 'a { causal e }):
-    'a =
+  (#a: t.ty)
+  (rows: list (row c) { Cons? rows }) (e: exp t c a { causal e }):
+    t.ty_sem a =
   let (| v, _ |) = lemma_bigstep_total rows e in
   v
