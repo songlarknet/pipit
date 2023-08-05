@@ -173,7 +173,7 @@ let rec bigstep_always (#t: table) (#c: context t)
   match rows with
   | [] -> True
   | _ :: rows' ->
-    bigstep rows e (t.propty_of_bool true) /\
+    bigstep rows e true /\
     bigstep_always rows' e
 
 let bigstep_contract_valid (#t: table) (#c: context t) (#a: t.ty)

@@ -34,7 +34,7 @@ let proof2 (n: pos): Lemma (ensures induct1 (bibo2' n)) =
 
 let fir3 (input: reals): reals = fir [0.7R; 0.2R; 0.1R] input
 
-let bibo3 (n: pos) (signal: reals): s bool =
+let bibo3 (n: pos) (signal: reals): bools =
   check "bibo" (sofar (abs signal <=^ pure n) => (abs (fir3 signal) <=^ pure n))
 
 let bibo3' n =

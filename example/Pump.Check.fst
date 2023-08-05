@@ -148,4 +148,3 @@ let controller_prop_prove (): Lemma (ensures induct1 controller_prop) =
   assert (base_case controller_prop) by (T.norm_full ());
   assert (step_case controller_prop) by (T.norm_full ());
   ()
-

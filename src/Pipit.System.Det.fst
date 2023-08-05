@@ -30,57 +30,47 @@ let system_of_dsystem
     chck = t.chck;
   }
 
-let dsystem_input (#input: Type): dsystem input unit input =
-  { init = ();
-    step = (fun i s -> ((), i));
-    chck = [];
-  }
-
 let dsystem_const (#input #result: Type) (v: result): dsystem input unit result =
   { init = ();
     step = (fun i s -> ((), v));
     chck = [];
   }
 
-let dsystem_check (#input #state: Type) (#xprop: eqtype)
-  (xprop_sem: xprop -> prop)
-  (xprop_true: xprop)
+let dsystem_check (#input #state: Type)
   (name: string)
-  (t1: dsystem input state xprop):
-       dsystem input (xprop & state) xprop =
-  { init = (xprop_true, t1.init);
+  (t1: dsystem input state bool):
+       dsystem input (bool & state) bool =
+  { init = (true, t1.init);
     step = (fun i s ->
         let (s2', r) = t1.step i (snd s) in
         ((r, s2'), r));
-    chck = (name, (fun s -> xprop_sem (fst s))) :: map_checks snd t1.chck;
+    chck = Check name (fun s -> fst s) :: map_checks snd t1.chck;
   }
 
-let dsystem_ap2 (#input #state1 #state2 #value1 #value2: Type)
-  (t1: dsystem input state1 (value1 -> value2))
-  (t2: dsystem input state2 value1):
-       dsystem input (state1 & state2) value2 =
-  {
-    init = (t1.init, t2.init);
+let dsystem_assume (#input #state: Type)
+  (t1: dsystem input state bool):
+       dsystem input (bool & state) bool =
+  { init = (true, t1.init);
     step = (fun i s ->
-        let (s1', f) = t1.step i (fst s) in
-        let (s2', a) = t2.step i (snd s) in
-        ((s1', s2'), f a));
-    chck =
-      app_checks (map_checks fst t1.chck) (map_checks snd t2.chck);
+        let (s2', r) = t1.step i (snd s) in
+        ((r, s2'), r));
+    chck = Assume (fun s -> fst s) :: map_checks snd t1.chck;
   }
 
-let dsystem_map (#input #state1 #value1 #value2: Type)
-  (f: value1 -> value2)
-  (t1: dsystem input state1 value1):
-       dsystem input state1 value2 =
-  {
-    init = t1.init;
-    step = (fun i s1 ->
-        let (s1', a) = t1.step i s1 in
-        (s1', f a));
-    chck = t1.chck;
+let dsystem_map_input (#input #result: Type) (f: input -> result):
+       dsystem input unit result =
+  { init = ();
+    step = (fun i s -> ((), f i));
+    chck = [];
   }
 
+let dsystem_with_input (#input #input' #state #result: Type) (f: input' -> input)
+    (t: dsystem input state result):
+        dsystem input' state result =
+  { init = t.init;
+    step = (fun i s -> t.step (f i) s);
+    chck = t.chck;
+  }
 
 let dsystem_pre (#input #state1 #v: Type) (init: v)
   (t1: dsystem input state1 v):
@@ -90,24 +80,6 @@ let dsystem_pre (#input #state1 #v: Type) (init: v)
       let (s1', v') = t1.step i (fst s) in
       ((s1', v'), snd s));
     chck = map_checks fst t1.chck;
-  }
-
-let dsystem_then (#input #state1 #state2 #v: Type)
-  (t1: dsystem input state1 v)
-  (t2: dsystem input state2 v):
-       dsystem input (system_then_state state1 state2) v =
-  { init = ({ init = true; s1 = t1.init; s2 = t2.init; } <: system_then_state state1 state2);
-    step = (fun i (s: system_then_state state1 state2) ->
-     let init = s.init in
-     let s1 = s.s1 in
-     let s2 = s.s2 in
-     let (s1', v1) = t1.step i s1 in
-     let (s2', v2) = t2.step i s2 in
-     let s' = { init = false; s1 = s1'; s2 = s2' } <: system_then_state state1 state2 in
-     (s', (if init then v1 else v2)));
-    chck = app_checks
-      (map_checks (fun s -> s.s1) t1.chck)
-      (map_checks (fun s -> s.s2) t2.chck);
   }
 
 let dsystem_mu_causal (#input #input' #state1 #v: Type)
@@ -135,3 +107,36 @@ let dsystem_let (#input #input' #state1 #state2 #v1 #v2: Type)
     chck = app_checks (map_checks fst t1.chck) (map_checks snd t2.chck);
   }
 
+(***** Unnecessary combinators? *)
+
+let dsystem_input (#input: Type): dsystem input unit input =
+  { init = ();
+    step = (fun i s -> ((), i));
+    chck = [];
+  }
+
+let dsystem_ap2 (#input #state1 #state2 #value1 #value2: Type)
+  (t1: dsystem input state1 (value1 -> value2))
+  (t2: dsystem input state2 value1):
+       dsystem input (state1 & state2) value2 =
+  {
+    init = (t1.init, t2.init);
+    step = (fun i s ->
+        let (s1', f) = t1.step i (fst s) in
+        let (s2', a) = t2.step i (snd s) in
+        ((s1', s2'), f a));
+    chck =
+      app_checks (map_checks fst t1.chck) (map_checks snd t2.chck);
+  }
+
+let dsystem_map (#input #state1 #value1 #value2: Type)
+  (f: value1 -> value2)
+  (t1: dsystem input state1 value1):
+       dsystem input state1 value2 =
+  {
+    init = t1.init;
+    step = (fun i s1 ->
+        let (s1', a) = t1.step i s1 in
+        (s1', f a));
+    chck = t1.chck;
+  }

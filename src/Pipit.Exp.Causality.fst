@@ -47,9 +47,12 @@ let rec direct_dependency (#t: table) (#c: context t) (#a: t.ty) (e: exp t c a) 
   | XLet b e1 e2 -> direct_dependency e1 i || direct_dependency e2 (i + 1)
   | XCheck name e1 -> direct_dependency e1 i
   (* Should we care if a contract's relies or guarantees mention `i`?
-     I don't think so - causality is required for total evaluation, which
+     I don't think it's strictly necessary - causality is required for total evaluation, which
      uses the implementation rather than the abstraction. *)
-  | XContract rely guar impl -> direct_dependency impl i
+  | XContract rely guar impl ->
+    direct_dependency rely i ||
+    direct_dependency impl i ||
+    direct_dependency impl i
 
 and direct_dependency_apps (#t: table) (#c: context t) (#a: funty t.ty) (e: exp_apps t c a) (i: C.index) : Tot bool (decreases e) =
   match e with
@@ -75,7 +78,8 @@ let rec causal (#t: table) (#c: context t) (#a: t.ty) (e: exp t c a): Tot bool (
   | XMu e1 -> causal e1 && not (direct_dependency e1 0)
   | XLet b e1 e2 -> causal e1 && causal e2
   | XCheck _ e1 -> causal e1
-  | XContract rely guar impl -> causal impl
+  | XContract rely guar impl ->
+    causal rely && causal guar && causal impl
 
 and causal_apps (#t: table) (#c: context t) (#a: funty t.ty) (e: exp_apps t c a): Tot bool (decreases e) =
   match e with

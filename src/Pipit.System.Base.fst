@@ -1,7 +1,22 @@
 (* Transition systems *)
 module Pipit.System.Base
 
-type checks (state: Type) = list (string & (state -> prop))
+noeq
+type check (state: Type) =
+  | Check:
+    name: string ->
+    obligation: (state -> bool) ->
+    check state
+  | Assume:
+    assumption: (state -> bool) ->
+    check state
+  | ContractInstance:
+    rely: (state -> bool) ->
+    guar: (state -> bool) ->
+    check state
+
+type checks (state: Type) = list (check state)
+
 
 (* Step functions are relations so that we can express non-deterministic systems.
    The recursive dependency for recursive binders XMu is easier to express as a
@@ -26,8 +41,14 @@ type system (input: Type) (state: Type) (result: Type) = {
   chck: checks state;
 }
 
+let map_check (#state #state': Type) (f: state' -> state) (chck: check state): check state' =
+  match chck with
+  | Check n o -> Check n (fun s -> o (f s))
+  | Assume a -> Assume (fun s -> a (f s))
+  | ContractInstance r g -> ContractInstance (fun s -> r (f s)) (fun s -> g (f s))
+
 let map_checks (#state #state': Type) (f: state' -> state) (chck: checks state): checks state' =
-  List.Tot.map (fun (name, x) -> (name, (fun s -> x (f s)))) chck
+  List.Tot.map (map_check f) chck
 
 (* Manual instance for universes *)
 let app_checks (#state: Type) (chck1 chck2: checks state): checks state =
@@ -46,74 +67,61 @@ let rec system_stepn
     system_stepn t inputs' s0 /\
     t.step row s0 s' r
 
-let system_input (#input: Type): system input unit input =
-  { init = (fun s -> True);
-    step = (fun i s s' r -> r == i);
-    chck = [];
-  }
-
 let system_const (#input #result: Type) (v: result): system input unit result =
   { init = (fun s -> True);
     step = (fun i s s' r -> r == v);
     chck = [];
   }
 
-// why is this necessary? issue with type inference for prop vs logical
-let prop_holds (p: prop): prop = p
-
-let system_check (#input #state: Type) (#xprop: eqtype)
-  (xprop_sem: xprop -> prop)
-  (xprop_true: xprop)
+let system_check (#input #state: Type)
   (name: string)
-  (t1: system input state xprop):
-       system input (xprop & state) xprop =
-  { init = (fun s -> fst s = xprop_true /\ t1.init (snd s));
+  (t1: system input state bool):
+       system input (bool & state) bool =
+  { init = (fun s -> fst s == true /\ t1.init (snd s));
     step = (fun i s s' r ->
         t1.step i (snd s) (snd s') r /\
         r = fst s');
-    chck = (name, (fun s -> xprop_sem (fst s))) :: map_checks snd t1.chck;
+    chck = Check name (fun s -> fst s) :: map_checks snd t1.chck;
   }
 
-let system_ap2 (#input #state1 #state2 #value1 #value2: Type)
-  (t1: system input state1 (value1 -> value2))
-  (t2: system input state2 value1):
-       system input (state1 & state2) value2 =
-  {
-    init = (fun s -> t1.init (fst s) /\ t2.init (snd s));
+let system_assume (#input #state: Type)
+  (t1: system input state bool):
+       system input (bool & state) bool =
+  { init = (fun s -> fst s == true /\ t1.init (snd s));
     step = (fun i s s' r ->
-      exists (f: value1 -> value2) (a: value1).
-        t1.step i (fst s) (fst s') f /\
-        t2.step i (snd s) (snd s') a /\
-        r == f a);
-    chck =
-      app_checks (map_checks fst t1.chck) (map_checks snd t2.chck);
+        t1.step i (snd s) (snd s') r /\
+        r = fst s');
+    chck = Assume (fun s -> fst s) :: map_checks snd t1.chck;
   }
 
-
-let system_map (#input #state1 #value1 #result: Type) (f: value1 -> result)
-  (t1: system input state1 value1):
-       system input state1 result =
-  { init = t1.init;
+let system_contract_instance (#input #state1 #state2: Type)
+  (tr: system input state1 bool)
+  (tg: system ('a & input) state2 bool):
+       system input ((bool & bool) & (state1 & state2)) 'a =
+  { init = (fun s -> fst (fst s) == true /\ snd (fst s) == true /\ tr.init (fst (snd s)) /\ tg.init (snd (snd s)));
     step = (fun i s s' r ->
-      exists (r1: value1).
-       t1.step i s s' r1 /\
-       r == f r1);
-    chck = t1.chck;
+        tr.step i (fst (snd s)) (fst (snd s')) (fst (fst s)) /\
+        tg.step (r, i) (snd (snd s)) (snd (snd s')) (snd (fst s)));
+    chck = ContractInstance (fun s -> fst (fst s)) (fun s -> fst (fst s)) ::
+    app_checks
+      (map_checks (fun s -> fst (snd s)) tr.chck)
+      (map_checks (fun s -> snd (snd s)) tg.chck) ;
   }
 
-let rec system_map_sem (#input #state1 #value1 #result: Type) (f: value1 -> result)
-  (t1: system input state1 value1)
-  (inputs: list (input & value1))
-  (s': state1):
-    Lemma (requires system_stepn t1 inputs s')
-      (ensures system_stepn (system_map f t1) (List.Tot.map (fun (i,v) -> (i, f v)) inputs) s') =
- match inputs with
- | []  -> ()
- | (i, v) :: is' ->
-   eliminate exists (s0: state1). system_stepn t1 is' s0 /\ t1.step i s0 s' v
-   returns system_stepn (system_map f t1) (List.Tot.map (fun (i,v) -> (i, f v)) inputs) s'
-   with hEx.
-        system_map_sem f t1 is' s0
+let system_map_input (#input #result: Type) (f: input -> result):
+       system input unit result =
+  { init = (fun _ -> True);
+    step = (fun i s s' r -> r == f i);
+    chck = [];
+  }
+
+let system_with_input (#input #input' #state #result: Type) (f: input' -> input)
+    (t: system input state result):
+        system input' state result =
+  { init = t.init;
+    step = (fun i s s' r -> t.step (f i) s s' r);
+    chck = t.chck;
+  }
 
 let system_pre (#input #state1 #v: Type) (init: v)
   (t1: system input state1 v):
@@ -122,38 +130,6 @@ let system_pre (#input #state1 #v: Type) (init: v)
     step = (fun i s s' r ->
       t1.step i (fst s) (fst s') (snd s') /\ r == snd s);
     chck = map_checks fst t1.chck;
-  }
-
-(* FRAGILE: this type is listed by name in Pipit.Tactics. The tactic needs to
-   know to break it apart. *)
-type system_then_state (state1 state2: Type) = {
-  init: bool; s1: state1; s2: state2;
-}
-
-let system_then (#input #state1 #state2 #v: Type)
-  (t1: system input state1 v)
-  (t2: system input state2 v):
-       system input (system_then_state state1 state2) v =
-  { init = (fun s ->
-     let init = s.init in
-     let s1 = s.s1 in
-     let s2 = s.s2 in
-     init = true /\ t1.init s1 /\ t2.init s2);
-    step = (fun i s s' r ->
-     let init = s.init in
-     let init' = s'.init in
-     let s1 = s.s1 in
-     let s1' = s'.s1 in
-     let s2 = s.s2 in
-     let s2' = s'.s2 in
-
-     if init
-     then exists r'. t1.init s1 /\ t1.step i s1 s1' r /\ t2.step i s2 s2' r' /\ init' = false
-     else init' = false /\ t2.step i s2 s2' r);
-    chck = app_checks
-      // Maybe we could relax this to something like "i ==> s1'" as the check for t1 only needs to hold on the first step...
-      (map_checks (fun s -> s.s1) t1.chck)
-      (map_checks (fun s -> s.s2) t2.chck);
   }
 
 let system_mu (#input #input' #state1 #v: Type)
@@ -181,6 +157,51 @@ let system_let (#input #input' #state1 #state2 #v1 #v2: Type)
         t2.step (extend i r1) s2 s2' r);
     chck = app_checks (map_checks fst t1.chck) (map_checks snd t2.chck);
   }
+
+(***** Unnecessary combinators? *)
+
+let system_ap2 (#input #state1 #state2 #value1 #value2: Type)
+  (t1: system input state1 (value1 -> value2))
+  (t2: system input state2 value1):
+       system input (state1 & state2) value2 =
+  {
+    init = (fun s -> t1.init (fst s) /\ t2.init (snd s));
+    step = (fun i s s' r ->
+      exists (f: value1 -> value2) (a: value1).
+        t1.step i (fst s) (fst s') f /\
+        t2.step i (snd s) (snd s') a /\
+        r == f a);
+    chck =
+      app_checks (map_checks fst t1.chck) (map_checks snd t2.chck);
+  }
+
+let system_map (#input #state1 #value1 #result: Type) (f: value1 -> result)
+  (t1: system input state1 value1):
+       system input state1 result =
+  { init = t1.init;
+    step = (fun i s s' r ->
+      exists (r1: value1).
+       t1.step i s s' r1 /\
+       r == f r1);
+    chck = t1.chck;
+  }
+
+let rec system_map_sem (#input #state1 #value1 #result: Type) (f: value1 -> result)
+  (t1: system input state1 value1)
+  (inputs: list (input & value1))
+  (s': state1):
+    Lemma (requires system_stepn t1 inputs s')
+      (ensures system_stepn (system_map f t1) (List.Tot.map (fun (i,v) -> (i, f v)) inputs) s') =
+ match inputs with
+ | []  -> ()
+ | (i, v) :: is' ->
+   eliminate exists (s0: state1). system_stepn t1 is' s0 /\ t1.step i s0 s' v
+   returns system_stepn (system_map f t1) (List.Tot.map (fun (i,v) -> (i, f v)) inputs) s'
+   with hEx.
+        system_map_sem f t1 is' s0
+
+// why is this necessary? issue with type inference for prop vs logical
+let prop_holds (p: prop): prop = p
 
 let system_bool_holds (#input #state: Type) (t: system input state bool):
   system input state prop =
