@@ -1,7 +1,7 @@
 (* Simple, inefficient integration with C. *)
 module Pipit.Exec.LowStar
 
-module X = Pipit.Exec.Base
+module X = Pipit.System.Det
 
 module B = LowStar.Buffer
 module Tac = FStar.Tactics
@@ -22,19 +22,18 @@ let tac_extract () =
    [1] https://eprint.iacr.org/2022/607.  *)
 [@@strict_on_arguments [4]]
 inline_for_extraction
-let mk_reset (#input #state #result: Type) (t: X.exec input state result) (stref: B.pointer state): ST unit
+let mk_reset (#input #state #result: Type) (t: X.dsystem input state result) (stref: B.pointer state): ST unit
     (requires (fun h -> B.live h stref))
     (ensures (fun h _ h' -> B.live h' stref)) =
   stref *= t.init
 
 [@@strict_on_arguments [4]]
 inline_for_extraction
-let mk_step (#input #state #result: Type) (t: X.exec input state result) (inp: input) (stref: B.pointer state) : ST result
+let mk_step (#input #state #result: Type) (t: X.dsystem input state result) (inp: input) (stref: B.pointer state) : ST result
     (requires (fun h -> B.live h stref))
     (ensures (fun h _ h' -> B.live h' stref)) =
   let st  = !*stref in
-  let res = t.eval inp st in
-  let st' = t.update inp st in
+  let (st', res): (state & result) = t.step inp st in
   stref *= st';
   res
 
