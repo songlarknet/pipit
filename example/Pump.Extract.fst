@@ -26,7 +26,6 @@ let expr = Sugar.run2 Pump.controller'
 [@@(Tac.postprocess_with XL.tac_extract)]
 type state = XX.state_of_exp expr
 
-// [@@(Tac.postprocess_with XL.tac_extract)]
 type result = bool & bool
 
 type input = {
@@ -49,7 +48,7 @@ let system: Pipit.Exec.Exp.system (bool & (bool & unit)) state result =
 [@@(Tac.postprocess_with XL.tac_extract)]
 let reset = XL.mk_reset system
 
-(* Define the step function, which takes two input integers and a pointer to the
+(* Define the step function, which takes two input booleans and a pointer to the
    internal state, and returns the result as a pair. *)
 [@@(Tac.postprocess_with XL.tac_extract)]
 let step (inp: input) = XL.mk_step system (inp.estop, (inp.level_low, ()))
