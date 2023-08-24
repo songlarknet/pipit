@@ -50,9 +50,16 @@ let map_check (#state #state': Type) (f: state' -> state) (chck: check state): c
 let map_checks (#state #state': Type) (f: state' -> state) (chck: checks state): checks state' =
   List.Tot.map (map_check f) chck
 
-(* Manual instance for universes *)
-let app_checks (#state: Type) (chck1 chck2: checks state): checks state =
-  List.Tot.append chck1 chck2
+let rec system_steps
+  (#input #state #result: Type)
+  (t: system input state result)
+  (inputs: list (input & state & result))
+  (s': state): prop =
+  match inputs with
+  | [] -> t.init s'
+  | ((i, s, r) :: inputs') ->
+    system_steps t inputs' s /\
+    t.step i s s' r
 
 
 let rec system_stepn
@@ -103,12 +110,12 @@ let system_contract_instance (#input #state1 #state2: Type)
         tr.step i (fst (snd s)) (fst (snd s')) (fst (fst s)) /\
         tg.step (r, i) (snd (snd s)) (snd (snd s')) (snd (fst s)));
     chck = ContractInstance (fun s -> fst (fst s)) (fun s -> fst (fst s)) ::
-    app_checks
+    List.Tot.append
       (map_checks (fun s -> fst (snd s)) tr.chck)
       (map_checks (fun s -> snd (snd s)) tg.chck) ;
   }
 
-let system_map_input (#input #result: Type) (f: input -> result):
+let system_project (#input #result: Type) (f: input -> result):
        system input unit result =
   { init = (fun _ -> True);
     step = (fun i s s' r -> r == f i);
@@ -155,7 +162,7 @@ let system_let (#input #input' #state1 #state2 #v1 #v2: Type)
       exists (r1: v1).
         t1.step i s1 s1' r1 /\
         t2.step (extend i r1) s2 s2' r);
-    chck = app_checks (map_checks fst t1.chck) (map_checks snd t2.chck);
+    chck = List.Tot.append (map_checks fst t1.chck) (map_checks snd t2.chck);
   }
 
 (***** Unnecessary combinators? *)
@@ -172,7 +179,7 @@ let system_ap2 (#input #state1 #state2 #value1 #value2: Type)
         t2.step i (snd s) (snd s') a /\
         r == f a);
     chck =
-      app_checks (map_checks fst t1.chck) (map_checks snd t2.chck);
+      List.Tot.append (map_checks fst t1.chck) (map_checks snd t2.chck);
   }
 
 let system_map (#input #state1 #value1 #result: Type) (f: value1 -> result)

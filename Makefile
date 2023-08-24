@@ -47,6 +47,12 @@ include $(BUILD)/deps.mk
 .PHONY: verify
 verify: $(ALL_CHECKED_FILES)
 
+# `make lax`:
+# Sometimes the proofs are flaky during development, so it can be useful to
+# build with retries enabled. 
+lax: FSTAR_PROOF_OPT=--retry 2
+lax: verify
+
 .PHONY: extract
 extract: extract-pump
 
@@ -55,10 +61,17 @@ extract-pump: EXTRACT_MODULE=Pump.Extract
 extract-pump: EXTRACT_FILE=example/Pump.Extract.fst
 extract-pump: EXTRACT_NAME=pump
 extract-pump: extract-mk
-# extract-pump: $(BUILD)/cache/Example.Compile.Pump.fst.checked extract-mk EXTRACT_MODULE=example/Pump.Extract.fst EXTRACT_NAME=pump
+
+
+.PHONY: extract-therm-manual
+extract-therm-manual: EXTRACT_MODULE=ThermDriver.Manual
+extract-therm-manual: EXTRACT_FILE=example/ThermDriver.Manual.fst --extract FStar.UInt8 --extract FStar.Pervasives
+extract-therm-manual: EXTRACT_NAME=therm-manual
+extract-therm-manual: extract-mk
 
 .PHONY: extract-mk
 extract-mk:
+	@echo "* Extracting $(EXTRACT_MODULE)"
 	@mkdir -p $(BUILD)/extract/$(EXTRACT_NAME)
 	$(Q)$(FSTAR_EXE) $(FSTAR_OPT) $(EXTRACT_FILE) --extract $(EXTRACT_MODULE) --codegen krml --odir $(BUILD)/extract/$(EXTRACT_NAME)
 	$(Q)cd $(BUILD)/extract/$(EXTRACT_NAME) && $(KARAMEL_EXE) *.krml -skip-linking

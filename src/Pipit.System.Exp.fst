@@ -88,7 +88,7 @@ let dsystem_of_exp_base
     Tot (xdsystem c unit (t.ty_sem a)) (decreases e) =
     match e with
     | XVal v -> dsystem_const v
-    | XBVar x -> dsystem_map_input (fun i -> CR.index (context_sem c) i x)
+    | XBVar x -> dsystem_project (fun i -> CR.index (context_sem c) i x)
     | XVar x -> false_elim ()
 
 
@@ -119,7 +119,7 @@ and dsystem_of_exp_apps
   (f: funty_sem t.ty_sem a -> inp -> res):
     Tot (dsystem (inp & row c) (dstate_of_exp_apps e) res) (decreases e) =
     match e with
-    | XPrim p -> dsystem_map_input  (fun i -> f (t.prim_sem p) (fst i))
+    | XPrim p -> dsystem_project  (fun i -> f (t.prim_sem p) (fst i))
     | XApp e1 e2 ->
       let arg = XApp?.arg e in
       let ret = XApp?.ret e in
@@ -168,7 +168,7 @@ and system_of_exp_apps
   (f: funty_sem t.ty_sem a -> inp -> res):
     Tot (system (inp & row c) (state_of_exp_apps e) res) (decreases e) =
     match e with
-    | XPrim p -> system_map_input  (fun i -> f (t.prim_sem p) (fst i))
+    | XPrim p -> system_project (fun i -> f (t.prim_sem p) (fst i))
     | XApp e1 e2 ->
       let arg = XApp?.arg e in
       let ret = XApp?.ret e in
