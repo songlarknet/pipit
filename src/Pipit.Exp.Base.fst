@@ -5,6 +5,7 @@ open Pipit.Prim.Table
 
 module C  = Pipit.Context.Base
 module CP = Pipit.Context.Properties
+module PM = Pipit.Prop.Metadata
 
 (* Expressions `exp t c a`
   expressions are indexed by the primitive table, the environment mapping
@@ -26,7 +27,6 @@ type exp_base (t: table) (c: context t): t.ty -> Type =
   //  the types in the variable must be t.ty (which is eqtype) because we need to compare the types of variables
   | XVar   : #valty: t.ty -> x: C.var valty -> exp_base t c valty
 
-noeq
 type exp (t: table) (c: context t): t.ty -> Type =
   | XBase: #valty: t.ty -> exp_base t c valty -> exp t c valty
   | XApps: #valty: t.ty -> exp_apps t c (FTVal valty) -> exp t c valty
@@ -56,14 +56,15 @@ type exp (t: table) (c: context t): t.ty -> Type =
   // X If we made these expressions, it would be difficult to state the contract
   // X because we haven't defined the semantics of expressions yet.
   | XContract:
-    #valty: t.ty ->
+    #valty: t.ty                      ->
+    status: PM.contract_status           ->
     rely: exp t c            t.propty ->
     guar: exp t (valty :: c) t.propty ->
     impl: exp t c            valty    ->
     exp t c valty
 
   // check "" e
-  | XCheck : string -> exp t c t.propty -> exp t c t.propty
+  | XCheck : PM.prop_status -> exp t c t.propty -> exp t c t.propty
 and
  exp_apps (t: table) (c: context t): funty t.ty -> Type =
   // primitives
@@ -91,8 +92,8 @@ let rec weaken (#c c': context 't) (#a: ('t).ty) (e: exp 't c a): Tot (exp 't (C
   | XFby v e -> XFby v (weaken c' e)
   | XMu e1 -> XMu (weaken c' e1)
   | XLet b e1 e2 -> XLet b (weaken c' e1) (weaken c' e2)
-  | XCheck name e1 -> XCheck name (weaken c' e1)
-  | XContract r g i -> XContract (weaken c' r) (weaken c' g) (weaken c' i)
+  | XCheck ps e1 -> XCheck ps (weaken c' e1)
+  | XContract ps r g i -> XContract ps (weaken c' r) (weaken c' g) (weaken c' i)
 and weaken_apps (#c c': context 't) (#a: funty ('t).ty) (e: exp_apps 't c a): Tot (exp_apps 't (C.append c c') a) (decreases e) =
   match e with
   | XPrim p -> XPrim p

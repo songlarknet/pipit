@@ -1,7 +1,7 @@
 (* This is an example of an FIR filter. *)
 module Fir.Check
 
-open Pipit.Sugar
+open Pipit.Sugar.Vanilla
 
 // open Pipit.System.Base
 open Pipit.System.Ind

@@ -92,7 +92,7 @@ let lemma_append_context_sem
     =
   admit ()
 
-// TODO clean
+// TODO:ADMIT easy proofs: some of these should go in Context.Properties or elsewhere
 assume val lemma_context_sem_length (t: table) (c: context t):
   Lemma (List.Tot.length (context_sem c) == List.Tot.length c)
     [SMTPat (List.Tot.length (context_sem c))]

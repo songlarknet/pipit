@@ -18,7 +18,7 @@ type check (state: Type) =
 type checks (state: Type) = list (check state)
 
 
-(* Step functions are relations so that we can express non-deterministic systems.
+(* Step functions are relations so that we can express contracts, which are underspecified.
    The recursive dependency for recursive binders XMu is easier to express as a
    relation too. The result type is `prop`, rather than a computational boolean,
    because composing the relations requires existential quantifiers. *)

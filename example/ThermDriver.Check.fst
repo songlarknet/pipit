@@ -7,7 +7,7 @@ open Pipit.System.Ind
 open Pipit.System.Exp
 
 module T = Pipit.Tactics
-module Sugar = Pipit.Sugar
+module Sugar = Pipit.Sugar.Vanilla
 
 module PPV = Pipit.Prim.Vanilla
 

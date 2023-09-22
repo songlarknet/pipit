@@ -13,6 +13,7 @@ open Pipit.Exp.Binding
 module C  = Pipit.Context.Base
 module CR = Pipit.Context.Row
 module CP = Pipit.Context.Properties
+module PM = Pipit.Prop.Metadata
 
 // #push-options "--split_queries always"
 #push-options "--fuel 1 --ifuel 1"
@@ -42,7 +43,7 @@ let rec lemma_lift_lift_commute (#a: ('t).ty) (#c: context 't) (e: exp 't c a) (
     lemma_lift_lift_commute_bind e2
   | XCheck _ e1 ->
     lemma_lift_lift_commute e1 i1 i2 t1 t2
-  | XContract r g i ->
+  | XContract _ r g i ->
     lemma_lift_lift_commute r i1 i2 t1 t2;
     lemma_lift_lift_commute_bind g;
     lemma_lift_lift_commute i i1 i2 t1 t2
@@ -81,7 +82,7 @@ let rec lemma_subst_lift_id (#a: ('t).ty) (#c: context 't) (e: exp 't c a) (i: C
     lemma_subst_lift_id_bind e2
   | XCheck _ e1 ->
     lemma_subst_lift_id e1 i t p
-  | XContract r g impl ->
+  | XContract _ r g impl ->
     lemma_subst_lift_id r i t p;
     lemma_subst_lift_id_bind g;
     lemma_subst_lift_id impl i t p
@@ -155,7 +156,7 @@ let rec lemma_lift_subst_distribute_le (#a: ('t).ty) (#c: context 't) (e: exp 't
     bind e2
   | XCheck _ e1 ->
     lemma_lift_subst_distribute_le e1 i1 i2 t2 p
-  | XContract r g i ->
+  | XContract _ r g i ->
     lemma_lift_lift_commute p i2 0 t2 a;
     lemma_lift_subst_distribute_le r i1 i2 t2 p;
     bind g;
@@ -306,6 +307,7 @@ private
 let lemma_subst_subst_distribute_le_XContract
   (#c: context 't)
   (#valty: ('t).ty)
+  (status: PM.contract_status)
   (er: exp 't c ('t).propty) (eg: exp 't (valty :: c) ('t).propty) (ei: exp 't c valty)
   (i1: C.index_lookup c) (i2: C.index { i1 <= i2 /\ i2 < List.Tot.length c - 1 }) (p1: exp 't (C.drop1 c i1) (C.get_index c i1)) (p2: exp 't (C.drop1 (C.drop1 c i1) i2) (C.get_index (C.drop1 c i1) i2)):
   Lemma
@@ -313,7 +315,7 @@ let lemma_subst_subst_distribute_le_XContract
       lemma_subst_subst_distribute_le_def er i1 i2 p1 p2 /\
       lemma_subst_subst_distribute_le_def eg (i1 + 1) (i2 + 1) (_lift_of_drop i1 p1 valty) (_lift_of_drop2 i1 i2 p2 valty) /\
       lemma_subst_subst_distribute_le_def ei i1 i2 p1 p2))
-    (ensures (lemma_subst_subst_distribute_le_def (XContract er eg ei) i1 i2 p1 p2)) =
+    (ensures (lemma_subst_subst_distribute_le_def (XContract status er eg ei) i1 i2 p1 p2)) =
   lemma_subst_subst_distribute_le_bind eg i1 i2 p1 p2;
   CP.lemma_lift_drop_commute_le (C.drop1 c i1) i2 i1 (C.get_index c i1);
   ()
@@ -357,11 +359,11 @@ let rec lemma_subst_subst_distribute_le (#a: ('t).ty) (#c: context 't) (e: exp '
     bind e2;
     lemma_subst_subst_distribute_le_XLet e1 e2 i1 i2 p1 p2
 
-  | XContract r g i ->
+  | XContract status r g i ->
     lemma_subst_subst_distribute_le r i1 i2 p1 p2;
     bind g;
     lemma_subst_subst_distribute_le i i1 i2 p1 p2;
-    lemma_subst_subst_distribute_le_XContract r g i i1 i2 p1 p2
+    lemma_subst_subst_distribute_le_XContract status r g i i1 i2 p1 p2
 
 and lemma_subst_subst_distribute_le_apps (#a: funty ('t).ty) (#c: context 't) (e: exp_apps 't c a) (i1: C.index_lookup c) (i2: C.index { i1 <= i2 /\ i2 < List.Tot.length c - 1 }) (p1: exp 't (C.drop1 c i1) (C.get_index c i1)) (p2: exp 't (C.drop1 (C.drop1 c i1) i2) (C.get_index (C.drop1 c i1) i2)):
   Lemma (ensures

@@ -9,7 +9,7 @@ module XL  = Pipit.Exec.LowStar
 
 module Tac = FStar.Tactics
 
-module Sugar = Pipit.Sugar
+module Sugar = Pipit.Sugar.Vanilla
 
 module PPV = Pipit.Prim.Vanilla
 

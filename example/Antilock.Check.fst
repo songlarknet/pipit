@@ -83,7 +83,7 @@ let estimate_update_accuracy_degrades (i: inputs) (pre: estimate) (tol: speed):
 
 
 module Exp = Pipit.Exp.Base
-module Sugar = Pipit.Sugar
+module Sugar = Pipit.Sugar.Vanilla
 
 let previously (e: Sugar.bools): Sugar.bools =
   let open Sugar in

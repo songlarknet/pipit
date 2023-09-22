@@ -22,6 +22,7 @@ open Pipit.Exp.Binding
 module C  = Pipit.Context.Base
 module CR = Pipit.Context.Row
 module CP = Pipit.Context.Properties
+module PM = Pipit.Prop.Metadata
 
 (* bigstep_base streams e v
 
@@ -68,7 +69,7 @@ type bigstep (#t: table) (#c: context t): (#a: t.ty) -> list (row c) -> exp t c 
           bigstep_apps streams e v ->
           bigstep streams (XApps e) v
 
- (* To compute `pre e` we evaluate `e` without the most recent element. *)
+ (* At the very first step, `v fby e` evaluates to `v`. *)
  | BSFby1: #a: t.ty                ->
            start: list (row c) { List.Tot.length start <= 1 }
                                    ->
@@ -109,27 +110,33 @@ type bigstep (#t: table) (#c: context t): (#a: t.ty) -> list (row c) -> exp t c 
           bigstep streams (subst1 e2 e1) v    ->
           bigstep streams (XLet b e1 e2) v
 
- // TODO BSContract: it is a pain, but we need bigsteps here:
+ (* To evaluate a contract, we just use the implementation. We want to be able
+    to show that the evaluation is a refinement of the rely/guarantee. *)
  | BSContract:
           #valty: t.ty                        ->
           streams: list (row c)               ->
+          status: PM.contract_status          ->
           rely: exp t c            t.propty   ->
           guar: exp t (valty :: c) t.propty   ->
           impl: exp t c            valty      ->
           v: t.ty_sem valty                   ->
-          bigstep streams impl v              ->
-          bigstep streams (XContract rely guar impl) v
+          vr: bool                            ->
+          vg: bool                            ->
+          bigstep streams rely vr               ->
+          bigstep streams (subst1 guar impl) vg ->
+          bigstep streams impl v                ->
+          bigstep streams (XContract status rely guar impl) v
 
  (* We evaluate properties, but we don't actually check that the properties are
     true in this semantics. We want to be able to prove that the transition
     system preserves semantics, whether or not the properties are true. *)
  | BSCheck:
-          streams: list (row c)                 ->
-          name:    string                       ->
-          eprop:   exp t c             t.propty ->
-          v:       t.ty_sem t.propty            ->
-          bigstep streams              eprop  v ->
-          bigstep streams (XCheck name eprop) v
+          streams: list (row c)                   ->
+          status:  PM.prop_status                 ->
+          eprop:   exp t c             t.propty   ->
+          v:       t.ty_sem t.propty              ->
+          bigstep streams                eprop  v ->
+          bigstep streams (XCheck status eprop) v
 
 and bigstep_apps (#t: table) (#c: context t): (#a: funty t.ty) -> list (row c) -> exp_apps t c a -> funty_sem t.ty_sem a -> Type =
 
@@ -175,15 +182,6 @@ let rec bigstep_always (#t: table) (#c: context t)
   | _ :: rows' ->
     bigstep rows e true /\
     bigstep_always rows' e
-
-let bigstep_contract_valid (#t: table) (#c: context t) (#a: t.ty)
-  (rely: exp t      c  t.propty)
-  (guar: exp t (a :: c) t.propty)
-  (impl: exp t      c  a): prop =
-  forall (rows: list (row c)) (vs: list (t.ty_sem a) { List.Tot.length rows == List.Tot.length vs }).
-    bigstep_always rows rely ==>
-    bigsteps rows impl vs ==>
-    bigstep_always (CR.zip2_cons vs rows) guar
 
 
 (* Properties *)
@@ -233,9 +231,11 @@ let rec bigstep_proof_equivalence
     let BSLet _ _ _ _ bs2 = hBS2 in
     bigstep_proof_equivalence bs1 bs2
 
-  | BSContract _ _ _ _ _ bs1 ->
-    let BSContract _ _ _ _ _ bs2 = hBS2 in
-    bigstep_proof_equivalence bs1 bs2
+  | BSContract _ _ _ _ _ _ _ _ bsr1 bsg1 bsi1 ->
+    let BSContract _ _ _ _ _ _ _ _ bsr2 bsg2 bsi2 = hBS2 in
+    bigstep_proof_equivalence bsr1 bsr2;
+    bigstep_proof_equivalence bsg1 bsg2;
+    bigstep_proof_equivalence bsi1 bsi2
 
   | BSCheck _ _ _ _ bs1 ->
     let BSCheck _ _ _ _ bs2 = hBS2 in

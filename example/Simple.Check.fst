@@ -6,7 +6,7 @@ open Pipit.System.Ind
 open Pipit.System.Exp
 
 module T = Pipit.Tactics
-open Pipit.Sugar
+open Pipit.Sugar.Vanilla
 
 (*
    Count the number of times a predicate has been true.

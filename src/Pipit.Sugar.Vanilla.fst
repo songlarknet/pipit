@@ -4,7 +4,7 @@
    There are `run`, `run1` and `run2` functions for converting stream programs
    to core expressions, but these should really be hidden...
 *)
-module Pipit.Sugar
+module Pipit.Sugar.Vanilla
 
 open Pipit.Prim.Vanilla
 
@@ -20,13 +20,13 @@ module R = FStar.Real
 type valtype = valtype
 type arithtype = arithtype
 
-type s  (a: valtype)  = S.s table a
+type s (a: valtype)  = S.s table a
 
 type bools = s TBool
 type ints  = s TInt
 type reals = s TReal
 
-let run  (e: s 'a) : exp table [] 'a = S.run e
+let run0 (e: s 'a) : exp table [] 'a = S.run0 e
 
 let run1 (f: s 'a -> s 'b) : exp table ['a] 'b = S.run1 f
 
@@ -43,10 +43,10 @@ let rec' (f: s 'a -> s 'a): s 'a = S.rec' #table #'a f
 let letrec' (f: s 'a -> s 'a) (g: s 'a -> s 'b): s 'b = let' (rec' f) g
 
 let check' (name: string) (e: bools) (f: s 'a): s 'a =
-  S.check' #table #'a name e f
+  S.check' #table #'a e f
 
 let check (name: string) (e: bools): bools =
-  S.check #table name e
+  S.check #table e
 
 let fby (#a: valtype) (v: table.ty_sem a) (e: s a): s a = S.fby #table #a v e
 
@@ -127,7 +127,7 @@ let once (e: bools): bools =
   rec' (fun r -> e \/ fby false r)
 
 let countsecutive (e: bools): ints =
-  rec' (fun r -> if_then_else e (fby 0 r +^ z1) (fby 0 r))
+  rec' (fun r -> if_then_else e (fby 0 r +^ z1) z0)
 
 (* last-n, true for last n ticks *)
 let last (n: nat) (e: bools): bools =

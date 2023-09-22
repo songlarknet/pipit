@@ -10,99 +10,135 @@ module Pipit.Sugar.Base
 open Pipit.Prim.Table
 
 open Pipit.Exp.Base
-open Pipit.Exp.Binding
+open Pipit.Exp.Checked.Base
+open Pipit.Exp.Checked.Compound
 
 module C  = Pipit.Context.Base
+module CX = Pipit.Exp.Checked.Compound
+module PM = Pipit.Prop.Metadata
 
-type state = {
+(**** Internal types ****)
+type _state = {
   fresh: nat;
 }
 
-type m (a: Type) =
-  s: state -> (a & state)
+type _m      (a: Type)                  = _state -> (a & _state)
+type _s_apps (t: table) (a: funty t.ty) = _m (cexp_apps t [] a)
 
-type s (t: table) (a: t.ty)  = m (exp t [] a)
-type s' (t: table) (a: funty t.ty)  = m (exp_apps t [] a)
+(**** Exposed types: s for stream ****)
+type s       (t: table) (a: t.ty)       = _m (cexp      t [] a)
+type prim    (t: table) (ty: funty t.ty)= p: t.prim { t.prim_ty p == ty }
 
-type prim (t: table) (ty: funty t.ty) = p: t.prim { t.prim_ty p == ty }
+(**** Internal combinators ****)
 
-
-let m_pure (#a: Type) (x: a): m a =
+let _purem (#a: Type) (x: a): _m a =
   fun s -> (x, s)
 
-let fresh' (#ty: eqtype) (t: ty): m (C.var t) =
-  (fun s ->
+let _freshm (#ty: eqtype) (t: ty): _m (C.var t) =
+  fun s ->
     let x = s.fresh in
-    (C.Var x), { fresh = x + 1 })
+    (C.Var x), { fresh = x + 1 }
 
-let fresh (t: table) (ty: t.ty): s t ty =
-  (fun s ->
-    let (x, s') = fresh' ty s in
-    (XBase (XVar x), s'))
+let _freshs (t: table) (ty: t.ty): s t ty =
+  fun s ->
+    let (x, s') = _freshm ty s in
+    (XBase (XVar x), s')
 
-let run (#t: table) (#ty: t.ty) (e: s t ty) : exp t [] ty =
+let run0 (#t: table) (#ty: t.ty) (e: s t ty) : cexp t [] ty =
   let (a, _) = e { fresh = 0 } in
   a
 
-let run1 (#t: table) (#a #b: t.ty) (f: s t a -> s t b) : exp t [a] b =
-  let (ax, s) = fresh' a { fresh = 0 } in
+(**** Top-level / integration combinators ****)
+let run1 (#t: table) (#a #b: t.ty) (f: s t a -> s t b) : cexp t [a] b =
+  let (ax, s) = _freshm a { fresh = 0 } in
   let a       = XBase (XVar ax) in
-  let (b,  s) = f (m_pure a) s in
-  close1 b ax
+  let (b,  s) = f (_purem a) s in
+  CX.close1 b ax
 
-let run2 (#a #b #c: ('t).ty) (f: s 't a -> s 't b -> s 't c) : exp 't [a; b] c =
+let run2 (#a #b #c: ('t).ty) (f: s 't a -> s 't b -> s 't c) : cexp 't [a; b] c =
   let s       = { fresh = 0 } in
-  let (ax, s) = fresh' a s in
-  let (bx, s) = fresh' b s in
+  let (ax, s) = _freshm a s in
+  let (bx, s) = _freshm b s in
   let a       = XBase (XVar ax) in
   let b       = XBase (XVar bx) in
-  let (c,  s) = f (m_pure a) (m_pure b) s in
-  close1 (close1 c bx) ax
+  let (c,  s) = f (_purem a) (_purem b) s in
+  CX.close1 (CX.close1 c bx) ax
 
+let reflect1 (#t: table) (#a #b: t.ty) (e: cexp t [a] b) (sa: s t a): s t b =
+  fun s ->
+    let (ax, s) = sa s in
+    (CX.subst1 e ax, s)
+
+let reflect2 (#t: table) (#a #b #c: t.ty) (e: cexp t [a; b] c) (sa: s t a) (sb: s t b): s t c =
+  fun s ->
+    let (ax, s) = sa s in
+    let (bx, s) = sb s in
+    (CX.subst1 (CX.subst1 e (CX.weaken [b] ax)) bx, s)
+
+(**** Top-level / integration combinators ****)
 let let'
   (#a #b: ('t).ty)
   (e: s 't a)
   (f: s 't a -> s 't b):
     s 't b =
   (fun s ->
-    let (xvar, s) = fresh' a s in
-    let evar = XBase (XVar xvar) in
-    let (e, s) = e s in
-    let (e', s) = f (m_pure evar) s in
-    (XLet a e (close1 e' xvar), s))
+    let (xvar, s) = _freshm a s in
+    let evar      = XBase (XVar xvar) in
+    let (e, s)    = e s in
+    let (e', s)   = f (_purem evar) s in
+    (XLet a e (CX.close1 e' xvar), s))
 
 let rec'
   (#a: ('t).ty)
   (f: s 't a -> s 't a):
     s 't a =
   (fun s ->
-    let (xvar, s) = fresh' a s in
-    let evar = XBase (XVar xvar) in
-    let (e', s) = f (m_pure evar) s in
-    (XMu (close1 e' xvar), s))
+    let (xvar, s) = _freshm a s in
+    let evar      = XBase (XVar xvar) in
+    let (e', s)   = f (_purem evar) s in
+    (XMu (CX.close1 e' xvar), s))
 
 // XXX: this unit-check is dangerous, the check will disappear if the returned unit isn't mentioned in the result expression.
 // I really want a monadic/effectful interface that collects a list of checks.
 // when I tried this before I had trouble reifying effectful expressions inside
 // tactics. need to work that out.
 let check
-  (name: string)
   (e: s 't ('t).propty):
     s 't ('t).propty =
   (fun s ->
     let (e, s) = e s in
-    (XCheck name e, s))
+    (XCheck PM.PSUnknown e, s))
 
 let check'
   (#a: ('t).ty)
-  (name: string)
   (e: s 't ('t).propty)
   (f: s 't a):
     s 't a =
-  let' (check name e) (fun _ -> f)
+  let' (check e) (fun _ -> f)
+
+noeq
+type _contract (t: table) (a: t.ty) = {
+  rely: s t t.propty;
+  guar: (s t a -> s t t.propty);
+  impl: s t a;
+}
+
+let contract
+  (#a: ('t).ty)
+  (c: _contract 't a):
+    s 't a =
+  (fun s ->
+    let (r, s)    = c.rely s in
+    let (xvar, s) = _freshm a s in
+    let evar      = XBase (XVar xvar) in
+    let (g, s)    = c.guar (_purem evar) s in
+    let g         = CX.close1 g xvar in
+    let (i, s)    = c.impl s in
+    (XContract PM.contract_status_unknown r g i, s))
+
 
 let pure (#a: ('t).ty) (v: ('t).ty_sem a): s 't a =
-  m_pure (XBase (XVal v))
+  _purem (XBase (XVal v))
 
 (* followed-by, initialised delay *)
 let fby (#a: ('t).ty) (v: ('t).ty_sem a) (e: s 't a): s 't a = (fun s -> let (e, s) = e s in (XFby v e, s))
@@ -131,6 +167,7 @@ let liftP1
       s 't b =
   (fun s ->
     let (aa, s) = e s in
+    CX.lemma_check_XApps1 #'t #[] #a #b PM.check_mode_valid f aa;
     (XApps (XApp (XPrim f) aa), s))
 
 let liftP2
@@ -142,6 +179,7 @@ let liftP2
   (fun s ->
     let (aa, s) = ea s in
     let (bb, s) = eb s in
+    CX.lemma_check_XApps2 #'t #[] #a #b #c PM.check_mode_valid f aa bb;
     (XApps (XApp (XApp (XPrim f) aa) bb), s))
 
 let liftP3
@@ -155,5 +193,6 @@ let liftP3
     let (aa, s) = ea s in
     let (bb, s) = eb s in
     let (cc, s) = ec s in
+    CX.lemma_check_XApps3 #'t #[] #a #b #c #d PM.check_mode_valid f aa bb cc;
     (XApps (XApp (XApp (XApp (XPrim f) aa) bb) cc), s))
 
