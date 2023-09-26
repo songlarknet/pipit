@@ -1,16 +1,17 @@
 (* Transition systems *)
 module Pipit.System.Base
 
+module PM = Pipit.Prop.Metadata
+
 noeq
 type check (state: Type) =
   | Check:
     name: string ->
+    status: PM.prop_status ->
     obligation: (state -> bool) ->
     check state
-  | Assume:
-    assumption: (state -> bool) ->
-    check state
   | ContractInstance:
+    status: PM.prop_status ->
     rely: (state -> bool) ->
     guar: (state -> bool) ->
     check state
@@ -43,9 +44,9 @@ type system (input: Type) (state: Type) (result: Type) = {
 
 let map_check (#state #state': Type) (f: state' -> state) (chck: check state): check state' =
   match chck with
-  | Check n o -> Check n (fun s -> o (f s))
-  | Assume a -> Assume (fun s -> a (f s))
-  | ContractInstance r g -> ContractInstance (fun s -> r (f s)) (fun s -> g (f s))
+  | Check n st o -> Check n st (fun s -> o (f s))
+  // | Assume a -> Assume (fun s -> a (f s))
+  | ContractInstance st r g -> ContractInstance st (fun s -> r (f s)) (fun s -> g (f s))
 
 let map_checks (#state #state': Type) (f: state' -> state) (chck: checks state): checks state' =
   List.Tot.map (map_check f) chck
@@ -82,26 +83,18 @@ let system_const (#input #result: Type) (v: result): system input unit result =
 
 let system_check (#input #state: Type)
   (name: string)
+  (status: PM.prop_status)
   (t1: system input state bool):
        system input (bool & state) bool =
   { init = (fun s -> fst s == true /\ t1.init (snd s));
     step = (fun i s s' r ->
         t1.step i (snd s) (snd s') r /\
         r = fst s');
-    chck = Check name (fun s -> fst s) :: map_checks snd t1.chck;
-  }
-
-let system_assume (#input #state: Type)
-  (t1: system input state bool):
-       system input (bool & state) bool =
-  { init = (fun s -> fst s == true /\ t1.init (snd s));
-    step = (fun i s s' r ->
-        t1.step i (snd s) (snd s') r /\
-        r = fst s');
-    chck = Assume (fun s -> fst s) :: map_checks snd t1.chck;
+    chck = Check name status (fun s -> fst s) :: map_checks snd t1.chck;
   }
 
 let system_contract_instance (#input #state1 #state2: Type)
+  (status: PM.prop_status)
   (tr: system input state1 bool)
   (tg: system ('a & input) state2 bool):
        system input ((bool & bool) & (state1 & state2)) 'a =
@@ -109,7 +102,7 @@ let system_contract_instance (#input #state1 #state2: Type)
     step = (fun i s s' r ->
         tr.step i (fst (snd s)) (fst (snd s')) (fst (fst s)) /\
         tg.step (r, i) (snd (snd s)) (snd (snd s')) (snd (fst s)));
-    chck = ContractInstance (fun s -> fst (fst s)) (fun s -> fst (fst s)) ::
+    chck = ContractInstance status (fun s -> fst (fst s)) (fun s -> fst (fst s)) ::
     List.Tot.append
       (map_checks (fun s -> fst (snd s)) tr.chck)
       (map_checks (fun s -> snd (snd s)) tg.chck) ;

@@ -34,7 +34,7 @@ let rec state_of_exp (#t: table) (#c: context t) (#a: t.ty) (e: exp t c a): Tot 
   | XLet b e1 e2 -> state_of_exp e1 & state_of_exp e2
   | XCheck name e1 -> bool & state_of_exp e1
   // Contracts do not expose their body in abstract mode, so we only need state of rely and guar
-  | XContract rely guar impl ->
+  | XContract status rely guar impl ->
     (bool & bool) & (state_of_exp rely & state_of_exp guar)
 
 and state_of_exp_apps (#t: table) (#c: context t) (#a: funty t.ty) (e: exp_apps t c a): Tot Type (decreases e) =
@@ -51,7 +51,7 @@ let rec dstate_of_exp (#t: table) (#c: context t) (#a: t.ty) (e: exp t c a): Tot
   | XMu e1 -> dstate_of_exp e1
   | XLet b e1 e2 -> dstate_of_exp e1 & dstate_of_exp e2
   | XCheck name e1 -> bool & dstate_of_exp e1
-  | XContract rely guar impl ->
+  | XContract status rely guar impl ->
     dstate_of_exp impl
 
 and dstate_of_exp_apps (#t: table) (#c: context t) (#a: funty t.ty) (e: exp_apps t c a): Tot Type (decreases e) =
@@ -69,7 +69,7 @@ let rec exp_is_deterministic (#t: table) (#c: context t) (#a: t.ty) (e: exp t c 
   | XLet b e1 e2 -> exp_is_deterministic e1 && exp_is_deterministic e2
   | XCheck name e1 -> exp_is_deterministic e1
   // Contracts do not expose their body in abstract mode, so we only need state of rely and guar
-  | XContract rely guar impl ->
+  | XContract status rely guar impl ->
     false
 
 and exp_apps_is_deterministic (#t: table) (#c: context t) (#a: funty t.ty) (e: exp_apps t c a): Tot bool (decreases e) =
@@ -108,9 +108,9 @@ let rec dsystem_of_exp
       dsystem_mu_causal #(row c) #(t.ty_sem a & row c) (t.val_default a) (fun i v -> (v, i)) t'
     | XLet b e1 e2 ->
       dsystem_let (fun i v -> (v, i)) (dsystem_of_exp e1) (dsystem_of_exp e2)
-    | XCheck name e1 ->
-      dsystem_check name (dsystem_of_exp e1)
-    | XContract rely guar impl ->
+    | XCheck status e1 ->
+      dsystem_check "XCheck" status (dsystem_of_exp e1)
+    | XContract status rely guar impl ->
       dsystem_of_exp impl
 
 and dsystem_of_exp_apps
@@ -155,12 +155,12 @@ let rec system_of_exp
       system_mu #(row c) #(t.ty_sem a & row c) (fun i v -> (v, i)) t'
     | XLet b e1 e2 ->
       system_let (fun i v -> (v, i)) (system_of_exp e1) (system_of_exp e2)
-    | XCheck name e1 ->
-      system_check name (system_of_exp e1)
-    | XContract rely guar impl ->
+    | XCheck status e1 ->
+      system_check "XCheck" status (system_of_exp e1)
+    | XContract status rely guar impl ->
       let tr = system_of_exp rely in
       let tg = system_of_exp guar in
-      system_contract_instance tr tg
+      system_contract_instance status tr tg
 
 and system_of_exp_apps
   (#t: table) (#c: context t) (#a: funty t.ty) (#res #inp: Type0)

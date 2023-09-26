@@ -116,10 +116,9 @@ let rec check (#t: table) (#c: context t) (#a: t.ty) (#streams: list (row c)) (#
     check mode hBSr' /\
     check mode hBSg' /\
     check mode hBSi' /\
-    (PM.prop_status_contains mode status.contract_env ==>
+    (PM.prop_status_contains mode status ==>
       bigstep_always streams rely) /\
-    (PM.prop_status_contains mode status.contract_impl ==>
-      bigstep_always streams rely ==>
+    (bigstep_always streams rely ==>
       bigstep_always streams (subst1 guar impl))
   | BSCheck _ status eprop _ hBS' ->
     check mode hBS' /\
@@ -161,7 +160,7 @@ let rec bless (#t: table) (#c: context t) (#a: t.ty) (e: exp t c a): Tot (exp t 
   | XLet b e1 e2 -> XLet b (bless e1) (bless e2)
   | XCheck s e1 -> XCheck PM.PSValid (bless e1)
   | XContract s r g i ->
-    XContract ({ contract_env = s.contract_env; contract_impl = PM.PSValid })
+    XContract PM.PSValid
       (bless r)
       (bless g)
       (bless i)

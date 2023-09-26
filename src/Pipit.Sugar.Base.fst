@@ -67,13 +67,13 @@ let run2 (#a #b #c: ('t).ty) (f: s 't a -> s 't b -> s 't c) : cexp 't [a; b] c 
 let reflect1 (#t: table) (#a #b: t.ty) (e: cexp t [a] b) (sa: s t a): s t b =
   fun s ->
     let (ax, s) = sa s in
-    (CX.subst1 e ax, s)
+    (XLet a ax e, s)
 
 let reflect2 (#t: table) (#a #b #c: t.ty) (e: cexp t [a; b] c) (sa: s t a) (sb: s t b): s t c =
   fun s ->
     let (ax, s) = sa s in
     let (bx, s) = sb s in
-    (CX.subst1 (CX.subst1 e (CX.weaken [b] ax)) bx, s)
+    (XLet b bx (XLet a (CX.weaken [b] ax) e), s)
 
 (**** Top-level / integration combinators ****)
 let let'

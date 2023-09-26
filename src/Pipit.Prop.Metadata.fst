@@ -11,12 +11,9 @@ type prop_status = | PSValid | PSUnknown
 (* Status of contracts:
    contract_impl: if PSValid, then implementation has been verified to satisfy guarantees
    contract_env: if PSValid, then environment has been verified to satisfiy relies *)
-type contract_status = {
-  contract_impl: prop_status;
-  contract_env:  prop_status;
-}
+type contract_status = prop_status
 
-let contract_status_unknown: contract_status = { contract_impl = PSUnknown; contract_env = PSUnknown }
+let contract_status_unknown: contract_status = PSUnknown
 
 (* set of prop_status
    The definition of "checking" a property is parameterised by which kinds of properties one is interested in.

@@ -10,15 +10,13 @@ let rec prop_for_all (l: list prop): prop =
 
 let check_sem_assumes (#state: Type) (s: state) (chck: check state): prop =
   match chck with
-  | Check n o -> True
-  | Assume a -> a s == true
-  | ContractInstance r g -> r s ==> g s
+  | Check n status o -> True
+  | ContractInstance status r g -> r s ==> g s
 
 let check_sem_proves (#state: Type) (s: state) (chck: check state): prop =
   match chck with
-  | Check n o -> o s == true
-  | Assume a -> True
-  | ContractInstance r g -> r s == true
+  | Check n status o -> o s == true
+  | ContractInstance status r g -> r s == true
 
 let all_checks_assumes (#input #state #value: Type) (t: system input state value) (s: state): prop =
   prop_for_all (List.Tot.map (check_sem_assumes s) t.chck)

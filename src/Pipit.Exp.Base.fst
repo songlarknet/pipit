@@ -57,11 +57,44 @@ type exp (t: table) (c: context t): t.ty -> Type =
   // X because we haven't defined the semantics of expressions yet.
   | XContract:
     #valty: t.ty                      ->
-    status: PM.contract_status           ->
+    status: PM.contract_status        ->
     rely: exp t c            t.propty ->
     guar: exp t (valty :: c) t.propty ->
     impl: exp t c            valty    ->
     exp t c valty
+
+(*
+  XXX:
+  this doesn't play nicely with substitution, because we need to substitute into impl,
+  but we don't want to have to re-check the whole implementation each time.
+  we really want:
+
+  | XContract:
+    #argty: t.ty                      ->
+    #valty: t.ty                      ->
+    status: PM.contract_status        ->
+    rely: exp t c              t.propty ->
+    guar: exp t (valty :: c)   t.propty ->
+    impl: exp t [argty]        valty    ->
+    arg:  exp t c              argty    ->
+    exp t c valty
+
+
+  another obvious attempt would be
+  | XContract:
+    #argty: t.ty                      ->
+    #valty: t.ty                      ->
+    status: PM.contract_status        ->
+    rely: exp t [argty]        t.propty ->
+    guar: exp t [valty, argty] t.propty ->
+    impl: exp t [argty]        valty    ->
+    arg:  exp t c              argty    ->
+    exp t c valty
+
+  but this doesn't let us perform CSE on the rely and the guar
+
+*)
+
 
   // check "" e
   | XCheck : PM.prop_status -> exp t c t.propty -> exp t c t.propty

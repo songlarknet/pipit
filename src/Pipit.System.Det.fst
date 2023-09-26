@@ -2,6 +2,7 @@
 module Pipit.System.Det
 
 open Pipit.System.Base
+module PM = Pipit.Prop.Metadata
 
 (* Deterministic systems can't express the whole language, but they can do a subset of it much simpler *)
 noeq
@@ -38,23 +39,14 @@ let dsystem_const (#input #result: Type) (v: result): dsystem input unit result 
 
 let dsystem_check (#input #state: Type)
   (name: string)
+  (status: PM.prop_status)
   (t1: dsystem input state bool):
        dsystem input (bool & state) bool =
   { init = (true, t1.init);
     step = (fun i s ->
         let (s2', r) = t1.step i (snd s) in
         ((r, s2'), r));
-    chck = Check name (fun s -> fst s) :: map_checks snd t1.chck;
-  }
-
-let dsystem_assume (#input #state: Type)
-  (t1: dsystem input state bool):
-       dsystem input (bool & state) bool =
-  { init = (true, t1.init);
-    step = (fun i s ->
-        let (s2', r) = t1.step i (snd s) in
-        ((r, s2'), r));
-    chck = Assume (fun s -> fst s) :: map_checks snd t1.chck;
+    chck = Check name status (fun s -> fst s) :: map_checks snd t1.chck;
   }
 
 let dsystem_project (#input #result: Type) (f: input -> result):
