@@ -44,18 +44,18 @@ let _freshs (t: table) (ty: t.ty): s t ty =
     let (x, s') = _freshm ty s in
     (XBase (XVar x), s')
 
-let run0 (#t: table) (#ty: t.ty) (e: s t ty) : cexp t [] ty =
+(**** Top-level / integration combinators ****)
+let exp_of_stream0 (#t: table) (#ty: t.ty) (e: s t ty) : cexp t [] ty =
   let (a, _) = e { fresh = 0 } in
   a
 
-(**** Top-level / integration combinators ****)
-let run1 (#t: table) (#a #b: t.ty) (f: s t a -> s t b) : cexp t [a] b =
+let exp_of_stream1 (#t: table) (#a #b: t.ty) (f: s t a -> s t b) : cexp t [a] b =
   let (ax, s) = _freshm a { fresh = 0 } in
   let a       = XBase (XVar ax) in
   let (b,  s) = f (_purem a) s in
   CX.close1 b ax
 
-let run2 (#a #b #c: ('t).ty) (f: s 't a -> s 't b -> s 't c) : cexp 't [a; b] c =
+let exp_of_stream2 (#a #b #c: ('t).ty) (f: s 't a -> s 't b -> s 't c) : cexp 't [a; b] c =
   let s       = { fresh = 0 } in
   let (ax, s) = _freshm a s in
   let (bx, s) = _freshm b s in
@@ -64,18 +64,22 @@ let run2 (#a #b #c: ('t).ty) (f: s 't a -> s 't b -> s 't c) : cexp 't [a; b] c 
   let (c,  s) = f (_purem a) (_purem b) s in
   CX.close1 (CX.close1 c bx) ax
 
-let reflect1 (#t: table) (#a #b: t.ty) (e: cexp t [a] b) (sa: s t a): s t b =
+let stream_of_exp0 (#t: table) (#a: t.ty) (e: cexp t [] a): s t a =
+  fun s ->
+    (e, s)
+
+let stream_of_exp1 (#t: table) (#a #b: t.ty) (e: cexp t [a] b) (sa: s t a): s t b =
   fun s ->
     let (ax, s) = sa s in
     (XLet a ax e, s)
 
-let reflect2 (#t: table) (#a #b #c: t.ty) (e: cexp t [a; b] c) (sa: s t a) (sb: s t b): s t c =
+let stream_of_exp2 (#t: table) (#a #b #c: t.ty) (e: cexp t [a; b] c) (sa: s t a) (sb: s t b): s t c =
   fun s ->
     let (ax, s) = sa s in
     let (bx, s) = sb s in
     (XLet b bx (XLet a (CX.weaken [b] ax) e), s)
 
-(**** Top-level / integration combinators ****)
+(**** Binding combinators ****)
 let let'
   (#a #b: ('t).ty)
   (e: s 't a)
@@ -123,18 +127,18 @@ type _contract (t: table) (a: t.ty) = {
   impl: s t a;
 }
 
-let contract
-  (#a: ('t).ty)
-  (c: _contract 't a):
-    s 't a =
-  (fun s ->
-    let (r, s)    = c.rely s in
-    let (xvar, s) = _freshm a s in
-    let evar      = XBase (XVar xvar) in
-    let (g, s)    = c.guar (_purem evar) s in
-    let g         = CX.close1 g xvar in
-    let (i, s)    = c.impl s in
-    (XContract PM.contract_status_unknown r g i, s))
+// let contract
+//   (#a: ('t).ty)
+//   (c: _contract 't a):
+//     s 't a =
+//   (fun s ->
+//     let (r, s)    = c.rely s in
+//     let (xvar, s) = _freshm a s in
+//     let evar      = XBase (XVar xvar) in
+//     let (g, s)    = c.guar (_purem evar) s in
+//     let g         = CX.close1 g xvar in
+//     let (i, s)    = c.impl s in
+//     (XContract PM.contract_status_unknown r g i, s))
 
 
 let pure (#a: ('t).ty) (v: ('t).ty_sem a): s 't a =

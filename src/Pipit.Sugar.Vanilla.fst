@@ -26,13 +26,6 @@ type bools = s TBool
 type ints  = s TInt
 type reals = s TReal
 
-let run0 (e: s 'a) : exp table [] 'a = S.run0 e
-
-let run1 (f: s 'a -> s 'b) : exp table ['a] 'b = S.run1 f
-
-let run2 (f: s 'a -> s 'b -> s 'c) : exp table ['a; 'b] 'c = S.run2 f
-
-
 let pure (#a: valtype) (v: table.ty_sem a): s a = S.pure #table #a v
 
 // LATER: explicit let' should not be necessary once we have CSE / sharing recovery

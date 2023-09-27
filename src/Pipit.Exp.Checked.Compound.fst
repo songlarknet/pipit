@@ -128,13 +128,13 @@ assume val lemma_check_XMu
   Lemma (check' m (XMu e1))
     [SMTPat (check' m (XMu e1))]
 
-assume val lemma_check_valid_XContract_unknown
-  (#t: table) (#c: context t) (#a: t.ty)
-  (er: exp t       c  t.propty { check' PM.check_mode_valid er })
-  (eg: exp t (a :: c) t.propty { check' PM.check_mode_valid eg })
-  (ei: exp t       c  a        { check' PM.check_mode_valid ei }):
-  Lemma (check' PM.check_mode_valid (XContract PM.contract_status_unknown er eg ei))
-    [SMTPat (check' PM.check_mode_valid (XContract PM.contract_status_unknown er eg ei))]
+// assume val lemma_check_valid_XContract_unknown
+//   (#t: table) (#c: context t) (#a: t.ty)
+//   (er: exp t       c  t.propty { check' PM.check_mode_valid er })
+//   (eg: exp t (a :: c) t.propty { check' PM.check_mode_valid eg })
+//   (ei: exp t       c  a        { check' PM.check_mode_valid ei }):
+//   Lemma (check' PM.check_mode_valid (XContract PM.contract_status_unknown er eg ei))
+//     [SMTPat (check' PM.check_mode_valid (XContract PM.contract_status_unknown er eg ei))]
 
 assume val lemma_check_valid_XCheck_unknown
   (#t: table) (#c: context t)

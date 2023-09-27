@@ -9,6 +9,7 @@ open Pipit.System.Exp
 
 module T = Pipit.Tactics
 module Sugar = Pipit.Sugar.Vanilla
+module Check = Pipit.Sugar.Check
 
 (*
    node min(
@@ -125,9 +126,8 @@ let stuck_time:  int = 6000
   tel
 *)
 
-let controller' (estop level_low: Sugar.bools) =
+let controller_body (estop level_low: Sugar.bools) =
   let open Sugar in
-  // XXX: explicit lets need type annotations for now, but this should be less of a problem once we have sharing recovery and don't need explicit lets as much
   let' (countsecutive' (not_ estop /\ level_low)) (fun sol_try_c   ->
   let' (sol_try_c >=^ z settle_time)              (fun sol_try     ->
   let' (countsecutive' sol_try)                   (fun nok_stuck_c ->
@@ -138,13 +138,7 @@ let controller' (estop level_low: Sugar.bools) =
   check' "LEVEL HIGH OK" (not_ level_low => not_ sol_en) (
     result))))))))
 
-let controller_prop =
-  assert_norm (Pipit.Exp.Causality.causal (Sugar.run2 controller'));
-  system_of_exp (Sugar.run2 controller')
-
-#push-options "--tactic_trace_d 3"
-
-let controller_prop_prove (): Lemma (ensures induct1 controller_prop) =
-  assert (base_case controller_prop) by (T.norm_full ());
-  assert (step_case controller_prop) by (T.norm_full ());
-  ()
+let controller =
+  let e = Check.exp_of_stream2 controller_body in
+  assert (Check.system_induct_k1 e) by (T.norm_full ());
+  Check.stream_of_checked2 e

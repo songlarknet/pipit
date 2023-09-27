@@ -4,19 +4,10 @@ module Pipit.System.Base
 module PM = Pipit.Prop.Metadata
 
 noeq
-type check (state: Type) =
-  | Check:
-    name: string ->
-    status: PM.prop_status ->
-    obligation: (state -> bool) ->
-    check state
-  | ContractInstance:
-    status: PM.prop_status ->
-    rely: (state -> bool) ->
-    guar: (state -> bool) ->
-    check state
-
-type checks (state: Type) = list (check state)
+type checks (state: Type) = {
+  assumptions: state -> prop;
+  obligations: state -> prop;
+}
 
 
 (* Step functions are relations so that we can express contracts, which are underspecified.
@@ -42,14 +33,35 @@ type system (input: Type) (state: Type) (result: Type) = {
   chck: checks state;
 }
 
-let map_check (#state #state': Type) (f: state' -> state) (chck: check state): check state' =
-  match chck with
-  | Check n st o -> Check n st (fun s -> o (f s))
-  // | Assume a -> Assume (fun s -> a (f s))
-  | ContractInstance st r g -> ContractInstance st (fun s -> r (f s)) (fun s -> g (f s))
+let map_checks (#state #state': Type) (f: state' -> state) (chck: checks state): checks state' = {
+  assumptions = (fun s -> chck.assumptions (f s));
+  obligations = (fun s -> chck.obligations (f s));
+}
 
-let map_checks (#state #state': Type) (f: state' -> state) (chck: checks state): checks state' =
-  List.Tot.map (map_check f) chck
+let checks_none (state: Type): checks state = {
+  assumptions = (fun s -> True);
+  obligations = (fun s -> True);
+}
+
+let checks_assumption (#state: Type) (f: state -> prop): checks state = {
+  assumptions = (fun s -> f s);
+  obligations = (fun s -> True);
+}
+
+let checks_obligation (#state: Type) (f: state -> prop): checks state = {
+  assumptions = (fun s -> True);
+  obligations = (fun s -> f s);
+}
+
+let checks_of_prop (#state: Type) (status: PM.prop_status) (f: state -> prop): checks state =
+  match status with
+  | PM.PSValid   -> checks_assumption f
+  | PM.PSUnknown -> checks_obligation f
+
+let checks_join (#state: Type) (c1 c2: checks state): checks state = {
+  assumptions = (fun s -> c1.assumptions s /\ c2.assumptions s);
+  obligations = (fun s -> c1.obligations s /\ c2.obligations s);
+}
 
 let rec system_steps
   (#input #state #result: Type)
@@ -78,7 +90,7 @@ let rec system_stepn
 let system_const (#input #result: Type) (v: result): system input unit result =
   { init = (fun s -> True);
     step = (fun i s s' r -> r == v);
-    chck = [];
+    chck = checks_none unit;
   }
 
 let system_check (#input #state: Type)
@@ -89,8 +101,12 @@ let system_check (#input #state: Type)
   { init = (fun s -> fst s == true /\ t1.init (snd s));
     step = (fun i s s' r ->
         t1.step i (snd s) (snd s') r /\
-        r = fst s');
-    chck = Check name status (fun s -> fst s) :: map_checks snd t1.chck;
+        // TODO: the property result (fst s') should be anded with (fst s) so it means *always* prop
+        fst s' = r);
+    chck =
+      (checks_of_prop status (fun s -> fst s == true))
+      `checks_join`
+      (map_checks snd t1.chck);
   }
 
 let system_contract_instance (#input #state1 #state2: Type)
@@ -100,19 +116,51 @@ let system_contract_instance (#input #state1 #state2: Type)
        system input ((bool & bool) & (state1 & state2)) 'a =
   { init = (fun s -> fst (fst s) == true /\ snd (fst s) == true /\ tr.init (fst (snd s)) /\ tg.init (snd (snd s)));
     step = (fun i s s' r ->
-        tr.step i (fst (snd s)) (fst (snd s')) (fst (fst s)) /\
-        tg.step (r, i) (snd (snd s)) (snd (snd s')) (snd (fst s)));
-    chck = ContractInstance status (fun s -> fst (fst s)) (fun s -> fst (fst s)) ::
-    List.Tot.append
+        // TODO: the property results (fst (fst s')) and (snd (fst s')) should be anded with their corresponding values in s, so
+        // that the property means *always* prop.
+        // However, this requires some existentials, and I'm not totally convinced it's necessary since (fst (fst s')) is always an obligation
+        tr.step i      (fst (snd s)) (fst (snd s')) (fst (fst s')) /\
+        tg.step (r, i) (snd (snd s)) (snd (snd s')) (snd (fst s')));
+    chck =
+      checks_of_prop status (fun s -> fst (fst s) == true)
+      `checks_join`
+      checks_of_prop PM.PSValid (fun s -> fst (fst s) == true ==> snd (fst s) == true)
+      `checks_join`
       (map_checks (fun s -> fst (snd s)) tr.chck)
-      (map_checks (fun s -> snd (snd s)) tg.chck) ;
+      `checks_join`
+      (map_checks (fun s -> snd (snd s)) tg.chck);
+  }
+
+let system_contract_definition (#input #state1 #state2 #state3: Type)
+  (tr: system input state1 bool)
+  (tg: system ('a & input) state2 bool)
+  (ti: system input state3 'a):
+       system input ((bool & bool) & (state1 & (state2 & state3))) 'a =
+  { init = (fun s -> fst (fst s) == true /\ snd (fst s) == true /\ tr.init (fst (snd s)) /\ tg.init (fst (snd (snd s))) /\ ti.init (snd (snd (snd s))));
+    step = (fun i s s' r ->
+        // TODO: the property results (fst (fst s')) and (snd (fst s')) should be anded with their corresponding values in s, so
+        // that the property means *always* prop.
+        // However, this requires some existentials, and I'm not totally convinced it's necessary since (fst (fst s')) is always an obligation
+        tr.step i      (fst (snd s)) (fst (snd s')) (fst (fst s')) /\
+        tg.step (r, i) (fst (snd (snd s))) (fst (snd (snd s'))) (snd (fst s')) /\
+        ti.step i      (snd (snd (snd s))) (snd (snd (snd s'))) r
+        );
+    chck =
+      { assumptions = (fun s -> fst (fst s) == true);
+        obligations = (fun s -> snd (fst s) == true) }
+      `checks_join`
+      (map_checks (fun s -> fst (snd s)) tr.chck)
+      `checks_join`
+      (map_checks (fun s -> fst (snd (snd s))) tg.chck)
+      `checks_join`
+      (map_checks (fun s -> snd (snd (snd s))) ti.chck);
   }
 
 let system_project (#input #result: Type) (f: input -> result):
        system input unit result =
   { init = (fun _ -> True);
     step = (fun i s s' r -> r == f i);
-    chck = [];
+    chck = checks_none unit;
   }
 
 let system_with_input (#input #input' #state #result: Type) (f: input' -> input)
@@ -155,7 +203,7 @@ let system_let (#input #input' #state1 #state2 #v1 #v2: Type)
       exists (r1: v1).
         t1.step i s1 s1' r1 /\
         t2.step (extend i r1) s2 s2' r);
-    chck = List.Tot.append (map_checks fst t1.chck) (map_checks snd t2.chck);
+    chck = (map_checks fst t1.chck) `checks_join` (map_checks snd t2.chck);
   }
 
 (***** Unnecessary combinators? *)
@@ -172,7 +220,7 @@ let system_ap2 (#input #state1 #state2 #value1 #value2: Type)
         t2.step i (snd s) (snd s') a /\
         r == f a);
     chck =
-      List.Tot.append (map_checks fst t1.chck) (map_checks snd t2.chck);
+      (map_checks fst t1.chck) `checks_join` (map_checks snd t2.chck);
   }
 
 let system_map (#input #state1 #value1 #result: Type) (f: value1 -> result)
@@ -199,10 +247,3 @@ let rec system_map_sem (#input #state1 #value1 #result: Type) (f: value1 -> resu
    returns system_stepn (system_map f t1) (List.Tot.map (fun (i,v) -> (i, f v)) inputs) s'
    with hEx.
         system_map_sem f t1 is' s0
-
-// why is this necessary? issue with type inference for prop vs logical
-let prop_holds (p: prop): prop = p
-
-let system_bool_holds (#input #state: Type) (t: system input state bool):
-  system input state prop =
-  system_map (fun b -> prop_holds (b == true)) t

@@ -3,9 +3,10 @@ module Pipit.System.Exp
 
 open Pipit.Prim.Table
 open Pipit.Exp.Base
-module Causal = Pipit.Exp.Causality
 
+module Causal = Pipit.Exp.Causality
 module CR = Pipit.Context.Row
+module PM = Pipit.Prop.Metadata
 
 open Pipit.System.Base
 open Pipit.System.Det
@@ -42,6 +43,9 @@ and state_of_exp_apps (#t: table) (#c: context t) (#a: funty t.ty) (e: exp_apps 
   | XPrim _ -> unit
   | XApp f e -> state_of_exp e & state_of_exp_apps f
 
+let state_of_contract_definition (#t: table) (#c: context t) (#a: t.ty)
+  (rely: exp t c t.propty) (guar: exp t (a :: c) t.propty) (impl: exp t c a): Type =
+  (bool & bool) & (state_of_exp rely & (state_of_exp guar & state_of_exp impl))
 
 let rec dstate_of_exp (#t: table) (#c: context t) (#a: t.ty) (e: exp t c a): Tot Type (decreases e) =
   match e with
@@ -68,7 +72,7 @@ let rec exp_is_deterministic (#t: table) (#c: context t) (#a: t.ty) (e: exp t c 
   | XMu e1 -> exp_is_deterministic e1
   | XLet b e1 e2 -> exp_is_deterministic e1 && exp_is_deterministic e2
   | XCheck name e1 -> exp_is_deterministic e1
-  // Contracts do not expose their body in abstract mode, so we only need state of rely and guar
+  // To express contracts, we want a relational rather than functional system
   | XContract status rely guar impl ->
     false
 
@@ -178,3 +182,13 @@ and system_of_exp_apps
       let t2': system (inp & row c) _ (t.ty_sem arg) = system_with_input snd t2 in
       system_let (fun i v -> ((v, fst i), snd i)) t2' t1
 
+let system_of_contract
+  (#t: table) (#c: context t) (#a: t.ty)
+  (r: exp t       c  t.propty { Causal.causal r })
+  (g: exp t (a :: c) t.propty { Causal.causal g })
+  (i: exp t       c         a { Causal.causal i }):
+    xsystem c (state_of_contract_definition r g i) (t.ty_sem a) =
+  let tr = system_of_exp r in
+  let tg = system_of_exp g in
+  let ti = system_of_exp i in
+  system_contract_definition tr tg ti

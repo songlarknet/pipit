@@ -169,3 +169,10 @@ and bless_apps (#t: table) (#c: context t) (#a: funty t.ty) (e: exp_apps t c a):
   match e with
   | XPrim p -> XPrim p
   | XApp f e -> XApp (bless_apps f) (bless e)
+
+let lemma_check_bless (#t: table) (#c: context t) (#a: t.ty) (e: exp t c a { check' PM.check_mode_all e }):
+  Lemma (ensures check' PM.check_mode_valid (bless e))
+    [SMTPat (check' PM.check_mode_valid (bless e))] =
+  // TODO:ADMIT lemma
+  admit ()
+

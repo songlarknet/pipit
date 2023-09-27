@@ -8,63 +8,56 @@ let rec prop_for_all (l: list prop): prop =
  | [] -> True
  | p :: ps -> p /\ prop_for_all ps
 
-let check_sem_assumes (#state: Type) (s: state) (chck: check state): prop =
-  match chck with
-  | Check n status o -> True
-  | ContractInstance status r g -> r s ==> g s
-
-let check_sem_proves (#state: Type) (s: state) (chck: check state): prop =
-  match chck with
-  | Check n status o -> o s == true
-  | ContractInstance status r g -> r s == true
-
-let all_checks_assumes (#input #state #value: Type) (t: system input state value) (s: state): prop =
-  prop_for_all (List.Tot.map (check_sem_assumes s) t.chck)
-
-let all_checks_proves (#input #state #value: Type) (t: system input state value) (s: state): prop =
-  prop_for_all (List.Tot.map (check_sem_proves s) t.chck)
-
 let system_holds (#input #state #value: Type) (t: system input state value): prop =
   forall (inputs: list (input & value)) (s: state).
     Cons? inputs            ==>
     system_stepn t inputs s ==>
-    all_checks_assumes t s ==>
-    all_checks_proves t s
+    t.chck.assumptions s ==>
+    t.chck.obligations s
 
 let base_case (#input #state #value: Type) (t: system input state value): prop =
   forall (i: input) (s: state) (s': state) (r: value).
     t.init s ==> t.step i s s' r ==>
-    all_checks_assumes t s' ==>
-    all_checks_proves t s'
+    t.chck.assumptions s' ==>
+    t.chck.obligations s'
 
+// TODO: change base case for k to split out to separate checks for each length, eg
+// base_case_k 3 =
+//   (forall s0. t.init s0 ==> t.chck.assumptions s0 ==> t.chck.obligations s0) /\
+//   (forall s0 s1. t.init s0 ==> t.step s0 s1 ==> t.chck.assumptions s0 ==> t.chck.assumptions s1 ==> t.chck.obligations s1) /\
+//   (forall s0 s1 s2. t.init s0 ==> t.step s0 s1 ==> t.step s1 s2 ==> t.chck.assumptions s0 ==> t.chck.assumptions s1 ==> t.chck.assumptions s2 ==> t.chck.obligations s2)
+// this makes the proof obligation larger, but should make the soundness proof easier as we won't be assuming that step is always defined (which it isn't for contracts with questionable assumptions)
+// would it make sense to spell out step requirements explicitly? eg,
+//   forall s0. t.chck.assumptions s0 ==> exists s1. t.step s0 s1
+// but this quantifier alternation looks like it would be difficult to solve automatically
 let rec base_case_k' (k: nat) (#input #state #value: Type) (t: system input state value) (s': state) (check: prop): prop =
   match k with
   | 0 -> t.init s' ==> check
   | _ ->
     forall (i: input) (s: state) (r: value).
       t.step i s s' r ==>
-      all_checks_assumes t s' ==>
-      base_case_k' (k - 1) t s (check /\ all_checks_proves t s')
+      t.chck.assumptions s' ==>
+      base_case_k' (k - 1) t s (check /\ t.chck.obligations s')
 
 let base_case_k (k: nat) (#input #state #value: Type) (t: system input state value): prop =
   forall (s': state). base_case_k' k t s' True
 
 let step_case (#input #state #value: Type) (t: system input state value): prop =
   forall (i0 i1: input) (s0: state) (s1 s2: state) (r0 r1: value).
-    t.step i0 s0 s1 r0 ==> all_checks_assumes t s1 ==> all_checks_proves t s1 ==>
-    t.step i1 s1 s2 r1 ==> all_checks_assumes t s2 ==> all_checks_proves t s2
+    t.step i0 s0 s1 r0 ==> t.chck.assumptions s1 ==> t.chck.obligations s1 ==>
+    t.step i1 s1 s2 r1 ==> t.chck.assumptions s2 ==> t.chck.obligations s2
 
 let rec step_case_k' (k: nat) (#input #state #value: Type) (t: system input state value) (s': state) (check: prop): prop =
   match k with
   | 0 -> check
   | _ -> forall (i: input) (s: state) (r: value).
     t.step i s s' r ==>
-    all_checks_assumes t s ==>
-    all_checks_proves t s ==>
+    t.chck.assumptions s ==>
+    t.chck.obligations s ==>
     step_case_k' (k - 1) t s check
 
 let step_case_k (k: nat) (#input #state #value: Type) (t: system input state value): prop =
-  forall (s': state). step_case_k' (k + 1) t s' (all_checks_assumes t s' ==> all_checks_proves t s')
+  forall (s': state). step_case_k' (k + 1) t s' (t.chck.assumptions s' ==> t.chck.obligations s')
 
 let induct1 (#input #state #value: Type)
   (t: system input state value): prop =

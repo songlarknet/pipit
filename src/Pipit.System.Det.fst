@@ -34,7 +34,7 @@ let system_of_dsystem
 let dsystem_const (#input #result: Type) (v: result): dsystem input unit result =
   { init = ();
     step = (fun i s -> ((), v));
-    chck = [];
+    chck = checks_none unit;
   }
 
 let dsystem_check (#input #state: Type)
@@ -45,15 +45,19 @@ let dsystem_check (#input #state: Type)
   { init = (true, t1.init);
     step = (fun i s ->
         let (s2', r) = t1.step i (snd s) in
+        // TODO: the property result (fst s') should be anded with (fst s) so it means *always* prop
         ((r, s2'), r));
-    chck = Check name status (fun s -> fst s) :: map_checks snd t1.chck;
+    chck =
+      checks_join
+        (checks_of_prop status (fun s -> fst s == true))
+        (map_checks snd t1.chck);
   }
 
 let dsystem_project (#input #result: Type) (f: input -> result):
        dsystem input unit result =
   { init = ();
     step = (fun i s -> ((), f i));
-    chck = [];
+    chck = checks_none unit;
   }
 
 let dsystem_with_input (#input #input' #state #result: Type) (f: input' -> input)
@@ -96,7 +100,7 @@ let dsystem_let (#input #input' #state1 #state2 #v1 #v2: Type)
       let (s1', r1) = t1.step i (fst s) in
       let (s2', r2) = t2.step (extend i r1) (snd s) in
       ((s1', s2'), r2));
-    chck = List.Tot.append (map_checks fst t1.chck) (map_checks snd t2.chck);
+    chck = checks_join (map_checks fst t1.chck) (map_checks snd t2.chck);
   }
 
 (***** Unnecessary combinators? *)
@@ -104,7 +108,7 @@ let dsystem_let (#input #input' #state1 #state2 #v1 #v2: Type)
 let dsystem_input (#input: Type): dsystem input unit input =
   { init = ();
     step = (fun i s -> ((), i));
-    chck = [];
+    chck = checks_none unit;
   }
 
 let dsystem_ap2 (#input #state1 #state2 #value1 #value2: Type)
@@ -118,7 +122,7 @@ let dsystem_ap2 (#input #state1 #state2 #value1 #value2: Type)
         let (s2', a) = t2.step i (snd s) in
         ((s1', s2'), f a));
     chck =
-      List.Tot.append (map_checks fst t1.chck) (map_checks snd t2.chck);
+      checks_join (map_checks fst t1.chck) (map_checks snd t2.chck);
   }
 
 let dsystem_map (#input #state1 #value1 #value2: Type)

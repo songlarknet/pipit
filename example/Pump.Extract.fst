@@ -9,6 +9,7 @@ module XL  = Pipit.Exec.LowStar
 
 module Tac = FStar.Tactics
 
+module SugarBase = Pipit.Sugar.Base
 module Sugar = Pipit.Sugar.Vanilla
 
 module PPV = Pipit.Prim.Vanilla
@@ -18,7 +19,7 @@ module PPV = Pipit.Prim.Vanilla
    the C code, so we mark it as noextract.
    *)
 noextract
-let expr = Sugar.run2 Pump.controller'
+let expr = SugarBase.exp_of_stream2 Pump.controller
 
 (* Define the state type so it shows up as a type definition in the C code.
    The "postprocess_with" annotation ensures that the state_of_exp is inlined
