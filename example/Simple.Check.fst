@@ -51,3 +51,15 @@ let sum: ints -> ints =
   let c = Check.contract_of_stream1 sum_contract in
   assert (Check.contract_system_induct_k1 c) by (T.norm_full ());
   Check.stream_of_contract1 c
+
+let test_sum (i: ints) =
+  let' (if_then_else (i >^ z0) i z1) (fun arg ->
+  let' (sum arg) (fun sarg ->
+  check' "sum is increasing" (sarg >^ (0 `fby` sarg))
+    sarg
+  ))
+
+let test_sum_ =
+  let e = Check.exp_of_stream1 test_sum in
+  assert (Check.system_induct_k1 e) by (T.norm_full ());
+  Check.stream_of_checked1 e

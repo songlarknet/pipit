@@ -22,7 +22,7 @@ module Check = Pipit.Sugar.Check
      m = if a <= b then a else b;
    tel
 *)
-let min (a b: Sugar.ints) =
+let min (#ty: Sugar.arithtype) (a b: Sugar.s ty) =
  let open Sugar in
  (if_then_else (a <=^ b) a b)
 
@@ -63,7 +63,11 @@ let countsecutive' (p: Sugar.bools) =
 *)
 let lastn (n: int) (p: Sugar.bools) =
  let open Sugar in
- let' (countsecutive p) (fun c -> c >=^ z n)
+ let' (countsecutive' p) (fun c -> c >=^ z n)
+
+let anyn (n: int) (p: Sugar.bools) =
+ let open Sugar in
+ let' (countsecutive' p) (fun c -> c <^ z n)
 
 let settle_time: int = 1000
 let stuck_time:  int = 6000
@@ -128,17 +132,39 @@ let stuck_time:  int = 6000
 
 let controller_body (estop level_low: Sugar.bools) =
   let open Sugar in
-  let' (countsecutive' (not_ estop /\ level_low)) (fun sol_try_c   ->
-  let' (sol_try_c >=^ z settle_time)              (fun sol_try     ->
-  let' (countsecutive' sol_try)                   (fun nok_stuck_c ->
-  let' (once (nok_stuck_c >=^ z stuck_time))      (fun nok_stuck   ->
+  let' (lastn settle_time (not_ estop /\ level_low)) (fun sol_try   ->
+  let' (once (lastn stuck_time sol_try))             (fun nok_stuck   ->
   let' (sol_try /\ not_ nok_stuck)                (fun sol_en      ->
   let' (tup sol_en nok_stuck)                     (fun result      ->
   check' "ESTOP OK"      (estop => not_ sol_en) (
   check' "LEVEL HIGH OK" (not_ level_low => not_ sol_en) (
-    result))))))))
+    result))))))
 
 let controller =
   let e = Check.exp_of_stream2 controller_body in
   assert (Check.system_induct_k1 e) by (T.norm_full ());
   Check.stream_of_checked2 e
+
+let reservoir_model (flow: Sugar.ints) (sol_en: Sugar.bools) =
+  let open Sugar in
+  rec' (fun level ->
+    (0 `fby` level) +^ (if_then_else sol_en flow (min flow z0)))
+
+let max_flow  = 10
+let level_low_threshold = 80
+let max_level = 100
+
+let spec_body (flow: Sugar.ints) (estop level_low: Sugar.bools) =
+  let open Sugar in
+  let' (controller_body estop level_low) (fun ctrl ->
+  let' (fst ctrl) (fun sol_en ->
+  let' (reservoir_model flow sol_en) (fun level ->
+  check "ok"
+    (sofar (abs flow <^ z max_flow) =>
+     (sofar (level >^ z level_low_threshold => not_ level_low) =>
+     (level <^ z max_level))))))
+
+let spec =
+  let e = Check.exp_of_stream3 spec_body in
+  assert (Check.system_induct_k1 e) by (T.norm_full ());
+  Check.stream_of_checked3 e

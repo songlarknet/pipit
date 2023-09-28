@@ -138,6 +138,19 @@ let check_apps' (#t: table) (#c: context t) (#a: funty t.ty) (mode: PM.check_mod
   forall (streams: list (row c)) (v: funty_sem t.ty_sem a) (hBS: bigstep_apps streams e v).
     check_apps mode hBS
 
+let check_contract_definition (#t: table) (#c: context t) (#a: t.ty)
+  (mode: PM.check_mode)
+  (rely: exp t c t.propty) (guar: exp t (a::c) t.propty) (impl: exp t c a) =
+  forall (streams: list (row c))
+    (vr: bool)       (hBSr: bigstep streams rely vr)
+    (vg: bool)       (hBSg: bigstep streams (subst1 guar impl) vg)
+    (vi: t.ty_sem a) (hBSi: bigstep streams impl vi).
+    check mode hBSr /\
+    check mode hBSg /\
+    check mode hBSi /\
+    (bigstep_always streams rely ==>
+      bigstep_always streams (subst1 guar impl))
+
 let bigstep_equivalent (#t: table) (#c: context t) (#a: t.ty) (e e': exp t c a): prop =
   forall (streams: list (row c)) (v: t.ty_sem a).
     bigstep streams e v <==> bigstep streams e' v

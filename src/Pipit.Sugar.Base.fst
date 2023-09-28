@@ -64,6 +64,17 @@ let exp_of_stream2 (#a #b #c: ('t).ty) (f: s 't a -> s 't b -> s 't c) : cexp 't
   let (c,  s) = f (_purem a) (_purem b) s in
   CX.close1 (CX.close1 c bx) ax
 
+let exp_of_stream3 (#a #b #c #d: ('t).ty) (f: s 't a -> s 't b -> s 't c -> s 't d) : cexp 't [a; b; c] d =
+  let s       = { fresh = 0 } in
+  let (ax, s) = _freshm a s in
+  let (bx, s) = _freshm b s in
+  let (cx, s) = _freshm c s in
+  let a       = XBase (XVar ax) in
+  let b       = XBase (XVar bx) in
+  let c       = XBase (XVar cx) in
+  let (d,  s) = f (_purem a) (_purem b) (_purem c) s in
+  CX.close1 (CX.close1 (CX.close1 d cx) bx) ax
+
 let stream_of_exp0 (#t: table) (#a: t.ty) (e: cexp t [] a): s t a =
   fun s ->
     (e, s)
@@ -78,6 +89,13 @@ let stream_of_exp2 (#t: table) (#a #b #c: t.ty) (e: cexp t [a; b] c) (sa: s t a)
     let (ax, s) = sa s in
     let (bx, s) = sb s in
     (XLet b bx (XLet a (CX.weaken [b] ax) e), s)
+
+let stream_of_exp3 (#t: table) (#a #b #c #d: t.ty) (e: cexp t [a; b; c] d) (sa: s t a) (sb: s t b) (sc: s t c): s t d =
+  fun s ->
+    let (ax, s) = sa s in
+    let (bx, s) = sb s in
+    let (cx, s) = sc s in
+    (XLet c cx (XLet b (CX.weaken [c] bx) (XLet a (CX.weaken [b; c] ax) e)), s)
 
 (**** Binding combinators ****)
 let let'
