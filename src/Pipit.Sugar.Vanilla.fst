@@ -35,11 +35,35 @@ let rec' (f: s 'a -> s 'a): s 'a = S.rec' #table #'a f
 
 let letrec' (f: s 'a -> s 'a) (g: s 'a -> s 'b): s 'b = let' (rec' f) g
 
+(* letrec with multiple bindings can require duplicating work.
+  this duplicate work is troublesome for proofs because the transition system will
+  have multiple state variables that mean the same thing, but that aren't trivially
+  equivalent when looking at the state on its own.
+  in practice, it is often possible to rearrange an expression to avoid duplication.
+  how do we characterise expressions where such rearrangement is possible? *)
+let letrec2 (#a #b #k: valtype)
+  (mka: s a -> s b -> s a)
+  (mkb: s a -> s b -> s b)
+  (kont: s a -> s b -> s k):
+    s k =
+  (* let rec
+       a = (rec a. mka a (rec b. mkb a b))
+       b = (rec b. mkb a b)
+     in kont a b
+  *)
+  letrec' (fun a -> mka a (rec' (fun b -> mkb a b)))
+                             (fun a ->
+  letrec' (fun b -> mkb a b) (fun b ->
+    kont a b))
+
 let check' (name: string) (e: bools) (f: s 'a): s 'a =
   S.check' #table #'a e f
 
 let check (name: string) (e: bools): bools =
   S.check #table e
+
+let check_that (#a: valtype) (e: s a) (p: s a -> bools): s a =
+  let' e (fun scrut -> S.check' (p scrut) scrut)
 
 let fby (#a: valtype) (v: table.ty_sem a) (e: s a): s a = S.fby #table #a v e
 
