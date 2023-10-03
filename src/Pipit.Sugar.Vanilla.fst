@@ -81,6 +81,10 @@ let z (i: int): ints = S.pure i
 let z0 = z 0
 let z1 = z 1
 
+let r (r: R.real): reals = S.pure r
+let r0 = r 0.0R
+let r1 = r 1.0R
+
 let zero (#a: arithtype): s a = match a with
  | TInt  -> z0
  | TReal -> S.pure R.zero
