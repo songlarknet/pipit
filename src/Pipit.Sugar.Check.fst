@@ -72,7 +72,7 @@ let system_induct_k1 (#t: table) (#c: context t) (#a: t.ty) (e: XCC.cexp t c a):
   SI.induct1 (SX.system_of_exp e)
 
 let system_induct_k (#t: table) (#c: context t) (#a: t.ty) (k: nat) (e: XCC.cexp t c a): prop =
-  Pipit.Exp.Causality.causal e // /\ SI.induct_k k (SX.system_of_exp e)
+  SI.induct_k k (SX.system_of_exp e)
 
 let lemma_check_system_induct_k1 (#t: table) (#c: context t) (#a: t.ty) (e: XCC.cexp t c a):
   Lemma (requires (system_induct_k1 e))

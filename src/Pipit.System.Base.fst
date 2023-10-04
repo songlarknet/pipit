@@ -249,7 +249,7 @@ let system_mu (#input #input' #value: Type)
       let stp1 = t1.step (extend i v) o s in
       {
         s = stp1.s;
-        v = stp1.v;
+        v = v;
         chck = checks_assumption (v == stp1.v) `checks_join` stp1.chck;
       });
   }

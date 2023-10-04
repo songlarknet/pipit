@@ -30,18 +30,19 @@ let base_case (#input #value: Type) (#oracle #state: option Type) (t: system inp
 // would it make sense to spell out step requirements explicitly? eg,
 //   forall s0. t.chck.assumptions s0 ==> exists s1. t.step s0 s1
 // but this quantifier alternation looks like it would be difficult to solve automatically
-let rec base_case_k' (k: nat) (#input #value: Type) (#oracle #state: option Type) (t: system input oracle state value) (s: option_type_sem state) (check: prop): prop =
+let rec base_case_k' (k: nat) (#input #value: Type) (#oracle #state: option Type) (t: system input oracle state value) (s: option_type_sem state) (check: prop -> prop): prop =
   match k with
-  | 0 -> check
+  | 0 -> check True
   | _ ->
     forall (i: input) (o: option_type_sem oracle).
       let stp = t.step i o s in
       base_case_k' (k - 1) t stp.s
-        (option_prop_sem stp.chck.assumptions ==>
-        (option_prop_sem stp.chck.obligations /\ check))
+        (fun p ->
+          check (option_prop_sem stp.chck.assumptions ==>
+            (option_prop_sem stp.chck.obligations /\ p)))
 
 let base_case_k (k: nat) (#input #value: Type) (#oracle #state: option Type) (t: system input oracle state value): prop =
-  base_case_k' k t t.init True
+  base_case_k' k t t.init (fun r -> r)
 
 let step_case (#input #value: Type) (#oracle #state: option Type) (t: system input oracle state value): prop =
   forall (i0 i1: input) (o0 o1: option_type_sem oracle) (s0: option_type_sem state).
