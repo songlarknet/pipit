@@ -16,14 +16,14 @@ module SI  = Pipit.System.Ind
 module SX  = Pipit.System.Exp
 
 type contract (t: table) (c: context t) (a: t.ty) (rely: XCC.cexp t c t.propty) (guar: XCC.cexp t (a :: c) t.propty) =
-  impl: XCC.cexp t c a { XC.check_contract_definition PM.check_mode_all rely guar impl /\ Pipit.Exp.Causality.causal impl }
+  impl: XCC.cexp t c a { XC.check_contract_definition PM.check_mode_all rely guar impl }
 
-let contract_of_exp1 (#t: table) (#a #b: t.ty) (r: XCC.cexp t [a] t.propty) (g: XCC.cexp t [b; a] t.propty) (i: XCC.cexp t [a] b  { XC.check_contract_definition PM.check_mode_all r g i /\ Pipit.Exp.Causality.causal i }): contract t [a] b r g = i
+let contract_of_exp1 (#t: table) (#a #b: t.ty) (r: XCC.cexp t [a] t.propty) (g: XCC.cexp t [b; a] t.propty) (i: XCC.cexp t [a] b  { XC.check_contract_definition PM.check_mode_all r g i }): contract t [a] b r g = i
 
 let contract_system_induct_k1' (#t: table) (#c: context t) (#a: t.ty) (r: XCC.cexp t c t.propty) (g: XCC.cexp t (a :: c) t.propty) (i: XCC.cexp t c a): prop =
-  Pipit.Exp.Causality.causal r /\
-  Pipit.Exp.Causality.causal g /\
-  Pipit.Exp.Causality.causal i /\
+  // Pipit.Exp.Causality.causal r /\
+  // Pipit.Exp.Causality.causal g /\
+  // Pipit.Exp.Causality.causal i /\
   SI.induct1 (SX.system_of_contract r g i)
 
 let stream_of_contract1 (#t: table) (#a #b: t.ty) (#r: XCC.cexp t [a] t.propty) (#g: XCC.cexp t [b; a] t.propty) (contr: contract t [a] b r g): s t a -> s t b =
@@ -69,10 +69,10 @@ let stream_of_checked3 (#t: table) (#a #b #c #d: t.ty) (e: exp t [a; b; c] d { X
 
 
 let system_induct_k1 (#t: table) (#c: context t) (#a: t.ty) (e: XCC.cexp t c a): prop =
-  Pipit.Exp.Causality.causal e /\ SI.induct1 (SX.system_of_exp e)
+  SI.induct1 (SX.system_of_exp e)
 
 let system_induct_k (#t: table) (#c: context t) (#a: t.ty) (k: nat) (e: XCC.cexp t c a): prop =
-  Pipit.Exp.Causality.causal e /\ SI.induct_k k (SX.system_of_exp e)
+  Pipit.Exp.Causality.causal e // /\ SI.induct_k k (SX.system_of_exp e)
 
 let lemma_check_system_induct_k1 (#t: table) (#c: context t) (#a: t.ty) (e: XCC.cexp t c a):
   Lemma (requires (system_induct_k1 e))

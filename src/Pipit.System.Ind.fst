@@ -8,18 +8,18 @@ let rec prop_for_all (l: list prop): prop =
  | [] -> True
  | p :: ps -> p /\ prop_for_all ps
 
-let system_holds (#input #state #value: Type) (t: system input state value): prop =
-  forall (inputs: list (input & value)) (s: state).
-    Cons? inputs            ==>
-    system_stepn t inputs s ==>
-    t.chck.assumptions s ==>
-    t.chck.obligations s
+// let system_holds (#input #state #value: Type) (t: system input state value): prop =
+//   forall (inputs: list (input & value)) (s: state).
+//     Cons? inputs            ==>
+//     system_stepn t inputs s ==>
+//     t.chck.assumptions s ==>
+//     t.chck.obligations s
 
-let base_case (#input #state #value: Type) (t: system input state value): prop =
-  forall (i: input) (s: state) (s': state) (r: value).
-    t.init s ==> t.step i s s' r ==>
-    t.chck.assumptions s' ==>
-    t.chck.obligations s'
+let base_case (#input #value: Type) (#oracle #state: option Type) (t: system input oracle state value): prop =
+  forall (i: input) (o: option_type_sem oracle).
+    let stp = t.step i o t.init in
+    option_prop_sem stp.chck.assumptions ==>
+    option_prop_sem stp.chck.obligations
 
 // TODO: change base case for k to split out to separate checks for each length, eg
 // base_case_k 3 =
@@ -30,37 +30,44 @@ let base_case (#input #state #value: Type) (t: system input state value): prop =
 // would it make sense to spell out step requirements explicitly? eg,
 //   forall s0. t.chck.assumptions s0 ==> exists s1. t.step s0 s1
 // but this quantifier alternation looks like it would be difficult to solve automatically
-let rec base_case_k' (k: nat) (#input #state #value: Type) (t: system input state value) (s': state) (check: prop): prop =
-  match k with
-  | 0 -> t.init s' ==> check
-  | _ ->
-    forall (i: input) (s: state) (r: value).
-      t.step i s s' r ==>
-      t.chck.assumptions s' ==>
-      base_case_k' (k - 1) t s (check /\ t.chck.obligations s')
-
-let base_case_k (k: nat) (#input #state #value: Type) (t: system input state value): prop =
-  forall (s': state). base_case_k' k t s' True
-
-let step_case (#input #state #value: Type) (t: system input state value): prop =
-  forall (i0 i1: input) (s0: state) (s1 s2: state) (r0 r1: value).
-    t.step i0 s0 s1 r0 ==> t.chck.assumptions s1 ==> t.chck.obligations s1 ==>
-    t.step i1 s1 s2 r1 ==> t.chck.assumptions s2 ==> t.chck.obligations s2
-
-let rec step_case_k' (k: nat) (#input #state #value: Type) (t: system input state value) (s': state) (check: prop): prop =
+let rec base_case_k' (k: nat) (#input #value: Type) (#oracle #state: option Type) (t: system input oracle state value) (s: option_type_sem state) (check: prop): prop =
   match k with
   | 0 -> check
-  | _ -> forall (i: input) (s: state) (r: value).
-    t.step i s s' r ==>
-    t.chck.assumptions s ==>
-    t.chck.obligations s ==>
-    step_case_k' (k - 1) t s check
+  | _ ->
+    forall (i: input) (o: option_type_sem oracle).
+      let stp = t.step i o s in
+      base_case_k' (k - 1) t stp.s
+        (option_prop_sem stp.chck.assumptions ==>
+        (option_prop_sem stp.chck.obligations /\ check))
 
-let step_case_k (k: nat) (#input #state #value: Type) (t: system input state value): prop =
-  forall (s': state). step_case_k' (k + 1) t s' (t.chck.assumptions s' ==> t.chck.obligations s')
+let base_case_k (k: nat) (#input #value: Type) (#oracle #state: option Type) (t: system input oracle state value): prop =
+  base_case_k' k t t.init True
 
-let induct1 (#input #state #value: Type)
-  (t: system input state value): prop =
+let step_case (#input #value: Type) (#oracle #state: option Type) (t: system input oracle state value): prop =
+  forall (i0 i1: input) (o0 o1: option_type_sem oracle) (s0: option_type_sem state).
+    let stp1 = t.step i0 o0 s0 in
+    let stp2 = t.step i1 o1 stp1.s in
+    option_prop_sem stp1.chck.assumptions ==>
+    option_prop_sem stp1.chck.obligations ==>
+    option_prop_sem stp2.chck.assumptions ==>
+    option_prop_sem stp2.chck.obligations
+
+let rec step_case_k' (k: nat) (#input #value: Type) (#oracle #state: option Type)  (t: system input oracle state value) (s: option_type_sem state) (chck: checks): prop =
+  match k with
+  | 0 -> option_prop_sem chck.assumptions ==> option_prop_sem chck.obligations
+  | _ -> forall (i: input) (o: option_type_sem oracle).
+    let stp = t.step i o s in
+    option_prop_sem chck.assumptions ==>
+    option_prop_sem chck.obligations ==>
+    step_case_k' (k - 1) t stp.s stp.chck
+
+let step_case_k (k: nat) (#input #value: Type) (#oracle #state: option Type)  (t: system input oracle state value): prop =
+  forall (i: input) (o: option_type_sem oracle) (s: option_type_sem state).
+    let stp = t.step i o s in
+    step_case_k' k t stp.s stp.chck
+
+let induct1 (#input #value: Type) (#oracle #state: option Type)
+  (t: system input oracle state value): prop =
     base_case t /\ step_case t
 
 // let rec induct1_sound' (#input #state #value: Type)
@@ -95,8 +102,8 @@ let induct1 (#input #state #value: Type)
 //   with
 //     (induct1_sound' t inputs s)
 
-let induct_k (k: nat) (#input #state #value: Type)
-  (t: system input state value): prop =
+let induct_k (k: nat) (#input #value: Type) (#oracle #state: option Type)
+  (t: system input oracle state value): prop =
     base_case_k k t /\ step_case_k k t
 
 (* The current formulation of the base case makes it difficult to prove

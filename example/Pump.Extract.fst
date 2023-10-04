@@ -25,6 +25,9 @@ let expr = SugarBase.exp_of_stream2 Pump.controller
    The "postprocess_with" annotation ensures that the state_of_exp is inlined
    into the type and simplified to a regular type *)
 [@@(Tac.postprocess_with XL.tac_extract)]
+let state_opt = XX.state_of_exp_opt expr
+
+[@@(Tac.postprocess_with XL.tac_extract)]
 type state = XX.state_of_exp expr
 
 type result = bool & bool
@@ -40,7 +43,7 @@ type input = {
    of the `step` function to be `any`, which breaks compilation.
 *)
 noextract
-let system: Pipit.Exec.Exp.system (bool & (bool & unit)) state result =
+let system: Pipit.Exec.Exp.system (bool & (bool & unit)) state_opt result =
   assert_norm (XX.extractable expr);
   XX.exec_of_exp expr
 

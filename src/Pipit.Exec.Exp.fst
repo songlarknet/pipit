@@ -5,21 +5,26 @@ open Pipit.Prim.Table
 open Pipit.Exp.Base
 
 module Causal = Pipit.Exp.Causality
-module SD = Pipit.System.Det
-module SE = Pipit.System.Exp
+module SB  = Pipit.System.Base
+module SX  = Pipit.System.Exec
+module SXE = Pipit.System.Exec.Exp
+
+noextract inline_for_extraction
+let state_of_exp_opt (#t: table) (#c: context t) (#a: t.ty) (e: exp t c a): option Type =
+  SXE.estate_of_exp e
 
 noextract inline_for_extraction
 let state_of_exp (#t: table) (#c: context t) (#a: t.ty) (e: exp t c a): Type =
-  SE.dstate_of_exp e
+  SB.option_type_sem (state_of_exp_opt e)
 
 noextract inline_for_extraction
 let extractable (#t: table) (#c: context t) (#a: t.ty) (e: exp t c a): bool =
   Causal.causal e
 
 noextract inline_for_extraction
-type system (input state result: Type) =
-  SD.dsystem input state result
+type system (input: Type) (state: option Type) (result: Type) =
+  SX.esystem input state result
 
 noextract inline_for_extraction
-let exec_of_exp (#t: table) (#c: context t) (#a: t.ty) (e: exp t c a { extractable e }): system (row c) (state_of_exp e) (t.ty_sem a) =
-  SE.dsystem_of_exp e
+let exec_of_exp (#t: table) (#c: context t) (#a: t.ty) (e: exp t c a { extractable e }): system (row c) (SXE.estate_of_exp e) (t.ty_sem a) =
+  SXE.esystem_of_exp e

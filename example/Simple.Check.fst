@@ -41,20 +41,22 @@ let count_when_prop: bools -> bools =
   assert (Check.system_induct_k1 e) by (T.norm_full ());
   Check.stream_of_checked1 e
 
-let sum_contract (i: ints): Base._contract Vanilla.table Vanilla.TInt = {
-    rely = i >^ z0;
-    guar = (fun sum -> sum >^ (0 `fby` sum));
-    impl = rec' (fun sum -> (0 `fby` sum) +^ i);
-  }
+type sum_contract = Check.contract Vanilla.table [Vanilla.TInt] Vanilla.TInt
+  (Check.exp_of_stream1 (fun i -> i >^ z0))
+  (Check.exp_of_stream2 (fun sum i -> sum >^ (0 `fby` sum)))
 
-let sum: ints -> ints =
-  let c = Check.contract_of_stream1 sum_contract in
-  assert (Check.contract_system_induct_k1 c) by (T.norm_full ());
-  Check.stream_of_contract1 c
+let sum: sum_contract =
+  let r = (Check.exp_of_stream1 (fun i -> i >^ z0)) in
+  let g = (Check.exp_of_stream2 (fun sum i -> sum >^ (0 `fby` sum))) in
+  let e = Check.exp_of_stream1 (fun i ->
+    rec' (fun sum -> (0 `fby` sum) +^ i)
+  ) in
+  assert (Check.contract_system_induct_k1' r g e) by (T.norm_full ());
+  Check.contract_of_exp1 r g e
 
 let test_sum (i: ints) =
   let' (if_then_else (i >^ z0) i z1) (fun arg ->
-  let' (sum arg) (fun sarg ->
+  let' (Check.stream_of_contract1 sum arg) (fun sarg ->
   check' "sum is increasing" (sarg >^ (0 `fby` sarg))
     sarg
   ))
@@ -87,13 +89,14 @@ let times_guarantee (x y z: ints) =
   ((abs_z <=^ abs_y) =^ ((abs_x <=^ z1) \/ (y =^ z0))) /\
   ((abs_z <=^ abs_x) =^ ((abs_y <=^ z1) \/ (x =^ z0)))
 
-let times_contract (x y: ints): Base._contract Vanilla.table Vanilla.TInt = {
-    rely = tt;
-    guar = times_guarantee x y;
-    impl = x *^ y;
-  }
+//TODO:EXAMPLES more contract examples
+// let times_contract (x y: ints): Base._contract Vanilla.table Vanilla.TInt = {
+//     rely = tt;
+//     guar = times_guarantee x y;
+//     impl = x *^ y;
+//   }
 
-let times_abstraction: ints -> ints -> ints =
-  let c = Check.contract_of_stream2 times_contract in
-  assert (Check.contract_system_induct_k1 c) by (T.norm_full ());
-  Check.stream_of_contract2 c
+// let times_abstraction: ints -> ints -> ints =
+//   let c = Check.contract_of_stream2 times_contract in
+//   assert (Check.contract_system_induct_k1 c) by (T.norm_full ());
+//   Check.stream_of_contract2 c
