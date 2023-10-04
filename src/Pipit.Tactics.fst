@@ -100,3 +100,12 @@ let pipit_simplify (): T.Tac unit =
     let b = T.forall_intro () in
     // tac_products [b];
     ())
+
+
+let pipit_simplify_products (): T.Tac unit =
+  T.repeatseq (fun _ ->
+    norm_full ();
+    tac_tricky_unfolds ();
+    let b = T.forall_intro () in
+    tac_products [b];
+    ())

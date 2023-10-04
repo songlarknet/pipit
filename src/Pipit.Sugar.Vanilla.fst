@@ -17,6 +17,8 @@ module S = Pipit.Sugar.Base
 
 module R = FStar.Real
 
+let table = table
+
 type valtype = valtype
 type arithtype = arithtype
 

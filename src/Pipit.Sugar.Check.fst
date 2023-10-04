@@ -15,56 +15,34 @@ module PM  = Pipit.Prop.Metadata
 module SI  = Pipit.System.Ind
 module SX  = Pipit.System.Exp
 
-noeq
-type _contract (t: table) (c: context t) (a: t.ty) = {
-  rely: XCC.cexp t       c  t.propty;
-  guar: XCC.cexp t (a :: c) t.propty;
-  impl: XCC.cexp t       c         a;
-}
+type contract (t: table) (c: context t) (a: t.ty) (rely: XCC.cexp t c t.propty) (guar: XCC.cexp t (a :: c) t.propty) =
+  impl: XCC.cexp t c a { XC.check_contract_definition PM.check_mode_all rely guar impl /\ Pipit.Exp.Causality.causal impl }
 
-let contract_of_stream1 (#t: table) (#a #b: t.ty) (f: s t a -> Base._contract t b) : _contract t [a] b = {
-  rely = exp_of_stream1 (fun a -> (f a).rely);
-  guar = exp_of_stream2 (fun b a -> (f a).guar b);
-  impl = exp_of_stream1 (fun a -> (f a).impl);
-}
+let contract_of_exp1 (#t: table) (#a #b: t.ty) (r: XCC.cexp t [a] t.propty) (g: XCC.cexp t [b; a] t.propty) (i: XCC.cexp t [a] b  { XC.check_contract_definition PM.check_mode_all r g i /\ Pipit.Exp.Causality.causal i }): contract t [a] b r g = i
 
-let contract_of_stream2 (#t: table) (#a #b #c: t.ty) (f: s t a -> s t b -> Base._contract t c) : _contract t [a; b] c = {
-  rely = exp_of_stream2 (fun a b -> (f a b).rely);
-  guar = exp_of_stream3 (fun c a b -> (f a b).guar c);
-  impl = exp_of_stream2 (fun a b -> (f a b).impl);
-}
+let contract_system_induct_k1' (#t: table) (#c: context t) (#a: t.ty) (r: XCC.cexp t c t.propty) (g: XCC.cexp t (a :: c) t.propty) (i: XCC.cexp t c a): prop =
+  Pipit.Exp.Causality.causal r /\
+  Pipit.Exp.Causality.causal g /\
+  Pipit.Exp.Causality.causal i /\
+  SI.induct1 (SX.system_of_contract r g i)
 
-
-let contract_system_induct_k1 (#t: table) (#c: context t) (#a: t.ty) (contr: _contract t c a): prop =
-  Pipit.Exp.Causality.causal contr.rely /\
-  Pipit.Exp.Causality.causal contr.guar /\
-  Pipit.Exp.Causality.causal contr.impl /\
-  SI.induct1 (SX.system_of_contract contr.rely contr.guar contr.impl)
-
-let contract_system_induct_k (#t: table) (#c: context t) (#a: t.ty) (k: nat) (contr: _contract t c a): prop =
-  Pipit.Exp.Causality.causal contr.rely /\
-  Pipit.Exp.Causality.causal contr.guar /\
-  Pipit.Exp.Causality.causal contr.impl /\
-  SI.induct_k k (SX.system_of_contract contr.rely contr.guar contr.impl)
-
-
-let stream_of_contract1 (#t: table) (#a #b: t.ty) (contr: _contract t [a] b { XC.check_contract_definition PM.check_mode_all contr.rely contr.guar contr.impl }): s t a -> s t b =
-  let rely = XC.bless contr.rely in
-  let guar = XC.bless contr.guar in
-  let impl = XC.bless contr.impl in
+let stream_of_contract1 (#t: table) (#a #b: t.ty) (#r: XCC.cexp t [a] t.propty) (#g: XCC.cexp t [b; a] t.propty) (contr: contract t [a] b r g): s t a -> s t b =
+  let rely = XC.bless r in
+  let guar = XC.bless g in
+  let impl = XC.bless contr in
   let e = XContract PM.PSUnknown rely guar impl in
   // TODO:ADMIT: requires contract_check
-  assume (XC.check' PM.check_mode_valid e);
+  assume (XC.check_contract_definition PM.check_mode_all r g contr ==> XC.check' PM.check_mode_valid e);
   stream_of_exp1 e
 
-let stream_of_contract2 (#t: table) (#a #b #c: t.ty) (contr: _contract t [a; b] c { XC.check_contract_definition PM.check_mode_all contr.rely contr.guar contr.impl }): s t a -> s t b -> s t c =
-  let rely = XC.bless contr.rely in
-  let guar = XC.bless contr.guar in
-  let impl = XC.bless contr.impl in
-  let e = XContract PM.PSUnknown rely guar impl in
-  // TODO:ADMIT: requires contract_check
-  assume (XC.check' PM.check_mode_valid e);
-  stream_of_exp2 e
+// let stream_of_contract2 (#t: table) (#a #b #c: t.ty) (contr: _contract t [a; b] c { XC.check_contract_definition PM.check_mode_all contr.rely contr.guar contr.impl }): s t a -> s t b -> s t c =
+//   let rely = XC.bless contr.rely in
+//   let guar = XC.bless contr.guar in
+//   let impl = XC.bless contr.impl in
+//   let e = XContract PM.PSUnknown rely guar impl in
+//   // TODO:ADMIT: requires contract_check
+//   assume (XC.check' PM.check_mode_valid e);
+//   stream_of_exp2 e
 
 
 let exp_of_stream0 (#t: table) (#ty: t.ty) (e: s t ty) : XCC.cexp t [] ty = exp_of_stream0 e
@@ -112,10 +90,10 @@ let lemma_check_system_induct_k (#t: table) (#c: context t) (#a: t.ty) (k: nat) 
     // TODO:ADMIT: induction is sound
     admit ()
 
-let lemma_check_contract_system_induct_k1 (#t: table) (#c: context t) (#a: t.ty) (contr: _contract t c a):
-  Lemma (requires (contract_system_induct_k1 contr))
-        (ensures  (XC.check_contract_definition PM.check_mode_all contr.rely contr.guar contr.impl))
-        [SMTPat (contract_system_induct_k1 contr)]
+let lemma_check_contract_system_induct_k1' (#t: table) (#c: context t) (#a: t.ty) (r: XCC.cexp t c t.propty) (g: XCC.cexp t (a :: c) t.propty) (i: XCC.cexp t c a):
+  Lemma (requires (contract_system_induct_k1' r g i))
+        (ensures  (XC.check_contract_definition PM.check_mode_all r g i))
+        [SMTPat (contract_system_induct_k1' r g i)]
         =
     // TODO:ADMIT: induction is sound
     admit ()

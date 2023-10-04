@@ -138,27 +138,6 @@ let check'
     s 't a =
   let' (check e) (fun _ -> f)
 
-noeq
-type _contract (t: table) (a: t.ty) = {
-  rely: s t t.propty;
-  guar: (s t a -> s t t.propty);
-  impl: s t a;
-}
-
-// let contract
-//   (#a: ('t).ty)
-//   (c: _contract 't a):
-//     s 't a =
-//   (fun s ->
-//     let (r, s)    = c.rely s in
-//     let (xvar, s) = _freshm a s in
-//     let evar      = XBase (XVar xvar) in
-//     let (g, s)    = c.guar (_purem evar) s in
-//     let g         = CX.close1 g xvar in
-//     let (i, s)    = c.impl s in
-//     (XContract PM.contract_status_unknown r g i, s))
-
-
 let pure (#a: ('t).ty) (v: ('t).ty_sem a): s 't a =
   _purem (XBase (XVal v))
 
