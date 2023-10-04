@@ -22,9 +22,13 @@ let extractable (#t: table) (#c: context t) (#a: t.ty) (e: exp t c a): bool =
   Causal.causal e
 
 noextract inline_for_extraction
-type system (input: Type) (state: option Type) (result: Type) =
-  SX.esystem input state result
+type esystem (input: Type) (state: Type) (result: Type) =
+  SX.esystem input (Some state) result
 
 noextract inline_for_extraction
-let exec_of_exp (#t: table) (#c: context t) (#a: t.ty) (e: exp t c a { extractable e }): system (row c) (SXE.estate_of_exp e) (t.ty_sem a) =
-  SXE.esystem_of_exp e
+let exec_of_exp (#t: table) (#c: context t) (#a: t.ty) (e: exp t c a { extractable e }): esystem (row c) (state_of_exp e) (t.ty_sem a) =
+  let st = state_of_exp_opt e in
+  let sys = SXE.esystem_of_exp e in
+  match st with
+  | None -> SX.esystem_unit_state sys
+  | Some st -> sys

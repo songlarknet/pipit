@@ -67,3 +67,14 @@ let esystem_let (#input #input' #v1 #v2: Type)
       let (s2', r2) = t2.step (extend i r1) (type_join_snd s) in
       (type_join_tup s1' s2', r2));
   }
+
+let esystem_unit_state (#input #result: Type)
+    (t: esystem input None result):
+        esystem input (Some unit) result =
+  // assert (option_type_sem None == unit);
+  // t
+  { init = ();
+    step = (fun i (s: option_type_sem (Some unit)) ->
+      let (_, v) = t.step i () in
+      ((), v));
+  }
