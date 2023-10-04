@@ -16,6 +16,8 @@ open Pipit.System.Det
 let xsystem (#t: table) (c: context t) (state: Type) (value: Type) = system (row c) state value
 (* Same, but deterministic *)
 let xdsystem (#t: table) (c: context t) (state: Type) (value: Type) = dsystem (row c) state value
+(* A pure function with no streaming *)
+let xpure (#t: table) (c: context t) (value: Type) = row c -> value
 
 let xsystem_stepn
   (#tbl: table)
@@ -26,7 +28,27 @@ let xsystem_stepn
   (s': state): prop =
   system_stepn t streams s'
 
+let rec exp_is_pure (#t: table) (#c: context t) (#a: t.ty) (e: exp t c a): Tot bool (decreases e) =
+  match e with
+  | XBase _ -> true
+  | XApps e1 -> exp_apps_is_pure e1
+  | XFby v e1 -> false
+  | XMu e1 -> false
+  | XLet b e1 e2 -> exp_is_pure e1 && exp_is_pure e2
+  // Checks are conceptually wrapped in an "always", so we don't treat them as pure
+  | XCheck name e1 -> false
+  | XContract status rely guar impl ->
+    false
+
+and exp_apps_is_pure (#t: table) (#c: context t) (#a: funty t.ty) (e: exp_apps t c a): Tot bool (decreases e) =
+  match e with
+  | XPrim _ -> true
+  | XApp f e -> exp_apps_is_pure f && exp_is_pure e
+
+
+
 let rec state_of_exp (#t: table) (#c: context t) (#a: t.ty) (e: exp t c a): Tot Type (decreases e) =
+  if exp_is_pure e then unit else
   match e with
   | XBase _ -> unit
   | XApps e1 -> state_of_exp_apps e1
@@ -48,6 +70,7 @@ let state_of_contract_definition (#t: table) (#c: context t) (#a: t.ty)
   (bool & bool) & (state_of_exp rely & (state_of_exp guar & state_of_exp impl))
 
 let rec dstate_of_exp (#t: table) (#c: context t) (#a: t.ty) (e: exp t c a): Tot Type (decreases e) =
+  if exp_is_pure e then unit else
   match e with
   | XBase _ -> unit
   | XApps e1 -> dstate_of_exp_apps e1
@@ -85,23 +108,67 @@ let lemma_state_dstate_det (#t: table) (#c: context t) (#a: t.ty) (e: exp t c a 
   Lemma (state_of_exp e == dstate_of_exp e) =
   admit ()
 
-
-let dsystem_of_exp_base
+let pure_of_exp_base
   (#t: table) (#c: context t) (#a: t.ty)
   (e: exp_base t c a { Causal.causal_base e }):
-    Tot (xdsystem c unit (t.ty_sem a)) (decreases e) =
+    Tot (xpure c (t.ty_sem a)) (decreases e) =
     match e with
-    | XVal v -> dsystem_const v
-    | XBVar x -> dsystem_project (fun i -> CR.index (context_sem c) i x)
+    | XVal v -> (fun _ -> v)
+    | XBVar x -> (fun i -> CR.index (context_sem c) i x)
     | XVar x -> false_elim ()
+
+let rec pure_of_exp
+  (#t: table) (#c: context t) (#a: t.ty)
+  (e: exp t c a { Causal.causal e /\ exp_is_pure e }):
+    Tot (xpure c (t.ty_sem a)) (decreases e) =
+    match e with
+    | XBase e1 -> pure_of_exp_base e1
+    | XApps e1 ->
+      let t = pure_of_exp_apps e1 (fun r _ -> r) in
+      (fun r -> t () r)
+    | XLet b e1 e2 ->
+      let t1 = pure_of_exp e1 in
+      let t2 = pure_of_exp e2 in
+      (fun i -> let v1 = t1 i in t2 (v1, i))
+    | XFby _ _ | XMu _ | XCheck _ _ | XContract _ _ _ _ ->
+      false_elim ()
+
+and pure_of_exp_apps
+  (#t: table) (#c: context t) (#a: funty t.ty) (#res #inp: Type0)
+  (e: exp_apps t c a { Causal.causal_apps e /\ exp_apps_is_pure e })
+  (f: funty_sem t.ty_sem a -> inp -> res):
+    Tot (inp -> row c -> res) (decreases e) =
+    match e with
+    | XPrim p -> (fun i r -> f (t.prim_sem p) i)
+    | XApp e1 e2 ->
+      let arg = XApp?.arg e in
+      let ret = XApp?.ret e in
+      lemma_funty_sem_FTFun t.ty_sem arg ret;
+      let t1: (t.ty_sem arg & inp) -> row c -> res = pure_of_exp_apps e1 (fun r i -> f (r (fst i)) (snd i)) in
+      let t2: xpure c (t.ty_sem arg) = pure_of_exp e2 in
+      (fun i r -> t1 (t2 r, i) r)
+
+
+// let dsystem_of_exp_base
+//   (#t: table) (#c: context t) (#a: t.ty)
+//   (e: exp_base t c a { Causal.causal_base e }):
+//     Tot (xdsystem c unit (t.ty_sem a)) (decreases e) =
+//     match e with
+//     | XVal v -> dsystem_const v
+//     | XBVar x -> dsystem_project (fun i -> CR.index (context_sem c) i x)
+//     | XVar x -> false_elim ()
 
 
 let rec dsystem_of_exp
   (#t: table) (#c: context t) (#a: t.ty)
   (e: exp t c a { Causal.causal e }):
     Tot (xdsystem c (dstate_of_exp e) (t.ty_sem a)) (decreases e) =
+  // PERF:TRANS: See note: translation complexity
+  if exp_is_pure e
+  then dsystem_project (pure_of_exp e)
+  else
     match e with
-    | XBase e1 -> dsystem_of_exp_base e1
+    | XBase e1 -> false_elim ()
     | XApps e1 ->
       let t: dsystem (unit & row c) (dstate_of_exp_apps e1) (t.ty_sem a) = dsystem_of_exp_apps e1 (fun r i -> r) in
       dsystem_with_input (fun s -> ((), s)) t
@@ -140,6 +207,7 @@ let rec system_of_exp
   (e: exp t c a { Causal.causal e }):
     Tot (xsystem c (state_of_exp e) (t.ty_sem a)) (decreases e) =
   // PERF:TRANS: wrong complexity!
+  // Note: translation complexity:
   // This has the wrong complexity. We descend into the expression to check if it's deterministic, but each sub-call will also descend.
   // The right way to do this is probably to create a datatype that can represent both xsystem and xdsystem, and have combinators to join them together.
   if exp_is_deterministic e
@@ -150,6 +218,7 @@ let rec system_of_exp
     match e with
     | XBase e1 -> false_elim ()
     | XApps e1 ->
+      assume (not (exp_is_pure e));
       let t: system (unit & row c) (state_of_exp_apps e1) (t.ty_sem a) = system_of_exp_apps e1 (fun r i -> r) in
       system_with_input (fun s -> ((), s)) t
     | XFby v e1 ->
@@ -158,6 +227,7 @@ let rec system_of_exp
       let t' = system_of_exp e1 in
       system_mu #(row c) #(t.ty_sem a & row c) (fun i v -> (v, i)) t'
     | XLet b e1 e2 ->
+      assume (not (exp_is_pure e));
       system_let (fun i v -> (v, i)) (system_of_exp e1) (system_of_exp e2)
     | XCheck status e1 ->
       system_check "XCheck" status (system_of_exp e1)
