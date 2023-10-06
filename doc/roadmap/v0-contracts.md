@@ -47,6 +47,6 @@ New proofs:
 * Allows statement of invariants
 * Can re-use F* let syntax
 
-### Optimised translation for pure functions
+### Optimised translation for pure functions ✅
 * Systems get very complex states with lots of nested tuples of units
 * Pure systems do not need state at all: simplify away

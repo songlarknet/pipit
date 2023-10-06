@@ -28,7 +28,7 @@ type bools = s TBool
 type ints  = s TInt
 type reals = s TReal
 
-let pure (#a: valtype) (v: table.ty_sem a): s a = S.pure #table #a v
+let const (#a: valtype) (v: table.ty_sem a): s a = S.const #table #a v
 
 // LATER: explicit let' should not be necessary once we have CSE / sharing recovery
 let let' (e: s 'a) (f: s 'a -> s 'b) = S.let' #table #'a #'b e f
@@ -73,23 +73,23 @@ let pre (e: s 'a): s 'a = S.pre #table #'a e
 
 let (-->) (e1 e2: s 'a): s 'a =
   S.liftP3 (P'V P'V'IfThenElse 'a)
-    (fby #TBool true (pure false))
+    (fby #TBool true (const false))
     e1 e2
 
-let tt: bools = pure true
-let ff: bools = pure false
+let tt: bools = const true
+let ff: bools = const false
 
-let z (i: int): ints = S.pure i
+let z (i: int): ints = const i
 let z0 = z 0
 let z1 = z 1
 
-let r (r: R.real): reals = S.pure r
+let r (r: R.real): reals = const r
 let r0 = r 0.0R
 let r1 = r 1.0R
 
 let zero (#a: arithtype): s a = match a with
  | TInt  -> z0
- | TReal -> S.pure R.zero
+ | TReal -> const R.zero
 
 (* Working with booleans *)
 let (/\): bools -> bools -> bools = S.liftP2 (P'B P'B'And)
@@ -125,6 +125,9 @@ let (>=^) (#a: arithtype): s a -> s a -> bools =
 let (>^) (#a: arithtype): s a -> s a -> bools =
   S.liftP2 (P'A P'A'Gt a)
 
+let ( %^ ): s TInt -> nonzero -> s TInt =
+  (fun a div -> S.liftP1 (P'I (P'I'ModConst div)) a)
+
 let tup (#a #b: valtype): s a -> s b -> s (TPair a b) =
   S.liftP2 (P'T P'T'Pair a b)
 
@@ -159,3 +162,10 @@ let last (n: nat) (e: bools): bools =
 let abs (#a: arithtype) (r: s a): s a =
   let' r (fun r' ->
     if_then_else (r' >=^ zero) r' (zero -^ r'))
+
+let sum (e: ints): ints =
+  rec' (fun r -> fby 0 r +^ e)
+
+let count (e: bools): ints =
+  sum (if_then_else e z1 z0)
+

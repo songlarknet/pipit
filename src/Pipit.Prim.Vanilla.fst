@@ -36,6 +36,9 @@ type prim_arith =
  | P'A'Lt  | P'A'Le  | P'A'Gt  | P'A'Ge
  // negate? abs? trig? sqrt2?
 
+type prim_integral =
+ | P'I'ModConst: nonzero -> prim_integral
+
 type prim_tup =
  | P'T'Pair | P'T'Fst | P'T'Snd
 
@@ -45,6 +48,7 @@ type prim_valtype =
 type prim =
  | P'B: prim_bool -> prim
  | P'A: prim_arith -> arithtype -> prim
+ | P'I: prim_integral -> prim
  | P'T: prim_tup -> valtype -> valtype -> prim
  | P'V: prim_valtype -> valtype -> prim
 
@@ -62,6 +66,8 @@ let prim_arith_ty (p: prim_arith) (at: arithtype): funty valtype = match p with
  | P'A'Add | P'A'Sub | P'A'Div | P'A'Mul -> f2 at
  | P'A'Lt  | P'A'Le  | P'A'Gt  | P'A'Ge  -> p2 at
 
+let prim_integral_ty (p: prim_integral): funty valtype = f1 TInt
+
 let prim_tup_ty (p: prim_tup) (a: valtype) (b: valtype): funty valtype = match p with
  | P'T'Pair -> FTFun a (FTFun b (FTVal (TPair a b)))
  | P'T'Fst  -> FTFun (TPair a b) (FTVal a)
@@ -74,6 +80,7 @@ let prim_valtype_ty (p: prim_valtype) (a: valtype): funty valtype = match p with
 let prim_ty (p: prim): funty valtype = match p with
  | P'B p'       -> prim_bool_ty    p'
  | P'A p' at    -> prim_arith_ty   p' at
+ | P'I p'       -> prim_integral_ty p'
  | P'T p' a b   -> prim_tup_ty     p' a b
  | P'V p' a     -> prim_valtype_ty p' a
 
@@ -106,6 +113,10 @@ let prim_arith_sem (p: prim_arith) (at: arithtype): funty_sem ty_sem (prim_arith
   | P'A'Gt  -> fun x y -> x >.  y
   | P'A'Ge  -> fun x y -> x >=. y)
 
+let prim_integral_sem (p: prim_integral): funty_sem ty_sem (prim_integral_ty p) =
+  (match p with
+   | P'I'ModConst div -> fun x -> x % div)
+
 let prim_tup_sem (p: prim_tup) (a: valtype) (b: valtype): funty_sem ty_sem (prim_tup_ty p a b) = match p with
  | P'T'Pair -> fun (x: ty_sem a) (y: ty_sem b) -> x, y
  | P'T'Fst  -> fun ((x, y) : ty_sem a & ty_sem b) -> x
@@ -119,6 +130,7 @@ let prim_valtype_sem (p: prim_valtype) (a: valtype): funty_sem ty_sem (prim_valt
 let prim_sem (p: prim): funty_sem ty_sem (prim_ty p) = match p with
  | P'B p'     -> prim_bool_sem p'
  | P'A p' at  -> prim_arith_sem p' at
+ | P'I p'     -> prim_integral_sem p'
  | P'T p' a b -> prim_tup_sem p' a b
  | P'V p' a   -> prim_valtype_sem p' a
 

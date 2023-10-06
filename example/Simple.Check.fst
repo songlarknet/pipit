@@ -34,7 +34,7 @@ let count_when_prop_body (e: bools): bools =
   check' "0                <= count_when false" (z0               <=^ count_when_false) (
   check' "count_when false <= count_when e"     (count_when_false <=^ count_when_e) (
   check' "count_when e     <= count_when true"  (count_when_e     <=^ count_when_true) (
-  pure true))))))
+  const true))))))
 
 let count_when_prop: bools -> bools =
   let e = Check.exp_of_stream1 count_when_prop_body in

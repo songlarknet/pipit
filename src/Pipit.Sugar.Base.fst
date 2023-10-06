@@ -138,7 +138,7 @@ let check'
     s 't a =
   let' (check e) (fun _ -> f)
 
-let pure (#a: ('t).ty) (v: ('t).ty_sem a): s 't a =
+let const (#a: ('t).ty) (v: ('t).ty_sem a): s 't a =
   _purem (XBase (XVal v))
 
 (* followed-by, initialised delay *)
