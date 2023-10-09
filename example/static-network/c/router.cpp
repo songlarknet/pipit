@@ -26,96 +26,61 @@ static uint32_t message_priority(net_message_id_t m) {
 
 
 void router_step(router_state_t *router_state) {
-  uint32_t          now         = router_state->time_ticks;
-  net_message_id_t  last_send   = router_state->last_send;
-  bool              last_late   = router_state->last_late;
+  const uint32_t          now         = router_state->time_ticks;
+  const net_message_id_t  last_send   = router_state->last_send;
+  const bool              last_late   = router_state->last_late;
 
-  net_message_id_t  sched       = router_get_send_schedule(now);
+  net_message_id_t        sched       = router_get_send_schedule(now);
+  if (sched != NET_MSG_NONE && !router_state->send_requests[sched].pending)
+    sched = NET_MSG_NONE;
 
-  can_send_status_t send_status = can_get_send_status(TXBUF0);
-  bool              send_ok     = send_status != SEND_NONE;
+  const can_send_status_t send_status = can_get_send_status(TXBUF0);
+  const bool              send_ok     = send_status != CAN_SEND_NONE;
+
 
   if (last_send != NET_MSG_NONE) {
     if (send_ok) {
       router_state->stats_total.send_count = sat_inc_u32(router_state->stats_total.send_count);
       router_state->stats_per_message[last_send].send_count = sat_inc_u32(router_state->stats_per_message[last_send].send_count);
+
     } else {
       if (!last_late) {
         router_state->stats_total.late_count = sat_inc_u32(router_state->stats_total.late_count);
         router_state->stats_per_message[last_send].late_count = sat_inc_u32(router_state->stats_per_message[last_send].late_count);
       }
       router_state->last_late = true;
-    }
 
-    // if the previous send failed, then we check if it is preempted by the newly-scheduled message
-    bool drop_old =
-      !send_ok &&
-      (last_send != NET_MSG_NONE) &&
-      (sched != NET_MSG_NONE) &&
-      (message_priority(sched) <= message_priority(last_send));
 
-    if (drop_old) {
-      router_state->stats_total.drop_count = sat_inc_u32(router_state->stats_total.drop_count);
-      router_state->stats_per_message[last_send].drop_count = sat_inc_u32(router_state->stats_per_message[last_send].drop_count);
+      // the previous send failed, so check if it is preempted by the newly-scheduled message, or retry.
+      // one of them must be dropped, we just need to decide which
+      if (sched != NET_MSG_NONE) {
+        router_state->stats_total.drop_count = sat_inc_u32(router_state->stats_total.drop_count);
+        router_state->stats_per_message[last_send].drop_count = sat_inc_u32(router_state->stats_per_message[last_send].drop_count);
 
+        if (message_priority(sched) > message_priority(last_send)) {
+          // scheduled message is strictly lower priority, so ignore the scheduled message
+          sched = NET_MSG_NONE;
+        }
+      }
     }
   }
 
+  if (sched != NET_MSG_NONE) {
+    can_set_txbuf(TXBUF0, router_state->send_requests[sched].message);
+    router_state->send_requests[sched].pending = false;
 
-
-  // we take the new one if the previous one worked, or if dropping the old
-  bool take_new =
-    send_ok || drop_old;
-
-  // 
-  net_message_id_t new_send =
-    take_new ? sched : last_send;
-
-  bool requires_txbuf_set =
-    (new_send != NET_MSG_NONE) && take_new;
-    // (take_new || router_state->send_requests[new_send].pending);
-
-  bool is_late =
-    !take_new && (last_send != NET_MSG_NONE) && last_late;
-
-  // PHASE 2: PERFORM ACTIONS
-  if (requires_txbuf_set) {
-    can_set_txbuf(TXBUF0, router_state->send_requests[new_send].message);
-    router_state->send_requests[new_send].pending = false;
+    router_state->last_send = sched;
+    router_state->last_late = false;
   }
 
-
-  uint32_t latency =
-    take_new
-    ? 0
-    : sat_inc_u32(router_state.stats_total.send_latency_current);
-
-  router_state.stats_total.send_latency_current = latency;
-  router_state.stats_total.send_latency_max =
-    latency > router_state.stats_total.send_latency_max
-    ? latency
-    : router_state.stats_total.send_latency_max;
-
-
-  // PHASE 4: FINISH
   router_state->time_ticks = (router_state->time_ticks + 1) % net_config.common_period;
 }
 
-void router_enqueue_send(message_id_t id, message_t message) {
-  assert(VALID_MESSAGE_ID(id));
-  assert(network_config.messages[id].sender == router_state.this_node);
-  assert(message.id == network_config.messages[id].id);
+void router_enqueue_send(router_state_t *router_state, net_message_id_t id, can_message_t message) {
+  assert(NET_VALID_MESSAGE_ID(id));
+  assert(net_config.messages[id].sender == net_this_node);
+  assert(message.can_id == net_config.messages[id].can_id);
 
-  // update drops and latency
-  router_state.stats_per_message[id].send_latency_current = 0;
-  if (router_state.send_requests[id].pending) {
-    router_state.stats_per_message[id].send_drop_count = sat_inc_u32(router_state.stats_per_message[id].send_drop_count);
-    router_state.stats_total.send_drop_count = sat_inc_u32(router_state.stats_total.send_drop_count);
-  }
-  if (router_state.try_send == id) {
-    router_state.stats_total.send_latency_current = 0;
-  }
-
-  router_state.send_requests[id].message = message;
-  router_state.send_requests[id].pending = true;
+  router_state->send_requests[id].message = message;
+  router_state->send_requests[id].pending = true;
 }

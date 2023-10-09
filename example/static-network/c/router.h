@@ -4,8 +4,8 @@
 #include <stdint.h>
 #include <stdio.h>
 
-#include "can.h"
-#include "platform_router.h"
+#include "can_driver.h"
+#include "platform_network.h"
 #include "network.h"
 
 #define VALID_MESSAGE_ID(id) ( 0 <= (id) && (id) < MSG_COUNT )
@@ -35,7 +35,7 @@ typedef struct router_state {
 } router_state_t;
 
 
-void router_enqueue_send(router_state_t *state, message_t message);
+void router_enqueue_send(router_state_t *state, net_message_id_t id, can_message_t message);
 
 void router_init(router_state_t *state);
 void router_step(router_state_t *state);
