@@ -19,3 +19,6 @@ typedef enum net_message_id {
   NET_MSG_COUNT,
   NET_MSG_NONE = -1,
 } net_message_id_t;
+
+const uint32_t NET_MAX_SEND_MSGS = 3;
+const uint32_t NET_MAX_RECV_MSGS = 3;
