@@ -1,4 +1,7 @@
-/** Low-level interface to CAN hardware */
+/** Low-level interface to CAN hardware
+ * Based on MCP2515 SPI-controlled stand-alone CAN controller
+ * Datasheet: https://ww1.microchip.com/downloads/en/DeviceDoc/MCP2515-Stand-Alone-CAN-Controller-with-SPI-20001801J.pdf
+ */
 #pragma once
 #include <stdint.h>
 

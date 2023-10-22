@@ -1,28 +1,25 @@
 module Network.Abstract
 
 module List = FStar.List.Tot
+module U32 = FStar.UInt32
 
 
-// CAN4LINUX:
-// https://gitlab.com/hjoertel/can4linux/-/blob/master/can4linux/can4linux.h?ref_type=heads
-// https://gitlab.com/hjoertel/can4linux/-/blob/master/can4linux/defs.h?ref_type=heads
-// https://gitlab.com/hjoertel/can4linux/-/blob/master/can4linux/read.c?ref_type=heads
-// https://gitlab.com/hjoertel/can4linux/-/blob/master/can4linux/write.c?ref_type=heads
 (*
   type can_id =
     | CAN_ID_SD: bits11 -> can_id
     | CAN_ID_FD: bits29 -> can_id
 *)
-type can_id = nonzero // u32
+type can_id = U32.t
 
 type send_status =
-  | NONE
-  | ACK
+  | OK
+  | ABORTED
+  | LOST_ARBITRATION
   | ERROR
-  | BUSY
+  | PENDING
 
 let send_status_ok (s: send_status) =
-  match s with | NONE | ACK -> true | _ -> false
+  match s with | OK -> true | _ -> false
 
 
 noeq
