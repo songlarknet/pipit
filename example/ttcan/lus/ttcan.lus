@@ -1,0 +1,809 @@
+include "util.lus"
+
+type Mode            = enum { Mode_Configure, Mode_Running };
+type Mode_Cmd        = enum { Mode_Cmd_Configure, Mode_Cmd_Run, Mode_Cmd_None };
+
+type Sync_Mode       = enum { Sync_Off, Synchronising, In_Schedule }; -- not supported: In_Gap
+type Master_Mode     = enum { Master_Off, Follower, Current_Master, Backup_Master };
+type Error_Severity  = enum { S0_No_Error, S1_Warning, S2_Error, S3_Severe };
+
+type Tx_Status       = enum { Tx_None, Tx_Ok, Tx_Lost_Arbitration, Tx_Error };
+type Bus_Status      = enum { Bus_Idle, Bus_Busy, Bus_Bad, Bus_Off };
+
+type Fault_Bits      = struct {
+  fault_Scheduling_Error_1:    bool;
+  fault_Tx_Underflow:          bool;
+  fault_Scheduling_Error_2:    bool;
+  fault_Tx_Overflow:           bool;
+  -- not supported fault_Application_Watchdog
+  fault_CAN_Bus_Off:           bool;
+  -- not supported fault_Config_Error
+  fault_Watch_Trigger_Reached: bool;
+};
+
+type ntu = int;
+
+const ntu_max: int = 2147483648;
+type ntu_config = subrange [0, ntu_max] of int;
+
+type ref_offset = subrange [-127, 127] of int;
+type master_index = subrange [0, 7] of int;
+
+type cycle_index = subrange [0, 63] of int;
+
+type ref_message = struct {
+  ref_message_sof:     ntu;
+  ref_message_master: master_index;
+  ref_message_cycle_index: cycle_index;
+  -- ref_message_Next_Is_Gap: bool;
+};
+
+const ref_message_init: ref_message = ref_message {
+  ref_message_sof = 0;
+  -- perhaps these should be config_master_index and config_cycle_count_max
+  ref_message_master = 0;
+  ref_message_cycle_index = 63;
+};
+
+type message_status_counter = subrange [0, 7] of int;
+
+const MAX_APP_MESSAGE_ID = 65535;
+const config_app_message_count: subrange [1, MAX_APP_MESSAGE_ID] of int;
+type app_message_id = subrange [0, MAX_APP_MESSAGE_ID] of int;
+function Valid_App_Message_Id(
+  id: app_message_id
+) returns (
+  ok: bool;
+)
+let
+  ok = 0 <= id and id < config_app_message_count;
+tel
+
+-- type app_message_config = struct {
+--   -- app_message_can_id: int;
+--   app_message_tx: bool;
+-- };
+
+type Trigger_Type = enum { Trigger_TX, Trigger_RX };
+-- type trigger = struct {
+--   trigger_type: Trigger_Type;
+--   trigger_message_id: app_message_id;
+-- };
+
+const config_init_watch_trigger_time: ntu_config;
+const config_watch_trigger_time: ntu_config;
+const config_initial_ref_offset: ref_offset;
+
+const config_master_enable: bool;
+const config_master_index:  master_index;
+
+const config_tx_enable_window: subrange [1, 16] of int;
+
+const config_tx_ref_trigger_time: ntu_config;
+const config_cycle_count_max: cycle_index;
+
+const config_expected_tx_triggers: subrange [1, 255] of int;
+
+
+(*^8.3 When a failed time master reconnects to the system with active time-triggered communication, it shall wait until it is synchronised to the network before attempting to become time master again. *)
+(* This requirement is kind of vague and seems to introduce a potential deadlock if all masters had previously failed. I have implemented it by specifying a delay to stop transmissions after a severe failure occurs. *)
+const config_severe_error_ref_cooldown: ntu_config;
+
+function no_error(
+  error: Error_Severity;
+) returns (
+  ok: bool;
+)
+let
+  ok = error <> S2_Error and error <> S3_Severe;
+tel
+
+function Error_Summary(
+  fault_bits: Fault_Bits
+) returns (
+  error: Error_Severity
+)
+let
+  error =
+    if fault_bits.fault_CAN_Bus_Off or fault_bits.fault_Watch_Trigger_Reached
+    then S3_Severe
+    else if fault_bits.fault_Scheduling_Error_2 or fault_bits.fault_Tx_Overflow
+    then S2_Error
+    else if fault_bits.fault_Scheduling_Error_1 or fault_bits.fault_Tx_Underflow
+    then S1_Warning
+    else S0_No_Error;
+tel
+
+node Mode_State(
+  mode_cmd: Mode_Cmd;
+) returns (
+  mode: Mode;
+)
+let
+  mode =
+    if mode_cmd = Mode_Cmd_Configure
+    then Mode_Configure
+    else if mode_cmd = Mode_Cmd_Run
+    then Mode_Running
+    else (Mode_Configure -> pre mode);
+tel
+
+node Cycle_Time(
+  local_time: ntu;
+  reset_ck: bool;
+  cycle_time_capture_ck: bool;
+  cycle_time_capture: ntu; -- when clock_time_capture_ck;
+) returns (
+  cycle_time: ntu;
+)
+var cycle_time_start: ntu;
+let
+  cycle_time_start =
+    if reset_ck
+    then local_time
+    else if cycle_time_capture_ck
+    then cycle_time_capture
+    else (0 -> pre cycle_time_start);
+
+  cycle_time = local_time - cycle_time_start;
+tel
+
+node Sync_State(
+  mode:  Mode;
+  error: Error_Severity;
+
+  ref_mark_ck: bool;
+  ref_mark: ntu; -- when ref_mark_ck;
+
+  local_time: ntu;
+) returns (
+  sync_state: Sync_Mode;
+  cycle_time: ntu;
+)
+var
+  pre_sync: Sync_Mode;
+  count_sync_ref_marks: int;
+let
+  pre_sync = Sync_Off -> pre sync_state;
+
+  cycle_time = Cycle_Time(
+    local_time,
+    -- Reset cycle_time=0 when leaving configure to satisfy Sync_Mode.TS1 below; also reset when in configure time to avoid returning an invalid cycle time
+    mode = Mode_Configure or previously(mode = Mode_Configure),
+    ref_mark_ck, ref_mark);
+  (*^9.4.2 transition Sync_Mode.TS1: Config_Mode is left, Cycle_Time shall be zero *)
+  --%PROPERTY "^9.4.2 Sync_Mode.TS1: Config_Mode is left, Cycle_Time shall be zero" falling_edge(mode = Mode_Configure) => cycle_time = 0;
+  --%PROPERTY "Sync_Mode.Cycle_Time:ref_mark reset" sync_state = In_Schedule and ref_mark_ck => cycle_time = local_time - ref_mark;
+
+  count_sync_ref_marks =
+    (restart count_when every (pre_sync <> Synchronising))(ref_mark_ck);
+  --%PROPERTY "Sync_Mode.COUNT_SYNC_REF_MARKS.1" previously(sync_state <> Synchronising) and not ref_mark_ck => count_sync_ref_marks = 0;
+  --%PROPERTY "Sync_Mode.COUNT_SYNC_REF_MARKS.2" previously(sync_state = Synchronising) and not ref_mark_ck => count_sync_ref_marks = (0 -> pre count_sync_ref_marks);
+  --%PROPERTY "Sync_Mode.COUNT_SYNC_REF_MARKS.3" previously(sync_state = Synchronising) and ref_mark_ck => count_sync_ref_marks = (0 -> pre count_sync_ref_marks) + 1;
+
+  (*^9.4.2 Sync_Mode *)
+  sync_state =
+    (*^9.4.2 transition Sync_Mode.TS0: transition condition always taking prevalance; HW reset or (Mode = Config) or (error state = S3) *)
+    if mode = Mode_Configure or error = S3_Severe
+    then Sync_Off
+    else if pre_sync = Sync_Off
+    (*^9.4.2 State Sync_Off: No synchronisation activity in progress.. *)
+    (*^9.4.2 transition Sync_Mode.TS1: Config_Mode is left, Cycle_Time shall be zero *)
+    then Synchronising
+  (*^9.4.2 State Synchronising: FSE is in process of synchronisation but not yet synchronised. *)
+    else if pre_sync = Synchronising
+    then (
+      (*^9.4.2 transition Sync_Mode.TS3: at least two successive reference messages observed (the last reference message did not contain a set Disc_Bit), last reference message did not contain a Next_Is_Gap bit *)
+      --^8.2 After reset, a FSE shall consider itself synchronised to the network after the occurrence of the second consecutive reference message
+      if count_sync_ref_marks >= 2
+      then In_Schedule
+      (*^9.4.2 NOTIMPLEMENTED Next_Is_Gap: transition Sync_Mode.TS2: at least two successive reference messages observed (the last reference message did not contain a set Disc_Bit), last reference message contained a Next_Is_Gap bit *)
+      else Synchronising)
+    else if pre_sync = In_Schedule
+    (*^9.4.2 State In_Schedule: FSE is synchronised, no gap expected. *)
+    (*^9.4.2 NOTIMPLEMENTED Next_Is_Gap: transition Sync_Mode.TS4: Next_Is_Gap = 1 observed in reference message *)
+    then In_Schedule
+  else Sync_Off -- IMPOSSIBLE
+  ;
+
+  --%PROPERTY mode = Mode_Configure => sync_state = Sync_Off;
+  --%PROPERTY error = S3_Severe => sync_state = Sync_Off;
+tel
+
+node Master_Mode(
+  mode:            Mode;
+  error:           Error_Severity;
+
+  ref_msg_ck:      bool;
+  ref_msg_master:  master_index; -- when ref_msg_ck;
+) returns (
+  master_mode:     Master_Mode;
+)
+var
+  pre_master:      Master_Mode;
+let
+  pre_master = Master_Off -> pre master_mode;
+
+  --%PROPERTY "Master_Mode.Master_Off.enabled-on-message" ref_msg_ck and mode <> Mode_Configure and error <> S2_Error and error <> S3_Severe => master_mode <> Master_Off;
+  --%PROPERTY "Master_Mode.master-not-follower" config_master_enable => master_mode <> Follower;
+  --%PROPERTY "Master_Mode.follower-not-master" not config_master_enable => master_mode = Master_Off or master_mode = Follower;
+  --%PROPERTY "Master_Mode.error-S2" error = S2_Error => master_mode = Master_Off or master_mode = Follower;
+
+  (*^9.4.3 transition Master_Mode.TM0: transition condition always taking prevalence; HW reset or (Mode = Config) or (error state = S3) *)
+  --%PROPERTY "^9.4.3 Master_Mode.TM0.1(reset)" (true -> false) and not ref_msg_ck => master_mode = Master_Off;
+  --%PROPERTY "^9.4.3 Master_Mode.TM0.2" mode = Mode_Configure or error = S3_Severe => master_mode = Master_Off;
+
+  (*^9.4.3 transition Master_Mode.TM1 (from Master_Off): FSE is not potential master and a reference message is observed *)
+  --%PROPERTY "^9.4.3 Master_Mode.TM1" mode <> Mode_Configure and no_error(error) and not config_master_enable and ref_msg_ck => master_mode = Follower;
+
+  (*^9.4.3 transition Master_Mode.TM2 (from Master_Off): FSE is potential master, error state is not S2 or S3, reference message is observed from other master *)
+  (*^9.4.3 transition Master_Mode.TM3 (from Master_Off): FSE is potential master, error state is not S2 or S3, reference message is observed from self *)
+
+  (*^9.4.3 transition Master_Mode.TM4 (from Backup_Master): FSE changes from backup master to current master when it observes a reference message with its own time master priority *)
+  (*^9.4.3 transition Master_Mode.TM6 (from Backup_Master): error state = S2 *)
+
+  (*^9.4.3 transition Master_Mode.TM5 (from Current_Master): FSE changes from current master to backup master when it observes a reference message with a time master priority higher than its own *)
+  (*^9.4.3 transition Master_Mode.TM7 (from Current_Master): error state = S2 *)
+
+  master_mode =
+    (*^9.4.3 transition Master_Mode.TM0: transition condition always taking prevalence; HW reset or (Mode = Config) or (error state = S3) *)
+    if mode = Mode_Configure or error = S3_Severe
+    then Master_Off
+    else if pre_master = Master_Off
+    then (
+      if ref_msg_ck and not config_master_enable
+      then Follower
+      else if ref_msg_ck and config_master_enable and error <> S2_Error
+      then (if ref_msg_master = config_master_index then Current_Master else Backup_Master)
+      else Master_Off
+    )
+    else if pre_master = Backup_Master
+    then (
+      if error = S2_Error
+      then Master_Off
+      else if ref_msg_ck and ref_msg_master = config_master_index
+      then Current_Master
+      else Backup_Master
+    )
+    else if pre_master = Current_Master
+    then (
+      if error = S2_Error
+      then Master_Off
+      else if ref_msg_ck and ref_msg_master < config_master_index
+      then Backup_Master
+      else Current_Master
+    )
+    else if pre_master = Follower
+    then Follower
+    else Master_Off; -- IMPOSSIBLE
+
+tel
+
+node Ref_Trigger_Offset(
+  master_mode: Master_Mode;
+  error: Error_Severity;
+  best_ref_ck: bool;
+  best_ref_master: master_index; -- when best_ref_ck;
+) returns (
+  ref_trigger_offset: ref_offset;
+)
+var
+  pre_ref_trigger_offset: ref_offset;
+let
+  -- Note: Kind2:subrange-constants
+  -- Kind2 bug: constants such as config_initial_ref_offset are not assumed to be in subrange.
+  -- This issue may have been fixed recently: see https://github.com/kind2-mc/kind2/pull/1016
+  -- assert -127 <= config_initial_ref_offset and config_initial_ref_offset <= 127;
+
+  pre_ref_trigger_offset = config_initial_ref_offset -> pre ref_trigger_offset;
+
+  ref_trigger_offset =
+    --^ If [a potential master] becomes current time master (by successfully transmitting a reference message), it shall use Ref_Trigger_Offset = 0.
+    if (master_mode = Current_Master)
+    then 0
+    --^ [At error level S2,] potential masters may still transmit reference messages with the Ref_Trigger_Offset set to the maximum value of 127.
+    else if error = S2_Error
+    then 127
+    -- Downgrading to a backup master
+    else if rising_edge(master_mode = Backup_Master)
+    then config_initial_ref_offset
+    -- If we start a new basic cycle and the current master is higher index (lower priority) than us, we want to try to reduce our ref offset to overtake the current master
+    else if best_ref_ck and best_ref_master > config_master_index
+    then
+      (if pre_ref_trigger_offset > 0
+       then 0
+       -- Decrement every new cycle
+       else clamp(-127, 127, pre_ref_trigger_offset - 1))
+    else pre_ref_trigger_offset;
+
+tel
+
+node Rx_Ref_Filter(
+  rx_ref_ck: bool;
+  rx_ref: ref_message; -- when rx_ref_ck
+
+  pre_tx_ref_ck: bool;
+  pre_tx_ref: ref_message; -- when tx_ref_ck
+
+  pre_tx_status: Tx_Status;
+) returns (
+  last_ref_ck: bool;
+  last_ref: ref_message; -- when any(last_ref_ck)
+)
+var tx_success: bool;
+let
+  tx_success = pre_tx_ref_ck and pre_tx_status = Tx_Ok;
+
+  last_ref_ck = rx_ref_ck or tx_success;
+  last_ref =
+    if rx_ref_ck and tx_success
+    then (if rx_ref.ref_message_sof > pre_tx_ref.ref_message_sof
+          then rx_ref
+          else pre_tx_ref)
+    else if rx_ref_ck
+    then rx_ref
+    else if tx_success
+    then pre_tx_ref
+    else (ref_message_init -> pre last_ref);
+tel
+
+node Tx_Ref_Message(
+  local_time:    ntu;
+  sync_state:    Sync_Mode;
+  error:         Error_Severity;
+  cycle_time:    ntu;
+  cycle_index:   cycle_index;
+  ref_trigger_offset:
+                 ntu;
+) returns (
+  tx_ref_ck:     bool;
+  tx_ref:        ref_message;
+)
+var
+  severe_error_cooldown: ntu;
+let
+  --BUG: see note Kind2:subrange-constants
+  -- assert 0 <= config_master_index and config_master_index <= 7;
+  -- assert 0 <= config_cycle_count_max and config_cycle_count_max <= 63;
+  -- assert 0 <= config_severe_error_ref_cooldown and config_severe_error_ref_cooldown <= ntu_max;
+
+  tx_ref_ck =
+    (sync_state = Synchronising or sync_state = In_Schedule) and
+    cycle_time >= config_tx_ref_trigger_time + ref_trigger_offset and
+    severe_error_cooldown < local_time;
+  tx_ref =
+    ref_message {
+      ref_message_sof         = local_time;
+      ref_message_master      = config_master_index;
+      ref_message_cycle_index =
+        if   cycle_index < config_cycle_count_max
+        then cycle_index + 1
+        else 0;
+    };
+
+  severe_error_cooldown =
+    if error = S3_Severe
+    then local_time + config_severe_error_ref_cooldown
+    else (0 -> pre severe_error_cooldown);
+
+  --%PROPERTY "^9.1:severe-no-transmission" error = S3_Severe => not tx_ref_ck;
+tel
+
+node Ref_Cycle_Mode(
+  local_time:    ntu;
+  mode:          Mode;
+
+  error:         Error_Severity;
+
+  rx_ref_ck:     bool;
+  rx_ref:        ref_message; -- when rx_ref_ck;
+
+  tx_status:     Tx_Status; -- when (pre tx_ref_ck)
+) returns (
+  sync_state:    Sync_Mode;
+  master_state:  Master_Mode;
+  cycle_time:    ntu;
+  cycle_index:   cycle_index;
+
+  tx_ref_ck:     bool;
+  tx_ref:        ref_message; -- when tx_ref_ck
+
+  -- most-recently observed reference message, including those we successfully sent
+  last_ref_ck:   bool;
+  last_ref:      ref_message; -- when any(last_ref_ck)
+)
+var
+  ref_trigger_offset: ref_offset;
+let
+  (last_ref_ck, last_ref) = Rx_Ref_Filter(rx_ref_ck, rx_ref, false -> pre tx_ref_ck, ref_message_init -> pre tx_ref, tx_status);
+  cycle_index = last_ref.ref_message_cycle_index;
+
+  (sync_state, cycle_time) = Sync_State(mode, error, last_ref_ck, last_ref.ref_message_sof, local_time);
+
+  master_state = Master_Mode(mode, error, last_ref_ck, last_ref.ref_message_master);
+
+  ref_trigger_offset = Ref_Trigger_Offset(master_state, error, last_ref_ck, last_ref.ref_message_master);
+
+  (tx_ref_ck, tx_ref) = Tx_Ref_Message(local_time, sync_state, error, cycle_time, cycle_index, ref_trigger_offset);
+tel
+
+node Controller(
+  local_time:    ntu;
+  mode_cmd:      Mode_Cmd;
+
+  rx_ref_ck:     bool;
+  rx_ref:        ref_message; -- when rx_ref_ck;
+
+  rx_app_ck:     bool;
+  rx_app_id:     app_message_id; -- when rx_app_ck
+
+  tx_status:     Tx_Status; -- when (pre tx_ref_ck)
+  bus_status:    Bus_Status;
+) returns (
+  mode:          Mode;
+  sync_state:    Sync_Mode;
+  master_state:  Master_Mode;
+
+  fault_bits:    Fault_Bits;
+  error:         Error_Severity;
+
+  cycle_time:    ntu;
+  cycle_index:   cycle_index;
+
+  driver_enable_acks: bool;
+
+  tx_ref_ck: bool;
+  tx_ref: ref_message;
+
+  tx_app_ck: bool;
+  tx_app_id: app_message_id;
+
+  -- most-recently observed reference message, including those we successfully sent
+  ref_ck:   bool;
+  last_ref: ref_message; -- when any(ref_ck)
+
+  -- Return ref_trigger_offset?
+  -- ref_trigger_offset: subrange [-127, 127] of int;
+)
+(*@contract
+  assume Valid_App_Message_Id(rx_app_id);
+*)
+var
+  error_Scheduling_Error_1: bool;
+  error_Tx_Underflow: bool;
+  error_Scheduling_Error_2: bool;
+  error_Tx_Overflow: bool;
+  error_CAN_Bus_Off: bool;
+  error_Watch_Trigger_Reached: bool;
+  watch_trigger:               bool;
+  init_error:                   Error_Severity;
+let
+  mode = Mode_State(mode_cmd);
+
+  fault_bits = Fault_Bits {
+    fault_Scheduling_Error_1    = error_Scheduling_Error_1;
+    fault_Tx_Underflow          = error_Tx_Underflow;
+    fault_Scheduling_Error_2    = error_Scheduling_Error_2;
+    fault_Tx_Overflow           = error_Tx_Overflow;
+    fault_CAN_Bus_Off           = error_CAN_Bus_Off;
+    fault_Watch_Trigger_Reached = error_Watch_Trigger_Reached;
+  };
+
+  error = Error_Summary(fault_bits);
+  init_error =
+    if error_CAN_Bus_Off then S3_Severe
+    else (S0_No_Error -> pre error);
+
+-- (*ERRORS:*)
+--   (*^9.3.2 Scheduling_Error_1 (S1) is set if within one matrix cycle the difference between the highest MSC and the lowest MSC of all messages of exclusive time windows of a FSE is larger than 2, or if one of the MSCs of an exclusive receive message object has reached 7.
+--     If within one matrix cycle none of these conditions is valid, the bit is reset.
+--   *)
+--   faultbits_scheduling_error_1_set = latch(trigger = ..., reset = new_basic_cycle)
+--   faultbits_scheduling_error_1 = latch(trigger = faultbits_scheduling_error_1_set, reset = new_basic_cycle and not faultbits_scheduling_error_1_set);
+
+
+--   (*^9.3.4 Scheduling_Error_2 (S2) is set if for one transmit message object the MSC has reached 7. It is reset when no transmit object has an MSC of seven. *)
+--   faultbits_scheduling_error_2 = ...;
+
+--   (*^9.3.7 CAN_Bus_Off (S3): the controller went bus-off due to CAN-specific errors *)
+  error_CAN_Bus_Off = latch_reset(bus_status = Bus_Off, mode = Mode_Configure);
+
+--   (*^9.3.9 Watch_Trigger_Reached (S3): *)
+--   (*^ The S3 error conditions shall remain active until the application updates the configuration. *)
+  error_Watch_Trigger_Reached = latch_reset(watch_trigger, mode = Mode_Configure);
+
+  watch_trigger =
+    (sync_state = In_Schedule and cycle_time > config_watch_trigger_time) or
+    (sync_state = Synchronising and cycle_time > config_init_watch_trigger_time);
+
+--   (* Errors not treated: Config_Error (^9.3.8) is statically checked; Application_Watchdog (^9.3.6) is not supported *)
+
+  (sync_state, master_state, cycle_time, cycle_index, tx_ref_ck, tx_ref, ref_ck, last_ref) = Ref_Cycle_Mode(local_time, mode, init_error, rx_ref_ck, rx_ref, tx_status);
+
+  (tx_app_ck, tx_app_id, error_Scheduling_Error_1, error_Tx_Underflow, error_Scheduling_Error_2, error_Tx_Overflow) = Trigger_Controller(local_time, cycle_time, cycle_index, sync_state, init_error, ref_ck, rx_app_ck, rx_app_id, tx_status, bus_status);
+
+  driver_enable_acks = (sync_state <> Sync_Off) and (error <> S3_Severe);
+tel
+
+node Trigger_Controller(
+  local_time:    ntu;
+  cycle_time:    ntu;
+  cycle_index:   cycle_index;
+
+  sync_state:    Sync_Mode;
+  error:         Error_Severity;
+  ref_ck:        bool;
+
+  rx_app_ck:     bool;
+  rx_app_id:     app_message_id; -- when rx_app_ck
+
+  tx_status:     Tx_Status;
+  bus_status:    Bus_Status;
+) returns (
+  tx_app_ck:     bool;
+  tx_app_id:     app_message_id;
+  error_Scheduling_Error_1: bool;
+  error_Tx_Underflow:       bool;
+  error_Scheduling_Error_2: bool;
+  error_Tx_Overflow:        bool;
+)
+(*@contract
+  assume Valid_App_Message_Id(rx_app_id);
+*)
+var
+  trigger_new:              bool;
+  trigger_enabled:          bool;
+  trigger_type:             Trigger_Type; -- when trigger_enabled
+  trigger_message_id:       app_message_id; -- when trigger_enabled
+
+  rx_check_ck:              bool;
+  rx_check_ok:              bool;
+
+  tx_enabled:               bool;
+  tx_pending:               bool;
+  tx_success:               bool;
+
+  msc_ck:                   bool;
+  msc_ok:                   bool;
+  msc:                      message_status_counter;
+
+  tx_count:                 int;
+let
+  (trigger_new, trigger_enabled, trigger_type, trigger_message_id) = Trigger_Lookup(ref_ck, cycle_time, cycle_index);
+
+  rx_check_ck = trigger_new and trigger_enabled and trigger_type = Trigger_RX;
+  rx_check_ok = Trigger_Rx_Pending(rx_check_ck, trigger_message_id, rx_app_ck, rx_app_id);
+
+  tx_enabled  = sync_state = In_Schedule and cycle_time < config_tx_ref_trigger_time;
+
+  tx_pending =
+    if trigger_new and tx_enabled
+    then true
+    -- else if tx_success
+    -- then false
+    -- TODO: TX expiry
+    -- else if cycle_time > trigger_time + config_tx_enable_window
+    -- then false
+    -- TODO: TX retries
+    -- else (false -> pre tx_pending);
+    else false;
+
+  --^9.2 For messages to be transmitted, the MSC shall be incremented (by one) if the transmission attempt is not successful. The MSC decrement condition shall be different for the error states S0 and S1 and S2.
+  tx_success =
+    --^9.2 In S0 and S1, the MSC shall be decremented (by one) when the message has been transmitted successfully.
+    if previously(no_error(error)) and tx_status = Tx_Ok and previously(tx_app_ck)
+    then true
+    --^9.2 In S2 (all transmissions are disabled) the MSC shall be decremented by one when the FSE detects bus idle during the Tx_Enable window of the time window for this message.
+    else if previously(error = S2_Error) and bus_status = Bus_Idle and previously(tx_app_ck)
+    then true
+    else false;
+
+  tx_app_ck = tx_pending and no_error(error);
+  tx_app_id = trigger_message_id;
+
+  msc_ck  = rx_check_ck or previously(tx_pending);
+  msc_ok  =
+    if trigger_type = Trigger_RX and rx_check_ck
+    then rx_check_ok and bus_status <> Bus_Bad
+    else if trigger_type = Trigger_TX and previously(tx_pending)
+    then tx_success
+    else false;
+
+  msc     = Trigger_MSC(trigger_message_id, msc_ck, msc_ok);
+
+  (*^5.1 Tx_Count: each time a Tx_Trigger becomes active, Tx_Count is incremented. Tx_Count is not incremented beyond Expected_Tx_Trigger. *)
+  (* CLARIFICATION: the definition of "active" is not entirely clear to me.
+    Is it whenever a Tx_Trigger trigger array entry is encountered by the trigger loop, or is it only when the trigger is enabled for the current cycle index?
+    I think it must be every time it's encountered by the loop, because otherwise we would underflow for a periodic trigger that doesn't transmit every cycle.
+    *)
+  tx_count =
+    (if ref_ck then 0 else (0 -> pre tx_count)) +
+    (if trigger_new and trigger_type = Trigger_TX then 1 else 0);
+
+  error_Tx_Underflow =
+    -- Check for underflow just before starting new cycle, reset if no underflow upon reaching next cycle
+    Error_Cycle_End_Check(
+      ref_ck,
+      sync_state = In_Schedule and tx_count < config_expected_tx_triggers
+    );
+
+  error_Tx_Overflow =
+    -- Check for overflow any time, but only reset at new cycle if no overflows
+    Error_Transient(
+      ref_ck,
+      sync_state = In_Schedule and tx_count > config_expected_tx_triggers
+    );
+
+  -- Update MSC min/max-per-cycle whenever we update MSC, as well as whenever we see a new trigger that we aren't going to update the MSC for.
+  error_Scheduling_Error_1 = Error_Scheduling_Error_1(ref_ck, msc_ck or (trigger_new and not trigger_enabled), msc);
+-- (*^9.3.4 Scheduling_Error_2 (S2) is set if for one transmit message object the MSC has reached 7. It is reset when no transmit object has an MSC of seven. *)
+  error_Scheduling_Error_2 = Error_Transient(ref_ck, msc_ck and msc = 7 and trigger_type = Trigger_TX);
+tel
+
+
+(*^ 9.1 Scheduling_Error_1:
+  > Scheduling_Error_1 (S1) is set if within one matrix cycle the difference between the highest message status count (MSC) and the lowest MSC of all messages (of exclusive time windows) of a FSE is larger than two, or if one of the MSCs of an exclusive receive message object has reached seven.
+  If within one matrix cycle none of these conditions is valid, the bit is reset.
+
+  MTTCAN user's manual S4.6:
+  > Scheduling_Error_1 (S1)
+  >  Sets Error Level TTOST.EL to “01” if within one matrix cycle the difference between the maximum
+  >  MSC and the minimum MSC for all trigger memory elements (of exclusive time windows) is larger
+  >  than 2, or if one of the MSCs of an exclusive Rx_Trigger has reached 7.
+*)
+(* CLARIFICATION:
+  Here, we incrementally compute the minimum and maximum of each trigger object that we see in
+  a cycle as we go, rather than waiting to the end to summarise all of the time-triggered messages. This is subtly different, as we could have multiple transmissions
+  for the same message id, but the two transmissions can have different MSC values.
+  I believe this online accumulation is the intended behaviour, however, as the above quote from the MTTCAN user's manual refers to "trigger memory elements" rather than "message objects".
+  The alternative of checking the MSC array at the beginning of each basic cycle would be more difficult to implement without significantly increasing the worst-case-execution-time.
+*)
+node Error_Scheduling_Error_1(
+  ref_ck:      bool;
+  msc_ck:      bool;
+  msc:         message_status_counter;
+) returns (
+  error:       bool;
+)
+var
+  minimum:     message_status_counter;
+  maximum:     message_status_counter;
+let
+  minimum =
+    if ref_ck and msc_ck
+    then msc
+    else if ref_ck
+    then 7
+    else if msc_ck and msc < (7 -> pre minimum)
+    then msc
+    else (7 -> pre minimum);
+
+  maximum =
+    if ref_ck and msc_ck
+    then msc
+    else if ref_ck
+    then 0
+    else if msc_ck and msc > (0 -> pre maximum)
+    then msc
+    else (0 -> pre maximum);
+
+  error =
+    Error_Cycle_End_Check(
+      ref_ck,
+      -- DISCREPANCY: according to the spec, the `maximum=7` check should only apply to read triggers, as `Scheduling_Error_2` triggers when any write triggers have `msc=7`.
+      -- In this implementation, msc=7 will trigger both errors, but Scheduling_Error_2 (S2) will have precedence.
+      minimum < maximum - 1 or maximum = 7
+    );
+tel
+
+node Trigger_MSC(
+  message_id: app_message_id;
+  update_ck:  bool;
+  good:       bool; -- when update_ck
+) returns (
+  msc: message_status_counter;
+)
+(*@contract
+  assume Valid_App_Message_Id(message_id);
+  -- Abstract contract required to hide array from caller Trigger_Controller - otherwise Trigger_Controller cannot prove that msc is <= 7.
+  guarantee 0 <= msc and msc <= 7;
+*)
+var
+  arr: message_status_counter ^ config_app_message_count;
+let
+  msc =
+    if update_ck
+    then clamp(0, 7, (0 -> pre arr[message_id]) - (if good then 1 else -1))
+    else (0 -> pre arr[message_id]);
+
+  -- MAYBE-TODO: reset to zero when entering config mode? clarify with spec
+  arr[i] =
+    if i = message_id
+    then msc
+    else (0 -> pre arr[i]);
+tel
+
+node Trigger_Rx_Pending(
+  check_ck: bool;
+  check_id: app_message_id;
+  rx_ck:    bool;
+  rx_id:    app_message_id;
+) returns (
+  check_ok: bool;
+)
+(*@contract
+  assume Valid_App_Message_Id(check_id);
+  assume Valid_App_Message_Id(rx_id);
+*)
+var
+  arr: bool ^ config_app_message_count;
+let
+  check_ok = false -> pre arr[check_id];
+
+  arr[i] =
+    if rx_ck and i = rx_id
+    then true
+    else if check_ck and i = check_id
+    then false
+    else (false -> pre arr[i]);
+tel
+
+
+node imported Trigger_Lookup(
+  ref_ck:  bool;
+  cycle_time:  ntu;
+  cycle_index: cycle_index;
+) returns (
+  trigger_new: bool;
+  trigger_enabled: bool;
+  trigger_type: Trigger_Type; -- when trigger_enabled
+  trigger_message_id: app_message_id; -- when trigger_enabled
+  -- TODO: should return trigger time
+)
+(*@contract
+  -- The values trigger_enabled, trigger_type and trigger_message_id are only updated when there is a new trigger. Otherwise, they stay the same as their previous value.
+  guarantee not trigger_new => (true -> trigger_enabled = pre trigger_enabled);
+  guarantee not trigger_new => (true -> (trigger_type = pre trigger_type));
+  guarantee not trigger_new => (true -> trigger_message_id = pre trigger_message_id);
+  guarantee Valid_App_Message_Id(trigger_message_id);
+*)
+
+(* Latch for self-correcting errors *)
+node Error_Transient(
+  ref_ck:      bool;
+  error_cond:  bool;
+) returns (
+  error_held:  bool;
+)
+var
+  any_error_this_cycle: bool;
+let
+  (* reset at every new cycle (ref_ck) *)
+  any_error_this_cycle =
+    latch_reset(
+      error_cond,
+      ref_ck
+    );
+
+  (* becomes true whenever we see an error; resets when we start a new cycle, and the previous cycle did not have any errors *)
+  error_held =
+    latch_reset(
+      error_cond,
+      ref_ck and not previously(any_error_this_cycle)
+    );
+tel
+
+(* Error flag to check just before starting a new cycle. *)
+node Error_Cycle_End_Check(
+  ref_ck:      bool;
+  error_cond:  bool;
+) returns (
+  error:       bool;
+)
+let
+  error =
+    latch_reset(
+      ref_ck and previously(error_cond),
+      ref_ck
+    );
+tel

@@ -157,6 +157,10 @@ type tt_network = {
   // basic_cycle_duration: nat;
   cycle_count_max: subrange 0 tt_cycle_count_max;
 
+  (*^ too long in Synchronising *)
+  init_watch_trigger_time: nat;
+  active_bus_timeout: nat;
+
   (* error if we go this long without receiving a reference message *)
 }
 
@@ -169,11 +173,11 @@ let severity_severe:   tt_error_severity = 3uy
 
 type tt_master_mode = | MasterOff | Follower | BackupMaster | CurrentMaster
 
-type tt_sync_state = | Configuration | SyncOff | Synchronising | InSchedule // | InGap -- gaps not supported yet
+type tt_sync_state = | SyncOff | Synchronising | InSchedule // | InGap -- gaps not supported yet
 
 type tt_faultbits = {
   tt_scheduling_error1: bool; // S1
-  // tt_tx_underflow:      bool;
+  tt_tx_underflow:      bool; // S1
   tt_scheduling_error2: bool; // S2
   // tt_tx_overflow:       bool;
   tt_can_bus_off:       bool; // S3
@@ -182,6 +186,8 @@ type tt_faultbits = {
 }
 
 type tt_send_status = | SendOk | SendAborted | SendLostArbitration | SendError | SendPending
+
+type tt_bus_status = | BusFree | BusBusy | BusOff | BusBad
 
 (*****SPEC***)
 
@@ -211,12 +217,23 @@ type ttcan_state (net: tt_network) = {
   // TUR_Actual: Q -- required for level 2
 }
 
+(*^10.2.2 Interrupt_Status_Vector *)
+type ttcan_interrupts = {
+  (*^10.2.2.2 Operational interrupt sources *)
+  start_of_basic_cycle: bool;
+  start_of_system_matrix: bool;
+  change_of_masterstate: bool;
+  init_watch_trigger: bool;
+  (*^10.2.2.3 Error detection interrupt sources *)
+  faultbits: tt_faultbits;
+}
 
 noeq
 type ttcan_result (net: tt_network) = {
   ttcan_state: ttcan_state net;
   ttcan_tx_enabled: bool;
   ttcan_tx: option can_message_bytes';
+  // ttcan_interrupts: ttcan_interrupts;
 }
 
 // let ttcan_init = { tt_error_severity = severity_no_error; tt_master_mode = MasterOff; tt_sync_state = SyncOff; }
@@ -235,12 +252,17 @@ let ttcan_step (#net: tt_network)
 
  admit ()
 
+type can_drv_input = {
+  can_rx:          option can_message_bytes';
+  can_bus_status:  tt_bus_status;
+  can_send_status: tt_send_status;
+}
+
 (* Pipit:
 
 let%node ttcan_node (#net: static tt_network) (node: static net.node)
   (set_config_mode: option bool)
-  (rx: option can_message_bytes')
-  (send_status: send_status)
+  (can_drv: can_drv_input)
   returns
   (
     can_enable_acks: bool;
@@ -262,10 +284,16 @@ let%node ttcan_node (#net: static tt_network) (node: static net.node)
     msc_per_message: net.message -> tt_msc;
   ) =
 let
-  pre_error_severity = tt_error_severity_no_error `fby` error_severity;
+
+  rx = can_drv.can_rx;
+  send_status = can_drv.can_send_status;
+  bus_status = can_drv.can_bus_status;
+
+
   pre_master_mode = MasterOff `fby` master_mode;
-  pre_sync_state = Configuration `fby` sync_state;
-  pre_faultbits = _ `fby` faultbits;
+
+  (*^9.4.2 transition Sync_Mode.TS0: initial state Sync_Off *)
+  pre_sync_state = SyncOff `fby` sync_state;
 
   local_time = 0 `fby` (local_time + 1);
   cycle_time = local_time - cycle_time_start;
@@ -278,32 +306,46 @@ let
     else pre cycle_time_start
 
   //^ S3- severe error: all CAN bus operations are stopped
-  can_enable_acks = sync_state <> Configuration /\ error_severity <> error_severity_severe;
+  // XXX: disabled ACKs in Sync_Off / Configuration state
+  can_enable_acks = not config_mode /\ error_severity <> error_severity_severe;
+  config_mode = (sync_state = Sync_Off);
 
-  match pre_sync_state with
-  | Configuration ->
-    let
-      can_enable_acks = false;
+  (*^9.4.2 Sync_Mode *)
+  sync_state =
+    (*^9.4.2 TS0: transition condition always taking prevalance; HW reset or (Mode = Config) or (error state = S3) *)
+    if init or set_config_mode = Some True or error_severity = severity_severe
+    then Sync_Off
+    else (match pre_sync_state with
+      (*^9.4.2 State Sync_Off: No synchronisation activity in progress.. *)
+      | SyncOff ->
+        (*^9.4.2 transition Sync_Mode.TS1: Config_Mode is left, Cycle_Time shall be zero *)
+        if set_config_mode = Some False
+        then Synchronising
+        else SyncOff
+  (*^9.4.2 State Synchronising: FSE is in process of synchronisation but not yet synchronised. *)
   | Synchronising ->
-    if cycle_time > init_watch_trigger_time
-    then sync_state = SyncOff
+    //NOTE: this transition is not mentioned in state machine 9.4.2 (Figure 8) but is mentioned ...
+    if pre cycle_time > net.init_watch_trigger_time
+    then SyncOff
 
-    //^ After reset, a FSE shall consider itself synchronised to the network after the occurrence of the second consecutive reference message
-    if new_ref_mark and ref_mark_valid and (false `fby` pre ref_mark_valid)
-    then sync_state = InSchedule
+    (*^9.4.2 transition Sync_Mode.TS3: at least two successive reference messages observed (the last reference message did not contain a set Disc_Bit), last reference message did not contain a Next_Is_Gap bit *)
+    //^8.2 After reset, a FSE shall consider itself synchronised to the network after the occurrence of the second consecutive reference message
+    else if new_ref_mark and ref_mark_valid and (false `fby` pre ref_mark_valid)
+    then InSchedule
 
-    //^ When a failed time master reconnects to the system with active tie-triggered communication, it shall wait until it is synchronised to the network before attempting to become time master again.
-    if previously(error) and (cycle_time - ref_mark) < active_bus_timeout
-    then tx_ref_request = false;
-
-    can_enable_acks = true;
+    (*^9.4.2 NOTIMPLEMENTED Next_Is_Gap: transition Sync_Mode.TS2: at least two successive reference messages observed (the last reference message did not contain a set Disc_Bit), last reference message contained a Next_Is_Gap bit *)
+  (*^9.4.2 State In_Schedule: FSE is synchronised, no gap expected. *)
   | InSchedule ->
-    if cycle_time > net.watch_trigger_time
-    then sync_state = SyncOff;
+    if pre cycle_time > net.watch_trigger_time
+    then SyncOff
+    else InSchedule
+    (*^9.4.2 NOTIMPLEMENTED Next_Is_Gap: transition Sync_Mode.TS4: Next_Is_Gap = 1 observed in reference message *)
+  );
 
-    can_enable_acks = true;
-  | SyncOff ->
-    can_enable_acks = true;
+  //^8.3 When a failed time master reconnects to the system with active time-triggered communication, it shall wait until it is synchronised to the network before attempting to become time master again.
+  if sync_state = Synchronising and previously(error) and (cycle_time - ref_mark) < active_bus_timeout
+  then tx_ref_request = false;
+
 
 
   ref_mark =
@@ -357,16 +399,50 @@ let
   //^ Each FSE shall provide a Watch_Trigger that becomes active when an expected reference message is missing for too long.
 
 
-  faultbits = ...;
 
 
   error_severity = error_summary faultbits;
-  master_mode = ...;
-  sync_state = ...;
+
+  (*^9.4.3 Master-follower mode state machine
+  *)
+  master_mode =
+    (*^9.4.3 transition Master_Mode.TM0 from state 1 *)
+    if set_config_mode = Some True or error_severity = severity_severe
+    then MasterOff
+    else (match pre_master_mode with
+     | MasterOff ->
+      (*^9.4.3 transition Master_Mode.TM1 FSE is not potential master and a reference message is observed *)
+      if not am_potential_master
+      then Follower
+      (*^9.4.3 transition Master_Mode.TM2 FSE is potential master, error state is not S2 or S3, reference message is observed from other master *)
+      else if am_potential_master and error_severity < severity_error and recv_ref and recv_ref_master <> my_master_index
+      then BackupMaster
+      (*^9.4.3 transition Master_Mode.TM3 FSE is potential master, error state is not S2 or S3, reference message is observed from self *)
+      else if am_potential_master and error_severity < severity_error and recv_ref and recv_ref_master = my_master_index
+      then CurrentMaster
+      else MasterOff
+
+     | BackupMaster ->
+      (*^9.4.3 transition Master_Mode.TM6 error state = S2 *)
+      if error_severity = severity_error
+      then MasterOff
+      (*^9.4.3 transition Master_Mode.TM4 FSE changes from backup master to current master when it observes a reference message with its own time master priority *)
+      else if recv_ref and recv_ref_master = my_master_index
+      then CurrentMaster
+      else BackupMaster
+     | CurrentMaster ->
+      (*^9.4.3 transition Master_Mode.TM7 error state = S2 *)
+      if error_severity = severity_error
+      then MasterOff
+      (*^9.4.3 transition Master_Mode.TM5 FSE changes from current master to backup master when it observes a reference message with a time master priority higher than its own *)
+      else if recv_ref and recv_ref_master < my_master_index
+      then BackupMaster
+      else CurrentMaster
+     | Follower -> Follower
+     );
 
   tx =
     match sync_state with
-    | Configure -> None
     | SyncOff -> None
     //^ Until a FSE is synchronised to the network, it shall not transmit a message (except potential time masters may submit reference messages)
     | Synchronising -> master refs only
@@ -377,45 +453,60 @@ let
   ;
 
   msc_per_message =
-    match sync with
+    match sync_state with
     //^ Until a FSE is synchronised to the network, it shall not update the MSCs of the message objects
-    | Configure | SyncOff | Synchronising -> pre msc_per_message
+    | SyncOff | Synchronising -> pre msc_per_message
     | InSchedule -> ...
+  (*^9.2 For messages to be received, the MSC shall be updated at the event of Rx_Trigger of the message. At the Rx_Trigger, it shall be checked whether the message has been received since the beginning of the current basic cycle or since the last Rx_Trigger for this message. MSC shall be incremented (by one) if the check is not successful, or else decremented (by one). *)
+
+  (*^9.2 For messages to be transmitted, the MSC shall be incremented (by one) if the transmission attempt is not successful. The MSC decrement condition shall be different for the error states S0 and S1 or S2. In S0 and S1, the MSC shall be decremented (by one) when the message has been transmitted successfully. In S2 (all transmissions are disabled) the MSC shall be decremented by one when the FSE detects bus idle during the Tx_Enable window of the time window for this message. *)
+
+  (*^9.2 If the bus is disturbed, the MSC of all messages that are to be sent or received during the disturbance shall be incremented. *)
 
 
 (*ERRORS:*)
-  (*^ Scheduling_Error_1 (S1) is set if within one matrix cycle the difference between the highest MSC and the lowest MSC of all messages of exclusive time windows of a FSE is larger than 2, or if one of the MSCs of an exclusive receive message object has reached 7.
+  (*^9.3.2 Scheduling_Error_1 (S1) is set if within one matrix cycle the difference between the highest MSC and the lowest MSC of all messages of exclusive time windows of a FSE is larger than 2, or if one of the MSCs of an exclusive receive message object has reached 7.
     If within one matrix cycle none of these conditions is valid, the bit is reset.
   *)
   faultbits_scheduling_error_1_set = latch(trigger = ..., reset = new_basic_cycle)
   faultbits_scheduling_error_1 = latch(trigger = faultbits_scheduling_error_1_set, reset = new_basic_cycle and not faultbits_scheduling_error_1_set);
 
 
-  (*^ Scheduling_Error_2 (S2) is set if for one transmit message object the MSC has reached 7. It is reset when no transmit object has an MSC of seven. *)
+  (*^9.3.4 Tx_Underflow (S1) is set if Tx_Count is less than Expected_Tx_Triggers at the start of a new matrix cycle. *)
   faultbits_scheduling_error_2 = ...;
 
-  (*^ CAN_Bus_Off (S3): the controller went bus-off due to CAN-specific errors *)
+
+  (*^9.3.4 Scheduling_Error_2 (S2) is set if for one transmit message object the MSC has reached 7. It is reset when no transmit object has an MSC of seven. *)
+  faultbits_scheduling_error_2 = ...;
+
+  (*^9.3.7 CAN_Bus_Off (S3): the controller went bus-off due to CAN-specific errors *)
   faultbits_can_bus_off = latch(trigger = can_bus_off; reset = reset_s3_error);
 
-  (*^ Watch_Trigger_Reached (S3): *)
+  (*^9.3.9 Watch_Trigger_Reached (S3): *)
   (*^ The S3 error conditions shall remain active until the application updates the configuration. *)
   faultbits_watch_trigger_reached = latch(trigger = watch_trigger, reset = reset_s3_error);
 
   reset_s3_error = (Some? set_config_mode);
 
-  (* Errors not treated: Tx_Underflow, Tx_Overflow, Config_Error statically excluded; Application_Watchdog not supported *)
+  (* Errors not treated: Tx_Overflow (^9.3.5), and Config_Error (^9.3.8) are statically excluded; Application_Watchdog (^9.3.6) is not supported *)
 
+  faultbits = ...;
 
 
 tel
 *)
 
- let error_summary (faults: tt_faultbits): tt_error_severity =
-   if faults.tt_can_bus_off || faults.tt_watch_trigger_reached
-   then severity_severe
-   else if faults.tt_scheduling_error2
-   then severity_error
-   else if faults.tt_scheduling_error1
-   then severity_warning
-   else severity_no_error
+(*^9.1 The error level state machine shall be: *)
+let error_summary (faults: tt_faultbits): tt_error_severity =
+  (*^9.1 in state S3 while at least one S3 error detection mechanism is active, or else *)
+  if faults.tt_can_bus_off || faults.tt_watch_trigger_reached
+  then severity_severe
+  (*^9.1 in state S2 while at least one S2 error detection mechanism is active, or else *)
+  else if faults.tt_scheduling_error2
+  then severity_error
+  (*^9.1 in state S1 while at least one S1 error detection mechanism is active, or else *)
+  else if faults.tt_scheduling_error1 || faults.tt_tx_underflow
+  then severity_warning
+  (*^9.1 it shall be in state S0. *)
+  else severity_no_error
 
