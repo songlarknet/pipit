@@ -135,17 +135,3 @@ let
       else if value > max then max
       else value;
 tel
-
-node latch_reset(
-  set:   bool;
-  reset: bool;
-) returns (
-  latch: bool;
-)
-let
-  latch =
-    if set
-    then true
-    else if reset then false
-    else (false -> pre latch);
-tel

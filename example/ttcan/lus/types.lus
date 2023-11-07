@@ -1,0 +1,85 @@
+type Mode            = enum { Mode_Configure, Mode_Running };
+type Mode_Cmd        = enum { Mode_Cmd_Configure, Mode_Cmd_Run, Mode_Cmd_None };
+
+type Sync_Mode       = enum { Sync_Off, Synchronising, In_Schedule }; -- not supported: In_Gap
+type Master_Mode     = enum { Master_Off, Follower, Current_Master, Backup_Master };
+type Error_Severity  = enum { S0_No_Error, S1_Warning, S2_Error, S3_Severe };
+
+type Tx_Status       = enum { Tx_None, Tx_Ok, Tx_Lost_Arbitration, Tx_Error };
+type Bus_Status      = enum { Bus_Idle, Bus_Busy, Bus_Bad, Bus_Off };
+
+type Fault_Bits      = struct {
+  fault_Scheduling_Error_1:    bool;
+  fault_Tx_Underflow:          bool;
+  fault_Scheduling_Error_2:    bool;
+  fault_Tx_Overflow:           bool;
+  -- not supported: fault_Application_Watchdog
+  fault_CAN_Bus_Off:           bool;
+  -- not supported: fault_Config_Error
+  fault_Watch_Trigger_Reached: bool;
+};
+
+(* Network time unit: time in bits. We don't worry about overflow here *)
+type Ntu          = int;
+(* Configuration values are limited to 16-bits *)
+type Ntu_Config   = subrange [0, 65535] of int;
+(* Ref_Trigger_Offset: small offset that modifies when to send reference message *)
+type Ref_Offset   = subrange [-127, 127] of int;
+(* Which master sent a reference message: lower index is higher priority *)
+type Master_Index = subrange [0, 7] of int;
+(* The cycle index identifies a row of the matrix schedule *)
+type Cycle_Index = subrange [0, 63] of int;
+
+(* Reference messages *)
+type Ref_Message = struct {
+  ref_message_sof:         Ntu;
+  ref_message_master:      Master_Index;
+  ref_message_cycle_index: Cycle_Index;
+  -- ref_message_Next_Is_Gap: bool;
+};
+
+const ref_message_init: Ref_Message = Ref_Message {
+  ref_message_sof         = 0;
+  ref_message_master      = config_master_index;
+  ref_message_cycle_index = config_cycle_count_max;
+};
+
+type Message_Status_Counter = subrange [0, 7] of int;
+
+const APP_MESSAGE_INDEX_COUNT = 32;
+type App_Message_Index = subrange [0, APP_MESSAGE_INDEX_COUNT-1] of int;
+
+-- type app_message_config = struct {
+--   -- app_message_can_id: int;
+--   app_message_tx: bool;
+-- };
+
+type Trigger_Type = enum { Trigger_TX, Trigger_RX };
+-- type trigger = struct {
+--   trigger_type: Trigger_Type;
+--   trigger_message_id: app_message_id;
+-- };
+
+const config_init_watch_trigger_time: Ntu_Config;
+const config_watch_trigger_time: Ntu_Config;
+const config_initial_ref_offset: Ref_Offset;
+
+const config_master_enable: bool;
+const config_master_index:  Master_Index;
+
+const config_tx_enable_window: subrange [1, 16] of int;
+
+const config_tx_ref_trigger_time: Ntu_Config;
+const config_cycle_count_max: Cycle_Index;
+
+const config_expected_tx_triggers: subrange [1, 255] of int;
+
+const TRIGGERS_COUNT = 256;
+
+-- BUG: Kind2 doesn't like top-level arrays. Adding a const array stops a lot of the properties from verifying, even though it's not mentioned.
+-- const config_triggers: Trigger_Type ^ TRIGGERS_COUNT;
+-- const const_array: int ^ 2;
+
+(*^8.3 When a failed time master reconnects to the system with active time-triggered communication, it shall wait until it is synchronised to the network before attempting to become time master again. *)
+(* This requirement is somewhat vague and seems to introduce a potential deadlock if all masters had previously failed. I have implemented it by specifying a delay to stop transmissions after a severe failure occurs. *)
+const config_severe_error_ref_cooldown: Ntu_Config;

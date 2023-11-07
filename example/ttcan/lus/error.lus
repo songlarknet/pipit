@@ -1,0 +1,136 @@
+
+function No_Error(
+  error: Error_Severity;
+) returns (
+  ok:    bool;
+)
+let
+  ok = error <> S2_Error and error <> S3_Severe;
+tel
+
+function Error_Summary(
+  fault_bits: Fault_Bits
+) returns (
+  error:      Error_Severity
+)
+let
+  error =
+    if fault_bits.fault_CAN_Bus_Off or fault_bits.fault_Watch_Trigger_Reached
+    then S3_Severe
+    else if fault_bits.fault_Scheduling_Error_2 or fault_bits.fault_Tx_Overflow
+    then S2_Error
+    else if fault_bits.fault_Scheduling_Error_1 or fault_bits.fault_Tx_Underflow
+    then S1_Warning
+    else S0_No_Error;
+tel
+
+
+node Error_Latch(
+  set:   bool;
+  reset: bool;
+) returns (
+  latch: bool;
+)
+let
+  latch =
+    if set
+    then true
+    else if reset then false
+    else (false -> pre latch);
+tel
+
+(* Latch for self-correcting errors *)
+node Error_Transient(
+  ref_ck:      bool;
+  error_cond:  bool;
+) returns (
+  error_held:  bool;
+)
+var
+  any_error_this_cycle: bool;
+let
+  (* reset at every new cycle (ref_ck) *)
+  any_error_this_cycle =
+    Error_Latch(
+      error_cond,
+      ref_ck
+    );
+
+  (* becomes true whenever we see an error; resets when we start a new cycle, and the previous cycle did not have any errors *)
+  error_held =
+    Error_Latch(
+      error_cond,
+      ref_ck and not previously(any_error_this_cycle)
+    );
+tel
+
+(* Error flag to check just before starting a new cycle. *)
+node Error_Cycle_End_Check(
+  ref_ck:      bool;
+  error_cond:  bool;
+) returns (
+  error:       bool;
+)
+let
+  error =
+    Error_Latch(
+      ref_ck and previously(error_cond),
+      ref_ck
+    );
+tel
+
+
+(*^ 9.1 Scheduling_Error_1:
+  > Scheduling_Error_1 (S1) is set if within one matrix cycle the difference between the highest message status count (MSC) and the lowest MSC of all messages (of exclusive time windows) of a FSE is larger than two, or if one of the MSCs of an exclusive receive message object has reached seven.
+  If within one matrix cycle none of these conditions is valid, the bit is reset.
+
+  MTTCAN user's manual S4.6:
+  > Scheduling_Error_1 (S1)
+  >  Sets Error Level TTOST.EL to “01” if within one matrix cycle the difference between the maximum
+  >  MSC and the minimum MSC for all trigger memory elements (of exclusive time windows) is larger
+  >  than 2, or if one of the MSCs of an exclusive Rx_Trigger has reached 7.
+*)
+(* CLARIFICATION:
+  Here, we incrementally compute the minimum and maximum of each trigger object that we see in
+  a cycle as we go, rather than waiting to the end to summarise all of the time-triggered messages. This is subtly different, as we could have multiple transmissions
+  for the same message id, but the two transmissions can have different MSC values.
+  I believe this online accumulation is the intended behaviour, however, as the above quote from the MTTCAN user's manual refers to "trigger memory elements" rather than "message objects".
+  The alternative of checking the MSC array at the beginning of each basic cycle would be more difficult to implement without significantly increasing the worst-case-execution-time.
+*)
+node Error_Scheduling_Error_1(
+  ref_ck:      bool;
+  msc_ck:      bool;
+  msc:         Message_Status_Counter; -- when msc_ck
+) returns (
+  error:       bool;
+)
+var
+  minimum:     Message_Status_Counter;
+  maximum:     Message_Status_Counter;
+let
+  minimum =
+    if ref_ck and msc_ck
+    then msc
+    else if ref_ck
+    then 7
+    else if msc_ck and msc < (7 -> pre minimum)
+    then msc
+    else (7 -> pre minimum);
+
+  maximum =
+    if ref_ck and msc_ck
+    then msc
+    else if ref_ck
+    then 0
+    else if msc_ck and msc > (0 -> pre maximum)
+    then msc
+    else (0 -> pre maximum);
+
+  error =
+    Error_Cycle_End_Check(
+      ref_ck,
+      -- DISCREPANCY: according to the spec, the `maximum=7` check should only apply to read triggers, as `Scheduling_Error_2` triggers when any write triggers have `msc=7`.
+      -- In this implementation, msc=7 will trigger both errors, but Scheduling_Error_2 (S2) will have precedence.
+      minimum < maximum - 1 or maximum = 7
+    );
+tel
