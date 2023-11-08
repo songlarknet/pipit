@@ -29,6 +29,7 @@ type Ref_Offset   = subrange [-127, 127] of int;
 type Master_Index = subrange [0, 7] of int;
 (* The cycle index identifies a row of the matrix schedule *)
 type Cycle_Index = subrange [0, 63] of int;
+type Repeat_Factor = subrange [1, 64] of int; -- DISCREPANCY: not restricted to powers of two
 
 (* Reference messages *)
 type Ref_Message = struct {
@@ -47,21 +48,29 @@ const ref_message_init: Ref_Message = Ref_Message {
 type Message_Status_Counter = subrange [0, 7] of int;
 
 const APP_MESSAGE_INDEX_COUNT = 32;
-type App_Message_Index = subrange [0, APP_MESSAGE_INDEX_COUNT-1] of int;
+type App_Message_Index = subrange [0, 31] of int;
 
 -- type app_message_config = struct {
 --   -- app_message_can_id: int;
 --   app_message_tx: bool;
 -- };
 
-type Trigger_Type = enum { Trigger_TX, Trigger_RX };
--- type trigger = struct {
---   trigger_type: Trigger_Type;
---   trigger_message_id: app_message_id;
--- };
+type Trigger_Type = enum { Tx_Trigger, Rx_Trigger, Tx_Ref_Trigger, Watch_Trigger };
+type Trigger = struct {
+  trigger_Type:          Trigger_Type;
+  trigger_Time_Mark:     Ntu_Config;
+  trigger_Cycle_Offset:  Cycle_Index;
+  trigger_Repeat_Factor: Repeat_Factor; -- DISCREPANCY: not restricted to powers of two
+  trigger_Message_Index: App_Message_Index; -- when trigger_Type \in { Tx_Trigger, Rx_Trigger }
+};
+-- Not supported: trigger_Window_Type : enum { Window_Exclusive, Window_Arbitrating, Window_Merged }
 
-const config_init_watch_trigger_time: Ntu_Config;
+(*^3.18 Init_Watch_Trigger: value of the maximum cycle time *)
+const config_init_watch_trigger_time: Ntu_Config = 65535;
+
+--KILL
 const config_watch_trigger_time: Ntu_Config;
+(*^3.19 Initial_Ref_Offset: initialisation value that loads the Ref_Trigger_Offset *)
 const config_initial_ref_offset: Ref_Offset;
 
 const config_master_enable: bool;
@@ -72,13 +81,24 @@ const config_tx_enable_window: subrange [1, 16] of int;
 const config_tx_ref_trigger_time: Ntu_Config;
 const config_cycle_count_max: Cycle_Index;
 
+(*^3.12 Expected_Tx_Trigger *)
 const config_expected_tx_triggers: subrange [1, 255] of int;
 
 const TRIGGERS_COUNT = 256;
 
+-- BUG: Kind2 doesn't like consts in subrange declarations inside tuples, weird
+type Trigger_Index = subrange [0, 255] of int;
+
 -- BUG: Kind2 doesn't like top-level arrays. Adding a const array stops a lot of the properties from verifying, even though it's not mentioned.
 -- const config_triggers: Trigger_Type ^ TRIGGERS_COUNT;
 -- const const_array: int ^ 2;
+
+function imported config_Triggers_Lookup(
+  index: Trigger_Index
+) returns (
+  trigger: Trigger;
+)
+
 
 (*^8.3 When a failed time master reconnects to the system with active time-triggered communication, it shall wait until it is synchronised to the network before attempting to become time master again. *)
 (* This requirement is somewhat vague and seems to introduce a potential deadlock if all masters had previously failed. I have implemented it by specifying a delay to stop transmissions after a severe failure occurs. *)
