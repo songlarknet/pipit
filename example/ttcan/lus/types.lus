@@ -50,17 +50,12 @@ type Message_Status_Counter = subrange [0, 7] of int;
 const APP_MESSAGE_INDEX_COUNT = 32;
 type App_Message_Index = subrange [0, 31] of int;
 
--- type app_message_config = struct {
---   -- app_message_can_id: int;
---   app_message_tx: bool;
--- };
-
 type Trigger_Type = enum { Tx_Trigger, Rx_Trigger, Tx_Ref_Trigger, Watch_Trigger };
 type Trigger = struct {
   trigger_Type:          Trigger_Type;
   trigger_Time_Mark:     Ntu_Config;
   trigger_Cycle_Offset:  Cycle_Index;
-  trigger_Repeat_Factor: Repeat_Factor; -- DISCREPANCY: not restricted to powers of two
+  trigger_Repeat_Factor: Repeat_Factor; -- DISCREPANCY: Repeat_Factor is restricted to powers of two in specification
   trigger_Message_Index: App_Message_Index; -- when trigger_Type \in { Tx_Trigger, Rx_Trigger }
 };
 -- Not supported: trigger_Window_Type : enum { Window_Exclusive, Window_Arbitrating, Window_Merged }

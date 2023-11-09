@@ -168,8 +168,8 @@ tel
 node Ref_Trigger_Offset(
   master_mode:            Master_Mode;
   error:                  Error_Severity;
-  best_ref_ck:            bool;
-  best_ref_master:        Master_Index; -- when best_ref_ck;
+  ref_ck:                 bool;
+  ref_master:             Master_Index; -- when ref_ck;
 ) returns (
   ref_trigger_offset:     Ref_Offset;
 )
@@ -194,14 +194,13 @@ let
     else if rising_edge(master_mode = Backup_Master)
     then config_initial_ref_offset
     -- If we start a new basic cycle and the current master is higher index (lower priority) than us, we want to try to reduce our ref offset to overtake the current master
-    else if best_ref_ck and best_ref_master > config_master_index
+    else if ref_ck and ref_master > config_master_index
     then
       (if pre_ref_trigger_offset > 0
        then 0
        -- Decrement every new cycle
        else clamp(-127, 127, pre_ref_trigger_offset - 1))
     else pre_ref_trigger_offset;
-
 tel
 
 node Rx_Ref_Filter(
@@ -239,8 +238,7 @@ node Tx_Ref_Message(
   error:         Error_Severity;
   cycle_time:    Ntu;
   cycle_index:   Cycle_Index;
-  ref_trigger_offset:
-                 Ntu;
+  send_ck:       bool;
 ) returns (
   tx_ref_ck:     bool;
   tx_ref:        Ref_Message;
@@ -255,7 +253,7 @@ let
 
   tx_ref_ck =
     (sync_state = Synchronising or sync_state = In_Schedule) and
-    cycle_time >= config_tx_ref_trigger_time + ref_trigger_offset and
+    send_ck and
     severe_error_cooldown < local_time;
   tx_ref =
     Ref_Message {
@@ -284,6 +282,9 @@ node Ref_Cycle_Mode(
   rx_ref_ck:     bool;
   rx_ref:        Ref_Message; -- when rx_ref_ck;
 
+  pre_tx_ref_ck: bool;
+  pre_tx_ref:    Ref_Message; -- when tx_ref_ck
+
   tx_status:     Tx_Status; -- when (pre tx_ref_ck)
 ) returns (
   sync_state:    Sync_Mode;
@@ -291,17 +292,13 @@ node Ref_Cycle_Mode(
   cycle_time:    Ntu;
   cycle_index:   Cycle_Index;
 
-  tx_ref_ck:     bool;
-  tx_ref:        Ref_Message; -- when tx_ref_ck
-
   -- most-recently observed reference message, including those we successfully sent
   last_ref_ck:   bool;
   last_ref:      Ref_Message; -- when any(last_ref_ck)
-)
-var
   ref_trigger_offset: Ref_Offset;
+)
 let
-  (last_ref_ck, last_ref) = Rx_Ref_Filter(rx_ref_ck, rx_ref, false -> pre tx_ref_ck, ref_message_init -> pre tx_ref, tx_status);
+  (last_ref_ck, last_ref) = Rx_Ref_Filter(rx_ref_ck, rx_ref, pre_tx_ref_ck, pre_tx_ref, tx_status);
   cycle_index = last_ref.ref_message_cycle_index;
 
   (sync_state, cycle_time) = Sync_State(mode, error, last_ref_ck, last_ref.ref_message_sof, local_time);
@@ -309,8 +306,6 @@ let
   master_state = Master_Mode(mode, error, last_ref_ck, last_ref.ref_message_master);
 
   ref_trigger_offset = Ref_Trigger_Offset(master_state, error, last_ref_ck, last_ref.ref_message_master);
-
-  (tx_ref_ck, tx_ref) = Tx_Ref_Message(local_time, sync_state, error, cycle_time, cycle_index, ref_trigger_offset);
 tel
 
 node Controller(
@@ -344,12 +339,14 @@ node Controller(
   tx_app_ck:     bool;
   tx_app_id:     App_Message_Index;
 
+  tx_delay:      Ntu; -- when tx_ref_ck or tx_app_ck
+
   -- most-recently observed reference message, including those we successfully sent
   ref_ck:        bool;
   last_ref:      Ref_Message; -- when any(ref_ck)
 
   -- Return ref_trigger_offset?
-  -- ref_trigger_offset: subrange [-127, 127] of int;
+  ref_trigger_offset: Ref_Offset;
 )
 var
   error_Scheduling_Error_1:    bool;
@@ -358,8 +355,8 @@ var
   error_Tx_Overflow:           bool;
   error_CAN_Bus_Off:           bool;
   error_Watch_Trigger_Reached: bool;
-  watch_trigger:               bool;
   init_error:                  Error_Severity;
+  watch_trigger:               bool;
 let
   mode = Mode_State(mode_cmd);
 
@@ -393,28 +390,30 @@ let
 
 --   (*^9.3.9 Watch_Trigger_Reached (S3): *)
 --   (*^ The S3 error conditions shall remain active until the application updates the configuration. *)
-  error_Watch_Trigger_Reached = Error_Latch(watch_trigger, mode = Mode_Configure);
-
-  watch_trigger =
-    (sync_state = In_Schedule and cycle_time > config_watch_trigger_time) or
-    (sync_state = Synchronising and cycle_time > config_init_watch_trigger_time);
+  error_Watch_Trigger_Reached = Error_Latch(
+    (restart any every (mode = Mode_Configure))(ref_ck) and watch_trigger,
+    mode = Mode_Configure);
+  -- TODO: NOT SUPPORTED YET: Init_Watch_Trigger: requires a different failure mode, doesn't go to S3 as acks must be kept enabled
 
 --   (* Errors not treated: Config_Error (^9.3.8) is statically checked; Application_Watchdog (^9.3.6) is not supported *)
 
-  (sync_state, master_state, cycle_time, cycle_index, tx_ref_ck, tx_ref, ref_ck, last_ref) = Ref_Cycle_Mode(local_time, mode, init_error, rx_ref_ck, rx_ref, tx_status);
+  (sync_state, master_state, cycle_time, cycle_index, ref_ck, last_ref, ref_trigger_offset) = Ref_Cycle_Mode(local_time, mode, init_error, rx_ref_ck, rx_ref, false -> pre tx_ref_ck, ref_message_init -> pre tx_ref, tx_status);
 
-  (tx_app_ck, tx_app_id, error_Scheduling_Error_1, error_Tx_Underflow, error_Scheduling_Error_2, error_Tx_Overflow) = Trigger_Controller(cycle_time, cycle_index, sync_state, init_error, ref_ck, rx_app_ck, rx_app_id, tx_status, bus_status);
+  (tx_ref_ck, tx_ref, tx_app_ck, tx_app_id, tx_delay, watch_trigger, error_Scheduling_Error_1, error_Tx_Underflow, error_Scheduling_Error_2, error_Tx_Overflow) = Trigger_Controller(local_time, cycle_time, cycle_index, sync_state, init_error, ref_ck, ref_trigger_offset, rx_app_ck, rx_app_id, tx_status, bus_status);
 
   driver_enable_acks = (sync_state <> Sync_Off) and (error <> S3_Severe);
 tel
 
 node Trigger_Controller(
+  local_time:    Ntu;
   cycle_time:    Ntu;
   cycle_index:   Cycle_Index;
 
   sync_state:    Sync_Mode;
   error:         Error_Severity;
   ref_ck:        bool;
+  ref_trigger_offset:
+                 Ref_Offset;
 
   rx_app_ck:     bool;
   rx_app_id:     App_Message_Index; -- when rx_app_ck
@@ -422,8 +421,14 @@ node Trigger_Controller(
   tx_status:     Tx_Status;
   bus_status:    Bus_Status;
 ) returns (
+  tx_ref_ck:     bool;
+  tx_ref:        Ref_Message;
   tx_app_ck:     bool;
   tx_app_id:     App_Message_Index;
+  tx_delay:      Ntu; -- when tx_ref_ck or tx_app_ck
+
+  watch_trigger: bool;
+
   error_Scheduling_Error_1: bool;
   error_Tx_Underflow:       bool;
   error_Scheduling_Error_2: bool;
@@ -433,6 +438,7 @@ var
   trigger_new:              bool;
   trigger_enabled:          bool;
   trigger:                  Trigger;
+  trigger_started:          bool;
   trigger_expired:          bool;
 
   rx_check_ck:              bool;
@@ -448,7 +454,7 @@ var
 
   tx_count:                 int;
 let
-  (trigger_new, trigger_enabled, trigger, trigger_expired, tx_count) = Trigger_Cycle_Current_Active(ref_ck, cycle_time, cycle_index);
+  (trigger_new, trigger_enabled, trigger, trigger_started, trigger_expired, tx_count) = Trigger_Fetch(ref_ck, cycle_time, cycle_index, ref_trigger_offset);
 
   rx_check_ck = trigger_enabled and trigger.trigger_Type = Rx_Trigger and trigger_expired;
   rx_check_ok = Trigger_Rx_Pending(rx_check_ck, trigger.trigger_Message_Index, rx_app_ck, rx_app_id);
@@ -484,6 +490,16 @@ let
     else false;
 
   msc     = Trigger_MSC(trigger.trigger_Message_Index, msc_ck, msc_ok);
+
+  (tx_ref_ck, tx_ref) = Tx_Ref_Message(local_time, sync_state, error, cycle_time, cycle_index, trigger_enabled and trigger.trigger_Type = Tx_Ref_Trigger and trigger_started);
+
+  tx_delay  =
+    if trigger_started
+    then 0
+    else cycle_time - trigger.trigger_Time_Mark;
+
+  watch_trigger =
+    trigger.trigger_Type = Watch_Trigger and trigger_enabled and trigger_started;
 
   error_Tx_Underflow =
     -- Check for underflow just before starting new cycle, reset if no underflow upon reaching next cycle
