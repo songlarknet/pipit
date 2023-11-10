@@ -18,13 +18,15 @@ module PPV = Pipit.Prim.Vanilla
    level). We do not want the expression's internal representation to show up in
    the C code, so we mark it as noextract.
    *)
+[@@(Tac.postprocess_with XL.tac_normalize_pure)]
 noextract
+inline_for_extraction
 let expr = SugarBase.exp_of_stream2 Pump.controller
 
 (* Define the state type so it shows up as a type definition in the C code.
    The "postprocess_with" annotation ensures that the state_of_exp is inlined
    into the type and simplified to a regular type *)
-[@@(Tac.postprocess_with XL.tac_extract)]
+[@@(Tac.postprocess_with XL.tac_normalize_pure)]
 type state = XX.state_of_exp expr
 
 type result = bool & bool

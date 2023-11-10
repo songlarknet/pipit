@@ -54,7 +54,7 @@ lax: FSTAR_PROOF_OPT=--retry 2
 lax: verify
 
 .PHONY: extract
-extract: extract-pump extract-fixed
+extract: extract-pump extract-simple
 
 .PHONY: extract-pump
 extract-pump: EXTRACT_MODULE=Pump.Extract
@@ -62,28 +62,24 @@ extract-pump: EXTRACT_FILE=example/Pump.Extract.fst
 extract-pump: EXTRACT_NAME=pump
 extract-pump: extract-mk
 
-.PHONY: extract-fixed
-extract-fixed: EXTRACT_MODULE=Explore.FixedSizeArray
-extract-fixed: EXTRACT_FILE=example/Explore.FixedSizeArray.fst
-extract-fixed: EXTRACT_NAME=fixed
-extract-fixed: KRML_OPT=-skip-compilation
-extract-fixed: extract-mk
-
-
-.PHONY: extract-therm-manual
-extract-therm-manual: EXTRACT_MODULE=ThermDriver.Manual
-extract-therm-manual: EXTRACT_FILE=example/ThermDriver.Manual.fst --extract FStar.UInt8 --extract FStar.Pervasives
-extract-therm-manual: EXTRACT_NAME=therm-manual
-extract-therm-manual: extract-mk
+.PHONY: extract-simple
+extract-simple: EXTRACT_MODULE=Simple.Extract
+extract-simple: EXTRACT_FILE=example/Simple.Extract.fst
+extract-simple: EXTRACT_NAME=simple
+extract-simple: extract-mk
 
 .PHONY: extract-mk
 extract-mk:
 	@echo "* Extracting $(EXTRACT_MODULE)"
+	@rm -f $(BUILD)/extract/$(EXTRACT_NAME)/*.krml
 	@mkdir -p $(BUILD)/extract/$(EXTRACT_NAME)
-	$(Q)$(FSTAR_EXE) $(FSTAR_OPT) $(EXTRACT_FILE) --extract $(EXTRACT_MODULE) --codegen krml --odir $(BUILD)/extract/$(EXTRACT_NAME)
-	$(Q)cd $(BUILD)/extract/$(EXTRACT_NAME) && $(KARAMEL_EXE) *.krml -skip-linking $(KRML_OPT)
+	$(Q)$(FSTAR_EXE) $(FSTAR_OPT) $(EXTRACT_FILE) --codegen krml --odir $(BUILD)/extract/$(EXTRACT_NAME)
+	$(Q)cd $(BUILD)/extract/$(EXTRACT_NAME) && $(KARAMEL_EXE) *.krml -bundle $(EXTRACT_MODULE)=* -skip-linking -skip-compilation $(KRML_OPT)
 
 .PHONY: clean
 clean:
 	@echo "* Cleaning *.checked"
 	@rm -f $(BUILD)/cache/*.checked
+	@echo "* Cleaning deps"
+	@rm -f $(BUILD)/deps.mk
+	@rm -f $(BUILD)/deps.mk.rsp

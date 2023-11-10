@@ -7,6 +7,7 @@ module Pipit.Prim.Vanilla
 
 open Pipit.Prim.Table
 module R = FStar.Real
+module PR = PipiRuntime.Prim.Bool
 
 type valtype =
  | TBool: valtype
@@ -85,11 +86,11 @@ let prim_ty (p: prim): funty valtype = match p with
  | P'V p' a     -> prim_valtype_ty p' a
 
 let prim_bool_sem (p: prim_bool): funty_sem ty_sem (prim_bool_ty p) = match p with
- | P'B'Not     -> fun (x: bool) -> not x
+ | P'B'Not     -> PR.p'b'not
  // Low*/KRML doesn't like short-circuiting boolean operators (&&) (||) but it seems to be OK with if-then-else
- | P'B'And     -> fun x y -> if x then y else false
- | P'B'Or      -> fun x y -> if x then true else y
- | P'B'Implies -> fun x y -> if x then y else true
+ | P'B'And     -> PR.p'b'and
+ | P'B'Or      -> PR.p'b'or
+ | P'B'Implies -> PR.p'b'implies
 
 let prim_arith_sem (p: prim_arith) (at: arithtype): funty_sem ty_sem (prim_arith_ty p at) = match at with
  | TInt ->
@@ -125,7 +126,7 @@ let prim_tup_sem (p: prim_tup) (a: valtype) (b: valtype): funty_sem ty_sem (prim
 let prim_valtype_sem (p: prim_valtype) (a: valtype): funty_sem ty_sem (prim_valtype_ty p a) = match p with
  | P'V'Eq         -> fun (x: ty_sem a) y -> x = y
  | P'V'Ne         -> fun (x: ty_sem a) y -> x <> y
- | P'V'IfThenElse -> fun p (x: ty_sem a) y -> if p then x else y
+ | P'V'IfThenElse -> PR.p'select #(ty_sem a)
 
 let prim_sem (p: prim): funty_sem ty_sem (prim_ty p) = match p with
  | P'B p'     -> prim_bool_sem p'

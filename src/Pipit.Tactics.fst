@@ -6,7 +6,9 @@ module Pipit.Tactics
 module T = FStar.Tactics
 
 (* Re-exports *)
-let norm_full () = T.norm [delta; nbe; zeta; iota; primops]
+let norm_full () =
+  T.norm [delta_namespace ["Pipit"; "Pump"; "FStar"]; nbe; zeta; iota; primops]
+
 
 let dump s = T.dump s
 
