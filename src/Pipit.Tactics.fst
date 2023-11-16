@@ -5,9 +5,15 @@ module Pipit.Tactics
 
 module T = FStar.Tactics
 
+irreducible
+let norm_attr = ()
+
+// Evaluate anything inside Pipit, anything in F*, and anything marked with [@@norm_attr]
+let norm_delta_options (namespaces: list string) = [delta_namespace ("Pipit" :: "FStar" :: namespaces); delta_attr [`%norm_attr]; nbe; zeta; iota; primops]
+
 (* Re-exports *)
-let norm_full () =
-  T.norm [delta_namespace ["Pipit"; "Pump"; "FStar"]; nbe; zeta; iota; primops]
+let norm_full (namespaces: list string) =
+  T.norm (norm_delta_options namespaces)
 
 
 let dump s = T.dump s
@@ -95,18 +101,18 @@ let tac_tricky_unfolds (): T.Tac unit =
    Breaking apart the products is sometimes helpful for debugging,
    but doesn't seem to be necessary for actual proofs.
    *)
-let pipit_simplify (): T.Tac unit =
+let pipit_simplify (namespaces: list string): T.Tac unit =
   T.repeatseq (fun _ ->
-    norm_full ();
+    norm_full namespaces;
     tac_tricky_unfolds ();
     let b = T.forall_intro () in
     // tac_products [b];
     ())
 
 
-let pipit_simplify_products (): T.Tac unit =
+let pipit_simplify_products (namespaces: list string): T.Tac unit =
   T.repeatseq (fun _ ->
-    norm_full ();
+    norm_full namespaces;
     tac_tricky_unfolds ();
     let b = T.forall_intro () in
     tac_products [b];

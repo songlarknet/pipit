@@ -7,7 +7,7 @@ module Pipit.Prim.Vanilla
 
 open Pipit.Prim.Table
 module R = FStar.Real
-module PR = PipiRuntime.Prim.Bool
+module PR = PipitRuntime.Prim.Bool
 
 type valtype =
  | TBool: valtype

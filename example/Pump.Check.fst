@@ -54,7 +54,7 @@ let countsecutive_body (p: Sugar.bools) =
 
 let countsecutive': Sugar.bools -> Sugar.ints =
   let e = Check.exp_of_stream1 countsecutive_body in
-  assert (Check.system_induct_k1 e) by (T.norm_full ());
+  assert (Check.system_induct_k1 e) by (T.norm_full ["Pump"]);
   Check.stream_of_checked1 e
 
 (*
@@ -134,7 +134,7 @@ let controller_body (estop level_low: Sugar.bools) =
 
 let controller =
   let e = Check.exp_of_stream2 controller_body in
-  assert (Check.system_induct_k1 e) by (T.norm_full ());
+  assert (Check.system_induct_k1 e) by (T.norm_full ["Pump"]);
   Check.stream_of_checked2 e
 
 let reservoir_model (flow: Sugar.ints) (sol_en: Sugar.bools) =
@@ -156,7 +156,7 @@ let spec_body (flow: Sugar.ints) (estop level_low: Sugar.bools) =
 
 let spec =
   let e = Check.exp_of_stream3 spec_body in
-  assert (Check.system_induct_k1 e) by (T.norm_full ());
+  assert (Check.system_induct_k1 e) by (T.norm_full ["Pump"]);
   Check.stream_of_checked3 e
 
 let spec_any_needs_extra_invariant_manual_cse (flow: Sugar.ints) (estop level_low: Sugar.bools) =
@@ -175,5 +175,5 @@ let spec_any_needs_extra_invariant_manual_cse (flow: Sugar.ints) (estop level_lo
 
 let spec_any' =
   let e = Check.exp_of_stream3 spec_any_needs_extra_invariant_manual_cse in
-  assert (Check.system_induct_k1 e) by (T.norm_full ());
+  assert (Check.system_induct_k1 e) by (T.norm_full ["Pump"]);
   Check.stream_of_checked3 e

@@ -38,7 +38,7 @@ let count_when_prop_body (e: bools): bools =
 
 let count_when_prop: bools -> bools =
   let e = Check.exp_of_stream1 count_when_prop_body in
-  assert (Check.system_induct_k1 e) by (T.norm_full ());
+  assert (Check.system_induct_k1 e) by (T.norm_full ["Simple"]);
   Check.stream_of_checked1 e
 
 type sum_contract = Check.contract Vanilla.table [Vanilla.TInt] Vanilla.TInt
@@ -51,7 +51,7 @@ let sum: sum_contract =
   let e = Check.exp_of_stream1 (fun i ->
     rec' (fun sum -> (0 `fby` sum) +^ i)
   ) in
-  assert (Check.contract_system_induct_k1' r g e) by (T.norm_full ());
+  assert (Check.contract_system_induct_k1' r g e) by (T.norm_full ["Simple"]);
   Check.contract_of_exp1 r g e
 
 let test_sum (i: ints) =
@@ -63,7 +63,7 @@ let test_sum (i: ints) =
 
 let test_sum_ =
   let e = Check.exp_of_stream1 test_sum in
-  assert (Check.system_induct_k1 e) by (T.norm_full ());
+  assert (Check.system_induct_k1 e) by (T.norm_full ["Simple"]);
   Check.stream_of_checked1 e
 
 (* https://github.com/kind2-mc/cocospec_tcm_experiments/blob/master/systems/helpers.lus#L168 *)
@@ -98,5 +98,5 @@ let times_guarantee (x y z: ints) =
 
 // let times_abstraction: ints -> ints -> ints =
 //   let c = Check.contract_of_stream2 times_contract in
-//   assert (Check.contract_system_induct_k1 c) by (T.norm_full ());
+//   assert (Check.contract_system_induct_k1 c) by (T.norm_full ["Simple"]);
 //   Check.stream_of_contract2 c

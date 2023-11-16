@@ -17,9 +17,10 @@ open FStar.HyperStack.ST
   which we want to get rid of.
   This is probably overkill.
  *)
-let tac_normalize_pure () =
-  Pipit.Tactics.norm_full ();
-  // Tac.dump "tac_normalize_pure";
+let tac_normalize_pure (namespaces: list string) () =
+  // Do not unfold PipitRuntime here.
+  Pipit.Tactics.norm_full namespaces;
+  Tac.dump "tac_normalize_pure";
   Tac.trefl ()
 
 
@@ -28,9 +29,11 @@ let tac_normalize_pure () =
   or we might end up with a program that Karamel doesn't understand.
   We unfold the details of Pipit.Context.*, Pipit.Exec.*, Pipit.System.*. We
   also unfold anything the user has marked inline_for_extraction. *)
-let tac_extract () =
-  Tac.norm [nbe; primops; iota; zeta; delta_namespace ["Pipit"; "FStar.Pervasives"]; delta_qualifier ["inline_for_extraction"]];
-  // Tac.dump "tac_extract";
+let tac_extract (namespaces: list string) () =
+  let opts ns = [nbe; primops; iota; zeta; delta_namespace ("Pipit" :: "FStar.Pervasives" :: ns); delta_qualifier ["inline_for_extraction"]; delta_attr [`%Pipit.Tactics.norm_attr]] in
+  Tac.norm (opts namespaces);
+  Tac.norm (opts ("PipitRuntime" :: namespaces));
+  Tac.dump "tac_extract";
   Tac.trefl ()
 
 inline_for_extraction

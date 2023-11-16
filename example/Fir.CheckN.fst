@@ -43,11 +43,11 @@ let rec fir_body (coeffs: list R.real):
   match coeffs with
   | [] ->
     let e = Check.exp_of_stream1 (fun _ -> zero) in
-    assert (Check.contract_system_induct_k1' r g e) by (T.norm_full ());
+    assert (Check.contract_system_induct_k1' r g e) by (T.norm_full ["Fir"]);
     Check.contract_of_exp1 r g e
   | c :: coeffs' ->
     let e = Check.exp_of_stream1 (fun input ->
       let fir' = Check.stream_of_contract1 (fir_body coeffs') (fby 0.0R input) in
       (input *^ const c) +^ fir') in
-    assert (Check.contract_system_induct_k1' r g e) by (T.norm_full ());
+    assert (Check.contract_system_induct_k1' r g e) by (T.norm_full ["Fir"]);
     Check.contract_of_exp1 r g e
