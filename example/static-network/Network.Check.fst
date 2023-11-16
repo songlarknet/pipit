@@ -1,5 +1,5 @@
 module Network.Check
-
+(*
 open Network.Abstract
 
 open Pipit.Sugar.Vanilla
@@ -79,3 +79,4 @@ let router_send (#n: network) (s: schedule n) (node: n.node) (pre_status: send_s
 
 
 
+*)

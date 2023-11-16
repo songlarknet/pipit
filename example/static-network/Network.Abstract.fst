@@ -1,5 +1,5 @@
 module Network.Abstract
-
+(*
 module List = FStar.List.Tot
 module U32 = FStar.UInt32
 
@@ -87,3 +87,4 @@ let scheduled_send (#n: network) (s: schedule n) (node: n.node): nat -> option n
   scheduled_send_messages s (node_send_list node)
 
 // let 
+*)

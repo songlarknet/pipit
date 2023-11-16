@@ -1,5 +1,5 @@
 module Network.Instance
-
+(*
 open Network.Abstract
 
 type u8    = nat
@@ -68,3 +68,4 @@ let car_schedule: schedule car_network = {
 
 let _ =
   assert (schedule_ok car_schedule)
+*)
