@@ -14,7 +14,7 @@ FSTAR_ARITH_UNBOX ?= --smtencoding.l_arith_repr native --smtencoding.elim_box tr
 # Disable FSTAR_NL_DISABLE and FSTAR_ARITH_UNBOX: for some reason this breaks the proof of lemma_lift_subst_distribute_le.
 FSTAR_PROOF_OPT   ?=
 
-FSTAR_INCLUDES	  ?= --include src --include example
+FSTAR_INCLUDES	  ?= --include src --include example --include example/ttcan
 FSTAR_CACHE       ?= --cache_dir $(BUILD)/cache --cache_checked_modules --already_cached Prims,FStar,LowStar
 FSTAR_HINTS       ?= --hint_dir $(BUILD)/hint --use_hints --record_hints --warn_error -333
 
@@ -23,7 +23,7 @@ FSTAR_DEP_OPT     ?= $(FSTAR_INCLUDES) $(FSTAR_CACHE)
 FSTAR_EXTRA_OPT   ?=
 FSTAR_OPT		  ?= $(FSTAR_INCLUDES) $(FSTAR_PROOF_OPT) $(FSTAR_CACHE) $(FSTAR_EXTRA_OPT) $(FSTAR_MAYBE_ADMIT)
 
-FSTAR_SRCS = $(wildcard src/**.fst src/**.fsti example/**.fst example/**.fsti)
+FSTAR_SRCS = $(wildcard src/*.fst src/*.fsti src/**/*.fst src/**/*.fsti example/*.fst example/*.fsti example/**/*.fst example/**/*.fsti)
 
 .PHONY: all
 all: verify extract
@@ -47,23 +47,39 @@ include $(BUILD)/deps.mk
 .PHONY: verify
 verify: $(ALL_CHECKED_FILES)
 
+# `make lax`:
+# Sometimes the proofs are flaky during development, so it can be useful to
+# build with retries enabled. 
+lax: FSTAR_PROOF_OPT=--retry 2
+lax: verify
+
 .PHONY: extract
-extract: extract-pump
+extract: extract-pump extract-simple
 
 .PHONY: extract-pump
 extract-pump: EXTRACT_MODULE=Pump.Extract
 extract-pump: EXTRACT_FILE=example/Pump.Extract.fst
 extract-pump: EXTRACT_NAME=pump
 extract-pump: extract-mk
-# extract-pump: $(BUILD)/cache/Example.Compile.Pump.fst.checked extract-mk EXTRACT_MODULE=example/Pump.Extract.fst EXTRACT_NAME=pump
+
+.PHONY: extract-simple
+extract-simple: EXTRACT_MODULE=Simple.Extract
+extract-simple: EXTRACT_FILE=example/Simple.Extract.fst
+extract-simple: EXTRACT_NAME=simple
+extract-simple: extract-mk
 
 .PHONY: extract-mk
 extract-mk:
+	@echo "* Extracting $(EXTRACT_MODULE)"
+	@rm -f $(BUILD)/extract/$(EXTRACT_NAME)/*.krml
 	@mkdir -p $(BUILD)/extract/$(EXTRACT_NAME)
-	$(Q)$(FSTAR_EXE) $(FSTAR_OPT) $(EXTRACT_FILE) --extract $(EXTRACT_MODULE) --codegen krml --odir $(BUILD)/extract/$(EXTRACT_NAME)
-	$(Q)cd $(BUILD)/extract/$(EXTRACT_NAME) && $(KARAMEL_EXE) *.krml -skip-linking
+	$(Q)$(FSTAR_EXE) $(FSTAR_OPT) $(EXTRACT_FILE) --codegen krml --odir $(BUILD)/extract/$(EXTRACT_NAME)
+	$(Q)cd $(BUILD)/extract/$(EXTRACT_NAME) && $(KARAMEL_EXE) *.krml -bundle $(EXTRACT_MODULE)=* -skip-linking -skip-compilation $(KRML_OPT)
 
 .PHONY: clean
 clean:
 	@echo "* Cleaning *.checked"
 	@rm -f $(BUILD)/cache/*.checked
+	@echo "* Cleaning deps"
+	@rm -f $(BUILD)/deps.mk
+	@rm -f $(BUILD)/deps.mk.rsp

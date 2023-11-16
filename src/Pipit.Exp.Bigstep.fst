@@ -14,82 +14,86 @@
 *)
 module Pipit.Exp.Bigstep
 
+open Pipit.Prim.Table
+
 open Pipit.Exp.Base
 open Pipit.Exp.Binding
-open Pipit.Inhabited
 
-module C = Pipit.Context
+module C  = Pipit.Context.Base
+module CR = Pipit.Context.Row
+module CP = Pipit.Context.Properties
+module PM = Pipit.Prop.Metadata
 
-(* bigstep streams e v
+(* bigstep_base streams e v
 
  Bigstep semantics: in streaming history `streams`, which is a sequence of
  environments, the expression `e` evaluates to value `v`.
  The stream history `streams` is in most-recent-first order.
  *)
 noeq
-type bigstep (#c: C.context): (#a: Type) -> list (C.row c) -> exp c a -> a -> Type =
+type bigstep_base (#t: table) (#c: context t): (#a: t.ty) -> list (row c) -> exp_base t c a -> t.ty_sem a -> Type =
  (* Values `v` always evaluate to the value *)
  | BSVal:
-          streams: list (C.row c) ->
-          v: 'a ->
-          bigstep streams (XVal v) v
+          #valty: t.ty ->
+          streams: list (row c) ->
+          v: t.ty_sem valty ->
+          bigstep_base streams (XVal v) v
 
  (* Variables `x` are looked up in the most recent row in the stream history *)
- | BSVar: latest: C.row c ->
-          prefix: list (C.row c) ->
-          x: C.index { C.has_index c x } ->
-          bigstep (latest :: prefix) (XBVar x) (C.row_index c latest x)
+ | BSVar: latest: row c ->
+          prefix: list (row c) ->
+          x: C.index_lookup c ->
+          bigstep_base (latest :: prefix) (XBVar x) (CR.index (context_sem c) latest x)
 
- (* Element-wise application *)
- | BSApp: streams: list (C.row c) ->
-          f: exp c ('a -> 'b)        ->
-          e: exp c  'a             ->
-          f_v: ('a -> 'b)            ->
-          e_v:  'a                 ->
-          bigstep streams f f_v   ->
-          bigstep streams e e_v   ->
-          bigstep streams (XApp f e) (f_v e_v)
+ (* Free variables `XVar` have no evaluation rule - they aren't in the local `streams` environment *)
 
- (* To compute `pre e` we evaluate `e` without the most recent element. *)
- | BSFby1: start: list (C.row c) { List.Tot.length start <= 1 }
-                                    ->
-           v0: 'a                    ->
-           e: exp c 'a               ->
+(* bigstep streams e v *)
+noeq
+type bigstep (#t: table) (#c: context t): (#a: t.ty) -> list (row c) -> exp t c a -> t.ty_sem a -> Type =
+ (* Base expressions *)
+ | BSBase:
+          #valty: t.ty ->
+          streams: list (row c)    ->
+          e: exp_base t c valty    ->
+          v: t.ty_sem valty        ->
+          bigstep_base streams e v ->
+          bigstep streams (XBase e) v
+
+ (* Applications *)
+ | BSApps:
+          #valty: t.ty ->
+          streams: list (row c)    ->
+          e: exp_apps t c
+                  (FTVal valty)    ->
+          v: t.ty_sem valty        ->
+          bigstep_apps streams e v ->
+          bigstep streams (XApps e) v
+
+ (* At the very first step, `v fby e` evaluates to `v`. *)
+ | BSFby1: #a: t.ty                ->
+           start: list (row c) { List.Tot.length start <= 1 }
+                                   ->
+           v0: t.ty_sem a          ->
+           e: exp t c a            ->
            bigstep start (XFby v0 e) v0
  (* To compute `pre e` we evaluate `e` without the most recent element. *)
- | BSFbyS: latest: C.row c          ->
-           prefix: list (C.row c) { List.Tot.length prefix >= 1 }
+ | BSFbyS: #a: t.ty                 ->
+           latest: row c            ->
+           prefix: list (row c) { List.Tot.length prefix >= 1 }
                                     ->
-           v0: 'a                    ->
-           v': 'a                    ->
-           e: exp c 'a               ->
-           bigstep           prefix           e  v' ->
+           v0: t.ty_sem a           ->
+           v': t.ty_sem a           ->
+           e: exp t c a             ->
+           bigstep            prefix           e  v' ->
            bigstep (latest :: prefix) (XFby v0 e) v'
-
- (* First step of (p -> q) is p *)
- | BSThen1: start: list (C.row c) { List.Tot.length start <= 1 }
-                                    ->
-            e1: exp c 'a             ->
-            e2: exp c 'a             ->
-            v: 'a                    ->
-            bigstep start        e1     v ->
-            bigstep start (XThen e1 e2) v
- (* Subsequent steps of (p -> q) are q *)
- | BSThenS: streams: list (C.row c) { List.Tot.length streams > 1 }
-                                    ->
-            e1: exp c 'a             ->
-            e2: exp c 'a             ->
-            v: 'a                    ->
-            bigstep streams           e2  v ->
-            bigstep streams (XThen e1 e2) v
 
  (* Reduction for recursive expressions proceeds by unfolding the recursion one step.
     If all recursive references are guarded by `pre` then the `pre` step will look
-    at a shorter stream history prefix, and should eventually terminate. *)
- | BSMu: (i: inhabited 'a) ->
-         streams: list (C.row c)    ->
-         e: exp (C.close1 c 'a) 'a ->
-         v: 'a                       ->
+    at a shorter stream history prefix, and will eventually terminate. *)
+ | BSMu: #valty: t.ty                         ->
+         streams: list (row c)                ->
+         e: exp t (C.close1 c valty) valty    ->
+         v: t.ty_sem valty                    ->
          bigstep streams (subst1 e (XMu e)) v ->
          bigstep streams (XMu e) v
 
@@ -97,70 +101,121 @@ type bigstep (#c: C.context): (#a: Type) -> list (C.row c) -> exp c a -> a -> Ty
     We could also evaluate the definition e1 to a stream of values, and add each
     of these to the stream contexts - but this is a bit easier, and later we can
     prove that they're equivalent. *)
- | BSLet: streams: list (C.row c)   ->
-          e1: exp c 'b               ->
-          e2: exp (C.close1 c 'b) 'a
-                                    ->
-          v: 'a                      ->
-          bigstep streams (subst1 e2 e1) v
-                                    ->
-          bigstep streams (XLet 'b e1 e2) v
+ | BSLet:
+          #a: t.ty -> #b: t.ty                ->
+          streams: list (row c)               ->
+          e1: exp t c b                       ->
+          e2: exp t (C.close1 c b) a          ->
+          v:  t.ty_sem a                      ->
+          bigstep streams (subst1 e2 e1) v    ->
+          bigstep streams (XLet b e1 e2) v
 
- // | BSContract:
- //          streams: list (C.row c)   ->
- //          ea: exp ['b]    xprop ->
- //          eg: exp ['a; 'b] xprop ->
- //          eb: exp ['b]    'a     ->
- //          earg: exp c                     'b     ->
- //          v:                              'a     ->
- //          bigstep streams
- //            (subst1 (weaken c eb) earg)
- //            v                                  ->
- //          bigstep streams (XContract ea eg eb earg) v
+ (* To evaluate a contract, we just use the implementation. We want to be able
+    to show that the evaluation is a refinement of the rely/guarantee. *)
+ | BSContract:
+          #valty: t.ty                        ->
+          streams: list (row c)               ->
+          status: PM.contract_status          ->
+          rely: exp t c            t.propty   ->
+          guar: exp t (valty :: c) t.propty   ->
+          impl: exp t c            valty      ->
+          v: t.ty_sem valty                   ->
+          vr: bool                            ->
+          vg: bool                            ->
+          bigstep streams rely vr               ->
+          bigstep streams (subst1 guar impl) vg ->
+          bigstep streams impl v                ->
+          bigstep streams (XContract status rely guar impl) v
 
+ (* We evaluate properties, but we don't actually check that the properties are
+    true in this semantics. We want to be able to prove that the transition
+    system preserves semantics, whether or not the properties are true. *)
  | BSCheck:
-          streams: list (C.row c)   ->
-          name:    string                       ->
-          eprop:   exp c                  xprop ->
-          e:       exp c                  'a     ->
-          v:                              'a     ->
-          bigstep streams e v                   ->
-          bigstep streams (XCheck name eprop e) v
+          streams: list (row c)                   ->
+          status:  PM.prop_status                 ->
+          eprop:   exp t c             t.propty   ->
+          v:       t.ty_sem t.propty              ->
+          bigstep streams                eprop  v ->
+          bigstep streams (XCheck status eprop) v
 
+and bigstep_apps (#t: table) (#c: context t): (#a: funty t.ty) -> list (row c) -> exp_apps t c a -> funty_sem t.ty_sem a -> Type =
+
+ (* Primitives `p` are looked up in the primitive table semantics *)
+ | BSPrim:
+          streams: list (row c) ->
+          p: t.prim             ->
+          bigstep_apps streams (XPrim p) (t.prim_sem p)
+
+ (* Element-wise application *)
+ | BSApp: streams: list (row c)       ->
+          #a: t.ty -> #b: funty t.ty  ->
+          f: exp_apps t c (FTFun a b) ->
+          e: exp t c  a               ->
+          f_v: funty_sem t.ty_sem (FTFun a b) ->
+          e_v: t.ty_sem a                     ->
+          bigstep_apps streams f f_v          ->
+          bigstep      streams e e_v          ->
+          bigstep_apps streams (XApp f e) (f_v e_v)
 
 (* Under streaming history `streams`, evaluate expression `e` at each step to
    produce stream of values `vs` *)
 noeq
-type bigsteps (#c: C.context) (#a: Type): list (C.row c) -> exp c a -> list a -> Type =
+type bigsteps (#t: table) (#c: context t) (#a: t.ty): list (row c) -> exp t c a -> list (t.ty_sem a) -> Type =
  | BSs0:
-    e: exp c a                          ->
+    e: exp t c a                        ->
     bigsteps [] e []
  | BSsS:
-    rows: list (C.row c)                ->
-    e: exp c a                          ->
-    vs: list a                          ->
-    row: C.row c                        ->
-    v: a                                ->
+    rows: list (row c)                  ->
+    e: exp t c a                        ->
+    vs: list (t.ty_sem a)               ->
+    row: row c                          ->
+    v: t.ty_sem a                       ->
     bigsteps        rows  e      vs     ->
-    bigstep  (row :: rows) e  v          ->
+    bigstep  (row :: rows) e  v         ->
     bigsteps (row :: rows) e (v :: vs)
 
-#push-options "--split_queries always"
+let rec bigstep_always (#t: table) (#c: context t)
+  (rows: list (row c))
+  (e: exp t c t.propty): Tot prop (decreases rows) =
+  match rows with
+  | [] -> True
+  | _ :: rows' ->
+    bigstep rows e true /\
+    bigstep_always rows' e
+
+
 (* Properties *)
-let rec bigstep_proof_equivalence
-  (#streams: list (C.row 'c))
-  (#e: exp 'c 'a)
-  (#v1 #v2: 'a)
-  (hBS1: bigstep streams e v1) (hBS2: bigstep streams e v2):
+let bigstep_base_proof_equivalence
+  (#t: table)
+  (#c: context t)
+  (#a: t.ty)
+  (#streams: list (row c))
+  (#e: exp_base t c a)
+  (#v1 #v2: t.ty_sem a)
+  (hBS1: bigstep_base streams e v1) (hBS2: bigstep_base streams e v2):
     Lemma (ensures hBS1 === hBS2) (decreases hBS1) =
   match hBS1 with
   | BSVal _ _  -> ()
   | BSVar _ _ _ -> ()
 
-  | BSApp _ _ _ _ _ bs11 bs12 ->
-    let BSApp _ _ _ _ _ bs21 bs22 = hBS2 in
-    bigstep_proof_equivalence bs11 bs21;
-    bigstep_proof_equivalence bs12 bs22
+
+let rec bigstep_proof_equivalence
+  (#t: table)
+  (#c: context t)
+  (#a: t.ty)
+  (#streams: list (row c))
+  (#e: exp t c a)
+  (#v1 #v2: t.ty_sem a)
+  (hBS1: bigstep streams e v1) (hBS2: bigstep streams e v2):
+    Lemma (ensures hBS1 === hBS2) (decreases hBS1) =
+  match hBS1 with
+  | BSBase _ _ _ bs11 ->
+    let BSBase _ _ _ bs21 = hBS2 in
+    bigstep_base_proof_equivalence bs11 bs21
+
+  | BSApps _ _ _ bs11 ->
+    let BSApps _ _ _ bs21 = hBS2 in
+    bigstep_apps_proof_equivalence bs11 bs21
 
   | BSFby1 _ _ _ ->
     ()
@@ -168,30 +223,67 @@ let rec bigstep_proof_equivalence
     let BSFbyS _ _ _ _ _ bs2 = hBS2 in
     bigstep_proof_equivalence bs1 bs2
 
-  | BSThen1 _ _ _ _ bs12 ->
-    let BSThen1 _ _ _ _ bs22 = hBS2 in
-    bigstep_proof_equivalence bs12 bs22
-
-  | BSThenS _ _ _ _ bs12 ->
-    let BSThenS _ _ _ _ bs22 = hBS2 in
-    bigstep_proof_equivalence bs12 bs22
-
-  | BSMu _ _ _ _ bs1 ->
-    let BSMu _ _ _ _ bs2 = hBS2 in
+  | BSMu _ _ _ bs1 ->
+    let BSMu _ _ _ bs2 = hBS2 in
     bigstep_proof_equivalence bs1 bs2
 
   | BSLet _ _ _ _ bs1 ->
     let BSLet _ _ _ _ bs2 = hBS2 in
     bigstep_proof_equivalence bs1 bs2
 
-  | BSCheck _ _ _ _ _ bs1 ->
-    let BSCheck _ _ _ _ _ bs2 = hBS2 in
+  | BSContract _ _ _ _ _ _ _ _ bsr1 bsg1 bsi1 ->
+    let BSContract _ _ _ _ _ _ _ _ bsr2 bsg2 bsi2 = hBS2 in
+    bigstep_proof_equivalence bsr1 bsr2;
+    bigstep_proof_equivalence bsg1 bsg2;
+    bigstep_proof_equivalence bsi1 bsi2
+
+  | BSCheck _ _ _ _ bs1 ->
+    let BSCheck _ _ _ _ bs2 = hBS2 in
     bigstep_proof_equivalence bs1 bs2
 
+and bigstep_apps_proof_equivalence
+  (#t: table)
+  (#c: context t)
+  (#a: funty t.ty)
+  (#streams: list (row c))
+  (#e: exp_apps t c a)
+  (#v1 #v2: funty_sem t.ty_sem a)
+  (hBS1: bigstep_apps streams e v1) (hBS2: bigstep_apps streams e v2):
+    Lemma (ensures hBS1 === hBS2) (decreases hBS1) =
+  match hBS1 with
+  | BSPrim _ _ ->
+    ()
+  | BSApp _ _ _ _ _ bs11 bs12 ->
+    let BSApp _ _ _ _ _ bs21 bs22 = hBS2 in
+    bigstep_apps_proof_equivalence bs11 bs21;
+    bigstep_proof_equivalence bs12 bs22
+
+let rec bigsteps_proof_equivalence
+  (#t: table)
+  (#c: context t)
+  (#a: t.ty)
+  (#streams: list (row c))
+  (#e: exp t c a)
+  (#vs1 #vs2: list (t.ty_sem a))
+  (hBS1: bigsteps streams e vs1) (hBS2: bigsteps streams e vs2):
+    Lemma (ensures hBS1 === hBS2) (decreases hBS1) =
+  match hBS1 with
+  | BSs0 _ ->
+    ()
+  | BSsS _ _ _ _ _ bs11 bs12 ->
+    let BSsS _ _ _ _ _ bs21 bs22 = hBS2 in
+    bigsteps_proof_equivalence bs11 bs21;
+    bigstep_proof_equivalence bs12 bs22
+
+
+
 let bigstep_deterministic
-  (#streams: list (C.row 'c))
-  (#e: exp 'c 'a)
-  (#v1 #v2: 'a)
+  (#t: table)
+  (#c: context t)
+  (#streams: list (row c))
+  (#a: t.ty)
+  (#e: exp t c a)
+  (#v1 #v2: t.ty_sem a)
   (hBS1: bigstep streams e v1) (hBS2: bigstep streams e v2):
     Lemma (ensures (v1 == v2)) (decreases hBS1) =
   bigstep_proof_equivalence hBS1 hBS2

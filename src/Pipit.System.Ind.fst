@@ -3,96 +3,112 @@ module Pipit.System.Ind
 
 open Pipit.System.Base
 
-module C = Pipit.Context
-
 let rec prop_for_all (l: list prop): prop =
  match l with
  | [] -> True
  | p :: ps -> p /\ prop_for_all ps
 
-let all_checks_hold (#input #state #value: Type) (t: system input state value) (s: state): prop =
-  prop_for_all (List.Tot.map (fun (n, i) -> i s) t.chck)
+// let system_holds (#input #state #value: Type) (t: system input state value): prop =
+//   forall (inputs: list (input & value)) (s: state).
+//     Cons? inputs            ==>
+//     system_stepn t inputs s ==>
+//     t.chck.assumptions s ==>
+//     t.chck.obligations s
 
-let system_holds (#input #state #value: Type) (t: system input state value): prop =
-  forall (inputs: list (input & value)) (s: state).
-    Cons? inputs            ==>
-    system_stepn t inputs s ==>
-    all_checks_hold t s
+let base_case (#input #value: Type) (#oracle #state: option Type) (t: system input oracle state value): prop =
+  forall (i: input) (o: option_type_sem oracle).
+    let stp = t.step i o t.init in
+    option_prop_sem stp.chck.assumptions ==>
+    option_prop_sem stp.chck.obligations
 
-let base_case (#input #state #value: Type) (t: system input state value): prop =
-  forall (i: input) (s: state) (s': state) (r: value).
-    t.init s ==> t.step i s s' r ==>
-    all_checks_hold t s'
-
-let rec base_case_k' (k: nat) (#input #state #value: Type) (t: system input state value) (s': state) (check: prop): prop =
+// TODO: change base case for k to split out to separate checks for each length, eg
+// base_case_k 3 =
+//   (forall s0. t.init s0 ==> t.chck.assumptions s0 ==> t.chck.obligations s0) /\
+//   (forall s0 s1. t.init s0 ==> t.step s0 s1 ==> t.chck.assumptions s0 ==> t.chck.assumptions s1 ==> t.chck.obligations s1) /\
+//   (forall s0 s1 s2. t.init s0 ==> t.step s0 s1 ==> t.step s1 s2 ==> t.chck.assumptions s0 ==> t.chck.assumptions s1 ==> t.chck.assumptions s2 ==> t.chck.obligations s2)
+// this makes the proof obligation larger, but should make the soundness proof easier as we won't be assuming that step is always defined (which it isn't for contracts with questionable assumptions)
+// would it make sense to spell out step requirements explicitly? eg,
+//   forall s0. t.chck.assumptions s0 ==> exists s1. t.step s0 s1
+// but this quantifier alternation looks like it would be difficult to solve automatically
+let rec base_case_k' (k: nat) (#input #value: Type) (#oracle #state: option Type) (t: system input oracle state value) (s: option_type_sem state) (check: prop -> prop): prop =
   match k with
-  | 0 -> t.init s' ==> check
+  | 0 -> check True
   | _ ->
-    forall (i: input) (s: state) (r: value).
-      t.step i s s' r ==>
-      base_case_k' (k - 1) t s (check /\ all_checks_hold t s')
+    forall (i: input) (o: option_type_sem oracle).
+      let stp = t.step i o s in
+      base_case_k' (k - 1) t stp.s
+        (fun p ->
+          check (option_prop_sem stp.chck.assumptions ==>
+            (option_prop_sem stp.chck.obligations /\ p)))
 
-let base_case_k (k: nat) (#input #state #value: Type) (t: system input state value): prop =
-  forall (s': state). base_case_k' k t s' True
+let base_case_k (k: nat) (#input #value: Type) (#oracle #state: option Type) (t: system input oracle state value): prop =
+  base_case_k' k t t.init (fun r -> r)
 
-let step_case (#input #state #value: Type) (t: system input state value): prop =
-  forall (i0 i1: input) (s0: state) (s1 s2: state) (r0 r1: value).
-    t.step i0 s0 s1 r0 ==> all_checks_hold t s1 ==>
-    t.step i1 s1 s2 r1 ==> all_checks_hold t s2
+let step_case (#input #value: Type) (#oracle #state: option Type) (t: system input oracle state value): prop =
+  forall (i0 i1: input) (o0 o1: option_type_sem oracle) (s0: option_type_sem state).
+    let stp1 = t.step i0 o0 s0 in
+    let stp2 = t.step i1 o1 stp1.s in
+    option_prop_sem stp1.chck.assumptions ==>
+    option_prop_sem stp1.chck.obligations ==>
+    option_prop_sem stp2.chck.assumptions ==>
+    option_prop_sem stp2.chck.obligations
 
-let rec step_case_k' (k: nat) (#input #state #value: Type) (t: system input state value) (s': state) (check: prop): prop =
+let rec step_case_k' (k: nat) (#input #value: Type) (#oracle #state: option Type)  (t: system input oracle state value) (s: option_type_sem state) (chck: checks): prop =
   match k with
-  | 0 -> check
-  | _ -> forall (i: input) (s: state) (r: value).
-    t.step i s s' r ==>
-    all_checks_hold t s ==>
-    step_case_k' (k - 1) t s check
+  | 0 -> option_prop_sem chck.assumptions ==> option_prop_sem chck.obligations
+  | _ -> forall (i: input) (o: option_type_sem oracle).
+    let stp = t.step i o s in
+    option_prop_sem chck.assumptions ==>
+    option_prop_sem chck.obligations ==>
+    step_case_k' (k - 1) t stp.s stp.chck
 
-let step_case_k (k: nat) (#input #state #value: Type) (t: system input state value): prop =
-  forall (s': state). step_case_k' (k + 1) t s' (all_checks_hold t s')
+let step_case_k (k: nat) (#input #value: Type) (#oracle #state: option Type)  (t: system input oracle state value): prop =
+  forall (i: input) (o: option_type_sem oracle) (s: option_type_sem state).
+    let stp = t.step i o s in
+    step_case_k' k t stp.s stp.chck
 
-let induct1 (#input #state #value: Type)
-  (t: system input state value): prop =
+let induct1 (#input #value: Type) (#oracle #state: option Type)
+  (t: system input oracle state value): prop =
     base_case t /\ step_case t
 
-let rec induct1_sound' (#input #state #value: Type)
-  (t: system input state value)
-  (inputs: list (input & value))
-  (s': state):
-    Lemma
-        (requires system_stepn t inputs s' /\ induct1 t /\ Cons? inputs)
-        (ensures all_checks_hold t s')
-        (decreases inputs) =
-  match inputs with
-  | [] -> ()
-  | [(i, v)] -> ()
-  | (i1,v1) :: (i0,v0) :: ivs ->
-    eliminate exists (s0: state) (s1: state).
-      system_stepn t ivs s0 /\
-      t.step i0 s0 s1 v0 /\
-      t.step i1 s1 s' v1
-    returns all_checks_hold t s'
-    with h.
-      (induct1_sound' t ((i0, v0) :: ivs) s1)
+// let rec induct1_sound' (#input #state #value: Type)
+//   (t: system input state value)
+//   (inputs: list (input & value))
+//   (s': state):
+//     Lemma
+//         (requires system_stepn t inputs s' /\ induct1 t /\ Cons? inputs)
+//         (ensures all_checks_hold t s')
+//         (decreases inputs) =
+//   match inputs with
+//   | [] -> ()
+//   | [(i, v)] -> ()
+//   | (i1,v1) :: (i0,v0) :: ivs ->
+//     eliminate exists (s0: state) (s1: state).
+//       system_stepn t ivs s0 /\
+//       t.step i0 s0 s1 v0 /\
+//       t.step i1 s1 s' v1
+//     returns all_checks_hold t s'
+//     with h.
+//       (induct1_sound' t ((i0, v0) :: ivs) s1)
 
-let induct1_sound (#input #state #value: Type)
-  (t: system input state value):
-    Lemma
-        (requires induct1 t)
-        (ensures system_holds t) =
-  introduce forall (inputs: list (input & value) { Cons? inputs }) (s: state { system_stepn t inputs s }).
-    (Cons? inputs) ==>
-    system_stepn t inputs s ==>
-    all_checks_hold t s
-  with
-    (induct1_sound' t inputs s)
+// let induct1_sound (#input #state #value: Type)
+//   (t: system input state value):
+//     Lemma
+//         (requires induct1 t)
+//         (ensures system_holds t) =
+//   introduce forall (inputs: list (input & value) { Cons? inputs }) (s: state { system_stepn t inputs s }).
+//     (Cons? inputs) ==>
+//     system_stepn t inputs s ==>
+//     all_checks_hold t s
+//   with
+//     (induct1_sound' t inputs s)
 
-let induct_k (k: nat) (#input #state #value: Type)
-  (t: system input state value): prop =
+let induct_k (k: nat) (#input #value: Type) (#oracle #state: option Type)
+  (t: system input oracle state value): prop =
     base_case_k k t /\ step_case_k k t
 
 (* The current formulation of the base case makes it difficult to prove
-   that induction is sound. The issue is that base_case_k 2 has the shape:
+   that k-induction is sound. The issue is that base_case_k 2 has the shape:
    >  forall s0 s1 s2.
    >    t.init s0 /\
    >    t.step s0 s1 /\

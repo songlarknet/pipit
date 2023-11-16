@@ -1,0 +1,137 @@
+(******* Past-time temporal logic style helpers *******)
+
+(* Stream `i` was true at the previous tick ("yesterday") *)
+node previously(
+  i: bool;
+) returns (
+  b: bool;
+)
+let
+  b = false -> pre i;
+tel
+
+(* So far (always in the past) *)
+node sofar(
+  i: bool;
+) returns (
+  b: bool;
+)
+let
+  b = i and (true -> pre b);
+tel
+
+node never(
+  i: bool;
+) returns (
+  b: bool;
+)
+let
+  b = sofar(not i);
+tel
+
+(* Stream `i` has been true now or at any point in the past (past-finally) *)
+node any(
+  i: bool;
+) returns (
+  b: bool;
+)
+let
+  b = i or (false -> pre b);
+tel
+
+node since(
+  i: bool;
+  j: bool;
+) returns (
+  b: bool;
+)
+let
+  b = any(j) => (i and (true -> pre b));
+tel
+
+(* Count how many times a stream of booleans has been consecutively true.
+ A real, executable implementation needs to use saturating addition to avoid
+ overflow. *)
+node countsecutive(
+  i: bool;
+) returns (
+  c: int;
+)
+let
+  c = if i then (0 -> pre c) + 1 else 0;
+tel
+
+(* Stream `i` has been true for at least `n` previous ticks *)
+node lastn(
+  i: bool;
+  const n: int;
+) returns (
+  b: bool;
+)
+let
+  b = countsecutive(i) >= n;
+tel
+
+(* Stream `i` has been true at least once in the `n` previous ticks *)
+node anyn(
+  i: bool;
+  const n: int;
+) returns (
+  b: bool;
+)
+let
+  b = countsecutive(not i) < n;
+tel
+
+(* Stream `i` transitions from false to true. First value is false regardless of value of `i`. *)
+node rising_edge(
+  i: bool;
+) returns (
+  b: bool;
+)
+let
+  b = i and previously(not i);
+  --%PROPERTY not b -> true;
+tel
+
+(* Stream `i` transitions from true to false. First value is false regardless of value of `i`. *)
+node falling_edge(
+  i: bool;
+) returns (
+  b: bool;
+)
+let
+  b = not i and previously(i);
+  --%PROPERTY not b -> true;
+tel
+
+node sum(
+  inc: int;
+) returns (
+  i: int;
+)
+let
+  i = (0 -> pre i) + inc;
+tel
+
+node count_when(
+  inc: bool;
+) returns (
+  i: int;
+)
+let
+  i = sum(if inc then 1 else 0);
+tel
+
+function clamp(
+  const min: int; -- no const allowed: https://github.com/kind2-mc/kind2/issues/1023
+  const max: int;
+  value: int;
+) returns (
+  i: int;
+)
+let
+  i = if value < min then min
+      else if value > max then max
+      else value;
+tel

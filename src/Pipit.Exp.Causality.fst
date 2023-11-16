@@ -10,24 +10,32 @@
 *)
 module Pipit.Exp.Causality
 
+open Pipit.Prim.Table
 open Pipit.Exp.Base
 open Pipit.Exp.Binding
 open Pipit.Exp.Binding.Properties
 open Pipit.Exp.Bigstep
 
-module C = Pipit.Context
+module C  = Pipit.Context.Base
+module CR = Pipit.Context.Row
+module CP = Pipit.Context.Properties
 
 (* Direct dependencies: does expression `e` have a non-delayed dependency on bound-variable `i`?
     *)
-let rec direct_dependency (e: exp 'c 'a) (i: C.index) : Tot bool (decreases e) =
+let direct_dependency_base (#t: table) (#c: context t) (#a: t.ty) (e: exp_base t c a) (i: C.index) : Tot bool (decreases e) =
   match e with
   | XVal _ -> false
   | XVar _ -> false
   | XBVar i' -> i = i'
-  | XApp e1 e2 -> direct_dependency e1 i || direct_dependency e2 i
+
+(* Direct dependencies: does expression `e` have a non-delayed dependency on bound-variable `i`?
+    *)
+let rec direct_dependency (#t: table) (#c: context t) (#a: t.ty) (e: exp t c a) (i: C.index) : Tot bool (decreases e) =
+  match e with
+  | XBase b -> direct_dependency_base b i
+  | XApps e1 -> direct_dependency_apps e1 i
   | XFby _ _ -> false
-  | XThen e1 e2 -> direct_dependency e1 i || direct_dependency e2 i
-  | XMu _ e1 -> direct_dependency e1 (i + 1)
+  | XMu e1 -> direct_dependency e1 (i + 1)
   (* This is more restrictive than necessary. The following should work:
      > rec x. let y = x + 1 in 0 fby y
      Maybe the definition should allow `e1` to directly refer to `i` if `e2` does
@@ -37,34 +45,58 @@ let rec direct_dependency (e: exp 'c 'a) (i: C.index) : Tot bool (decreases e) =
      >        direct_dependency e2 (i + 1)
   *)
   | XLet b e1 e2 -> direct_dependency e1 i || direct_dependency e2 (i + 1)
-  | XCheck name e1 e2 -> direct_dependency e1 i || direct_dependency e2 i
+  | XCheck name e1 -> direct_dependency e1 i
+  (* Should we care if a contract's relies or guarantees mention `i`?
+     I don't think it's strictly necessary - causality is required for total evaluation, which
+     uses the implementation rather than the abstraction. *)
+  | XContract _ rely guar impl ->
+    direct_dependency rely i ||
+    direct_dependency impl i ||
+    direct_dependency impl i
+
+and direct_dependency_apps (#t: table) (#c: context t) (#a: funty t.ty) (e: exp_apps t c a) (i: C.index) : Tot bool (decreases e) =
+  match e with
+  | XPrim _ -> false
+  | XApp e1 e2 -> direct_dependency_apps e1 i || direct_dependency e2 i
 
 (* Causality: are all references to recursive streams delayed?
    All causal expressions make progress.
    We also sneak in a well-formedness check here that there are no free
    variables. This is really a different check, but it's convenient.
 *)
-let rec causal (e: exp 'c 'a): Tot bool (decreases e) =
+let causal_base (#t: table) (#c: context t) (#a: t.ty) (e: exp_base t c a): Tot bool =
   match e with
   | XVal _ -> true
   | XVar _ -> false // no free variables
   | XBVar _ -> true
-  | XApp e1 e2 -> causal e1 && causal e2
+
+let rec causal (#t: table) (#c: context t) (#a: t.ty) (e: exp t c a): Tot bool (decreases e) =
+  match e with
+  | XBase e1 -> causal_base e1
+  | XApps e1 -> causal_apps e1
   | XFby _ e1 -> causal e1
-  | XThen e1 e2 -> causal e1 && causal e2
-  | XMu _ e1 -> causal e1 && not (direct_dependency e1 0)
+  | XMu e1 -> causal e1 && not (direct_dependency e1 0)
   | XLet b e1 e2 -> causal e1 && causal e2
-  | XCheck _ e1 e2 -> causal e1 && causal e2
+  | XCheck _ e1 -> causal e1
+  | XContract _ rely guar impl ->
+    causal rely && causal guar && causal impl
+
+and causal_apps (#t: table) (#c: context t) (#a: funty t.ty) (e: exp_apps t c a): Tot bool (decreases e) =
+  match e with
+  | XPrim _ -> true
+  | XApp e1 e2 -> causal_apps e1 && causal e2
 
 #push-options "--fuel 1 --ifuel 1"
 
 #push-options "--split_queries always"
 
-(* not used, but lemma_direct_dependency_not_subst' needs i' < i case *)
-let rec lemma_direct_dependency_lift_ge (e: exp 'c 'a) (i: C.index { C.has_index 'c i }) (i': C.index { i >= i' /\ i' <= List.Tot.length 'c }) (t: Type):
+(*
+
+(* used by lemma_direct_dependency_not_subst', lemma_direct_dependency_not_subst' needs i' < i case *)
+let rec lemma_direct_dependency_lift_ge (#tbl: table) (#c: context tbl) (e: exp tbl c 'a) (i: C.index_lookup c) (i': C.index { i >= i' /\ i' <= List.Tot.length c }) (t: tbl.ty):
     Lemma (ensures direct_dependency e i == direct_dependency (lift1' e i' t) (i + 1)) (decreases e) =
   match e with
-  | XVal _ | XVar _ | XBVar _ -> ()
+  | XVal _ | XVar _ | XBVar _ | XPrim _ -> ()
   | XApp e1 e2 ->
     lemma_direct_dependency_lift_ge e1 i i' t;
     lemma_direct_dependency_lift_ge e2 i i' t;
@@ -75,7 +107,7 @@ let rec lemma_direct_dependency_lift_ge (e: exp 'c 'a) (i: C.index { C.has_index
   | XThen e1 e2 ->
     lemma_direct_dependency_lift_ge e1 i i' t;
     lemma_direct_dependency_lift_ge e2 i i' t
-  | XMu _ e1 ->
+  | XMu e1 ->
     lemma_direct_dependency_lift_ge e1 (i + 1) (i' + 1) t
   | XLet b e1 e2 ->
     lemma_direct_dependency_lift_ge e1 i i' t;
@@ -92,16 +124,19 @@ let rec lemma_direct_dependency_lift_ge (e: exp 'c 'a) (i: C.index { C.has_index
 //     lemma_direct_dependency_lift_lt e1 (i + 1) (i' + 1) t
 
 (* used by lemma_bigstep_substitute_intros_no_dep *)
-let rec lemma_direct_dependency_not_subst' (i: C.index) (i': C.index { C.has_index 'c i' /\ i' <= i })
-  (e: exp 'c 'a { ~ (direct_dependency e (i + 1)) })
-  (p: exp (C.drop1 'c i') (C.get_index 'c i') { ~ (direct_dependency p i ) }):
+let rec lemma_direct_dependency_not_subst'
+  (#tbl: table) (#c: context tbl)
+  (i: C.index) (i': C.index { C.has_index c i' /\ i' <= i })
+  (e: exp tbl c 'a { ~ (direct_dependency e (i + 1)) })
+  (p: val_exp tbl (C.drop1 c i') (C.get_index c i') { ~ (direct_dependency p i ) }):
     Lemma
-      (requires (C.has_index (C.drop1 'c i') i))
+      (requires (C.has_index (C.drop1 c i') i))
       (ensures ~ (direct_dependency (subst1' e i' p) i)) (decreases e) =
   match e with
   | XVal _ -> ()
   | XVar _ -> ()
   | XBVar _ -> ()
+  | XPrim _ -> ()
   | XApp e1 e2 ->
     assert_norm (direct_dependency (XApp e1 e2) (i + 1) == (direct_dependency e1 (i + 1) || direct_dependency e2 (i + 1)));
     lemma_direct_dependency_not_subst' i i' e1 p;
@@ -114,9 +149,9 @@ let rec lemma_direct_dependency_not_subst' (i: C.index) (i': C.index { C.has_ind
   | XThen e1 e2 ->
     lemma_direct_dependency_not_subst' i i' e1 p;
     lemma_direct_dependency_not_subst' i i' e2 p
-  | XMu _ e1 ->
-    lemma_direct_dependency_lift_ge p i 0 'a;
-    lemma_direct_dependency_not_subst' (i + 1) (i' + 1) e1 (lift1 p 'a)
+  | XMu e1 ->
+    lemma_direct_dependency_lift_ge p i 0 (XMu?.valty e);
+    lemma_direct_dependency_not_subst' (i + 1) (i' + 1) e1 (lift1 p (XMu?.valty e))
   | XLet b e1 e2 ->
     lemma_direct_dependency_not_subst' i i' e1 p;
     lemma_direct_dependency_lift_ge p i 0 b;
@@ -129,21 +164,24 @@ let rec lemma_direct_dependency_not_subst' (i: C.index) (i': C.index { C.has_ind
 
 (* used by lemma_bigstep_substitute_elim_XMu, indirectly by transition system proof *)
 let rec lemma_bigstep_substitute_elim
-  (i: C.index { i < List.Tot.length 'c })
-  (rows: list (C.row (C.drop1 'c i)) { Cons? rows })
-  (e: exp (C.drop1 'c i) (C.get_index 'c i))
-  (vs: list (C.get_index 'c i) { List.Tot.length rows == List.Tot.length vs })
-  (e': exp 'c 'a)
+  (#t: table)
+  (#c: context t)
+  (i: C.index_lookup c)
+  (rows: list (row (C.drop1 c i)) { Cons? rows })
+  (e: val_exp t (C.drop1 c i) (C.get_index c i))
+  (vs: list (C.get_index (context_sem c) i) { List.Tot.length rows == List.Tot.length vs })
+  (e': exp t c 'a)
   (v': 'a)
   (hBSse: bigsteps rows e vs)
   (hBSe': bigstep rows (subst1' e' i e) v'):
-    Tot (bigstep (C.row_zip2_lift1_dropped i rows vs) e' v') (decreases hBSe') =
+    Tot (bigstep (CP.row_zip2_lift1_dropped i rows vs) e' v') (decreases hBSe') =
   let latest = List.Tot.hd rows in
-  let rows' = C.row_zip2_lift1_dropped i rows vs in
+  let rows' = CP.row_zip2_lift1_dropped i rows vs in
   let latest' = List.Tot.hd rows' in
   match e' with
-  | XVal v -> BSVal _ _
+  | XVal v -> BSVal _ v
   | XVar _ -> false_elim ()
+  | XPrim p -> BSPrim _ p
   | XBVar i' ->
     if i = i'
     then
@@ -177,28 +215,29 @@ let rec lemma_bigstep_substitute_elim
     | BSThenS _ _ _ _ hBS2 ->
       let hBS2' = lemma_bigstep_substitute_elim i rows e vs e2 v' hBSse hBS2 in
       BSThenS _ e1 e2 _ hBS2')
-  | XMu _ e1 ->
+  | XMu e1 ->
     (match hBSe' with
-    | BSMu _ _ e1' _ hBSe1 ->
-      C.lemma_dropCons 'a 'c (i + 1);
-      assert (C.drop1 ('a :: 'c) (i + 1) == 'a :: C.drop1 'c i);
-      let lifted: exp (C.drop1 ('a :: 'c) (i + 1)) (C.get_index ('a :: 'c) (i + 1)) = lift1 e 'a in
+    | BSMu _ e1' _ hBSe1 ->
+      let valty = XMu?.valty e' in
+      CP.lemma_dropCons valty c (i + 1);
+      assert (C.drop1 (valty :: c) (i + 1) == valty :: C.drop1 c i);
+      let lifted: val_exp t (C.drop1 (valty :: c) (i + 1)) (C.get_index (valty :: c) (i + 1)) = lift1 e valty in
       assert_norm (subst1' (XMu e1) i e == XMu (subst1' e1 (i + 1) lifted));
 
-      let se: exp ('a :: C.drop1 'c i) 'a = e1' in
-      let se: exp (C.drop1 'c i) 'a = subst1 e1' (XMu e1') in
+      let se: val_exp t (valty :: C.drop1 c i) valty = e1' in
+      let se: val_exp t (C.drop1 c i) valty = subst1 e1' (XMu e1') in
       lemma_subst_subst_distribute_XMu e1 i e;
       assert (subst1 (subst1' e1 (i + 1) lifted) (XMu e1') == subst1' (subst1 e1 (XMu e1)) i e);
       let hBSe1': bigstep rows se v' = hBSe1 in
       let hBSX = lemma_bigstep_substitute_elim i rows e vs (subst1 e1 (XMu e1)) v' hBSse hBSe1' in
-      BSMu _ _ e1 _ hBSX)
+      BSMu _ e1 _ hBSX)
   | XLet b e1 e2 ->
     (match hBSe' with
     | BSLet _ e1' e2' _ hBSe1' ->
-      C.lemma_dropCons b 'c (i + 1);
-      assert (C.drop1 (b :: 'c) (i + 1) == b :: C.drop1 'c i);
-      C.lemma_get_index_Cons b 'c i;
-      let lifted: exp (C.drop1 (b :: 'c) (i + 1)) (C.get_index (b :: 'c) (i + 1)) = lift1 e b in
+      CP.lemma_dropCons b c (i + 1);
+      assert (C.drop1 (b :: c) (i + 1) == b :: C.drop1 c i);
+      CP.lemma_get_index_Cons b c i;
+      let lifted: val_exp t (C.drop1 (b :: c) (i + 1)) (C.get_index (b :: c) (i + 1)) = lift1 e b in
       assert_norm (subst1' (XLet b e1 e2) i e == XLet b (subst1' e1 i e) (subst1' e2 (i + 1) lifted));
 
       lemma_subst_subst_distribute_le e2 0 i e1 e;
@@ -212,19 +251,22 @@ let rec lemma_bigstep_substitute_elim
 
 (* used by lemma_bigstep_substitute_intros_no_dep, indirectly by lemma_bigstep_total *)
 let rec lemma_bigstep_substitute_intros
-  (i: C.index { i < List.Tot.length 'c })
-  (rows: list (C.row (C.drop1 'c i)) { Cons? rows })
-  (e: exp (C.drop1 'c i) (C.get_index 'c i))
-  (vs: list (C.get_index 'c i) { List.Tot.length rows == List.Tot.length vs })
-  (e': exp 'c 'a)
+  (#t: table)
+  (#c: context t)
+  (i: C.index_lookup c)
+  (rows: list (row (C.drop1 c i)) { Cons? rows })
+  (e: val_exp t (C.drop1 c i) (C.get_index c i))
+  (vs: list (C.get_index (context_sem c) i) { List.Tot.length rows == List.Tot.length vs })
+  (e': exp t c 'a)
   (a: 'a)
   (hBSse: bigsteps rows e vs)
-  (hBSe': bigstep (C.row_zip2_lift1_dropped i rows vs) e' a):
+  (hBSe': bigstep (CP.row_zip2_lift1_dropped i rows vs) e' a):
     Tot (bigstep rows (subst1' e' i e) a) (decreases hBSe') =
   let row = List.Tot.hd rows in
   let rows' = List.Tot.tl rows in
   match e' with
-  | XVal _ -> BSVal _ _
+  | XVal v -> BSVal rows v
+  | XPrim p -> BSPrim rows p
   | XVar _ -> false_elim ()
   | XBVar i' ->
     if i = i'
@@ -232,9 +274,9 @@ let rec lemma_bigstep_substitute_intros
     else if i' < i
     then BSVar row rows' i'
     else (
-      C.lemma_drop_get_index_gt 'c i (i' - 1);
-      assert (C.opt_index (C.drop1 'c i) (i' - 1) == Some 'a);
-      assert_norm (subst1' (XBVar i') i e == XBVar #(C.drop1 'c i) #('a) (i' - 1));
+      CP.lemma_drop_get_index_gt c i (i' - 1);
+      assert (C.opt_index (C.drop1 c i) (i' - 1) == Some (C.get_index c i'));
+      assert_norm (subst1' (XBVar i') i e == XBVar #t #(C.drop1 c i) (i' - 1));
       BSVar row rows' (i' - 1))
   | XApp e1 e2 ->
     (match hBSe' with
@@ -258,13 +300,14 @@ let rec lemma_bigstep_substitute_intros
     | BSThenS _ _ _ v2 hBS2 ->
       let hBS2' = lemma_bigstep_substitute_intros i rows e vs e2 v2 hBSse hBS2 in
       BSThenS _ (subst1' e1 i e) (subst1' e2 i e) v2 hBS2')
-  | XMu _ e1 ->
+  | XMu e1 ->
     (match hBSe' with
-    | BSMu inhabited _ _ _ hBSe1 ->
+    | BSMu _ _ _ hBSe1 ->
+      let valty = XMu?.valty e' in
       let hBSX = lemma_bigstep_substitute_intros i rows e vs (subst1 e1 (XMu e1)) a hBSse hBSe1 in
       lemma_subst_subst_distribute_XMu e1 i e;
-      assert_norm (subst1' (XMu e1) i e == XMu (subst1' e1 (i + 1) (lift1 e 'a)));
-      BSMu inhabited _ (subst1' e1 (i + 1) (lift1 e 'a)) _ hBSX)
+      assert (subst1' (XMu e1) i e == XMu (subst1' e1 (i + 1) (lift1 e valty)));
+      BSMu _ (subst1' e1 (i + 1) (lift1 e valty)) _ hBSX)
   | XCheck p e1 e2 ->
     (match hBSe' with
     | BSCheck _ _ _ _ _ hBS2 ->
@@ -281,14 +324,16 @@ let rec lemma_bigstep_substitute_intros
 #push-options "--fuel 1 --ifuel 0"
 
 let lemma_bigstep_substitute_intros_no_dep_XApp
-  (i: C.index { i < List.Tot.length 'c })
-  (rows: list (C.row (C.drop1 'c i)))
-  (e: exp (C.drop1 'c i) (C.get_index 'c i))
-  (vs: list (C.get_index 'c i) { List.Tot.length rows == List.Tot.length vs })
-  (e1': exp 'c ('b -> 'a))
-  (e2': exp 'c 'b)
-  (r: C.row (C.drop1 'c i))
-  (v: C.get_index 'c i)
+  (#t: table)
+  (#c: context t)
+  (i: C.index_lookup c)
+  (rows: list (row (C.drop1 c i)))
+  (e: val_exp t (C.drop1 c i) (C.get_index c i))
+  (vs: list (C.get_index (context_sem c) i) { List.Tot.length rows == List.Tot.length vs })
+  (e1': exp t c ('b -> 'a))
+  (e2': exp t c 'b)
+  (r: row (C.drop1 c i))
+  (v: C.get_index (context_sem c) i)
   (vf: ('b -> 'a))
   (vb: 'b)
   (hBSse: bigsteps rows e vs)
@@ -299,65 +344,73 @@ let lemma_bigstep_substitute_intros_no_dep_XApp
       BSApp _ _ _ vf vb hBS1' hBS2'
 
 let lemma_bigstep_substitute_intros_no_dep_XMu
-  {| Pipit.Inhabited.inhabited 'a |}
-  (i: C.index { i < List.Tot.length 'c })
-  (rows: list (C.row (C.drop1 'c i)))
-  (e: exp (C.drop1 'c i) (C.get_index 'c i))
-  (vs: list (C.get_index 'c i) { List.Tot.length rows == List.Tot.length vs })
-  (e1': exp ('a :: 'c) 'a)
-  (r: C.row (C.drop1 'c i))
-  (v: C.get_index 'c i)
-  (a: 'a)
+  (#t: table)
+  (#c: context t)
+  (#valty: t.ty)
+  (i: C.index_lookup c)
+  (rows: list (row (C.drop1 c i)))
+  (e: val_exp t (C.drop1 c i) (C.get_index c i))
+  (vs: list (C.get_index (context_sem c) i) { List.Tot.length rows == List.Tot.length vs })
+  (e1': val_exp t (valty :: c) valty)
+  (r: row (C.drop1 c i))
+  (v: C.get_index (context_sem c) i)
+  (a: t.ty_sem valty)
   (hBSse: bigsteps rows e vs)
   (hBS1': bigstep (r :: rows) (subst1' (subst1 e1' (XMu e1')) i e) a):
     Tot (bigstep (r :: rows) (subst1' (XMu e1') i e) a) =
       lemma_subst_subst_distribute_XMu e1' i e;
-      assert_norm (subst1' (XMu e1') i e == XMu (subst1' e1' (i + 1) (lift1 e 'a)));
-      BSMu _ _ (subst1' e1' (i + 1) (lift1 e 'a)) _ hBS1'
+      assert_norm (subst1' (XMu e1') i e == XMu (subst1' e1' (i + 1) (lift1 e valty)));
+      BSMu _ (subst1' e1' (i + 1) (lift1 e valty)) _ hBS1'
 
 let lemma_bigstep_substitute_intros_no_dep_XLet
-  (i: C.index { i < List.Tot.length 'c })
-  (rows: list (C.row (C.drop1 'c i)))
-  (e: exp (C.drop1 'c i) (C.get_index 'c i))
-  (vs: list (C.get_index 'c i) { List.Tot.length rows == List.Tot.length vs })
-  (e1': exp 'c 'b)
-  (e2': exp ('b :: 'c) 'a)
-  (r: C.row (C.drop1 'c i))
-  (v: C.get_index 'c i)
+  (#t: table)
+  (#c: context t)
+  (#valty: t.ty)
+  (i: C.index_lookup c)
+  (rows: list (row (C.drop1 c i)))
+  (e: val_exp t (C.drop1 c i) (C.get_index c i))
+  (vs: list (C.get_index (context_sem c) i) { List.Tot.length rows == List.Tot.length vs })
+  (e1': val_exp t c valty)
+  (e2': exp t (valty :: c) 'a)
+  (r: row (C.drop1 c i))
+  (v: C.get_index (context_sem c) i)
   (a: 'a)
   (hBSse: bigsteps rows e vs)
   (hBSX': bigstep (r :: rows) (subst1' (subst1 e2' e1') i e) a):
-    Tot (bigstep (r :: rows) (subst1' (XLet 'b e1' e2') i e) a) =
+    Tot (bigstep (r :: rows) (subst1' (XLet valty e1' e2') i e) a) =
       lemma_subst_subst_distribute_le e2' 0 i e1' e;
-      assert_norm (subst1' (XLet 'b e1' e2') i e == XLet 'b (subst1' e1' i e) (subst1' e2' (i + 1) (lift1 e 'b)));
-      BSLet _ (subst1' e1' i e) (subst1' e2' (i + 1) (lift1 e 'b)) _ hBSX'
+      assert_norm (subst1' (XLet valty e1' e2') i e == XLet valty (subst1' e1' i e) (subst1' e2' (i + 1) (lift1 e valty)));
+      BSLet _ (subst1' e1' i e) (subst1' e2' (i + 1) (lift1 e valty)) _ hBSX'
 
 #pop-options
 
 (* used indirectly by lemma_bigstep_total *)
 let rec lemma_bigstep_substitute_intros_no_dep
-  (i: C.index { i < List.Tot.length 'c })
-  (rows: list (C.row (C.drop1 'c i)))
-  (e: exp (C.drop1 'c i) (C.get_index 'c i))
-  (vs: list (C.get_index 'c i) { List.Tot.length rows == List.Tot.length vs })
-  (e': exp 'c 'a { ~ (direct_dependency e' i) })
-  (r: C.row (C.drop1 'c i))
-  (v: C.get_index 'c i)
+  (#t: table)
+  (#c: context t)
+  (i: C.index_lookup c)
+  (rows: list (row (C.drop1 c i)))
+  (e: val_exp t (C.drop1 c i) (C.get_index c i))
+  (vs: list (C.get_index (context_sem c) i) { List.Tot.length rows == List.Tot.length vs })
+  (e': exp t c 'a { ~ (direct_dependency e' i) })
+  (r: row (C.drop1 c i))
+  (v: C.get_index (context_sem c) i)
   (a: 'a)
   (hBSse: bigsteps rows e vs)
-  (hBSe': bigstep (C.row_lift1_dropped i r v :: C.row_zip2_lift1_dropped i rows vs) e' a):
+  (hBSe': bigstep (CP.row_lift1_dropped i r v :: CP.row_zip2_lift1_dropped i rows vs) e' a):
     Tot (bigstep (r :: rows) (subst1' e' i e) a) (decreases hBSe') =
   match e' with
-  | XVal _ -> BSVal _ _
+  | XVal v -> BSVal _ v
+  | XPrim p -> BSPrim _ p
   | XVar _ -> false_elim ()
   | XBVar i' ->
     assert (i <> i');
     if i' < i
     then BSVar r rows i'
     else (
-      C.lemma_drop_get_index_gt 'c i (i' - 1);
-      assert (C.opt_index (C.drop1 'c i) (i' - 1) == Some 'a);
-      assert_norm (subst1' (XBVar i') i e == XBVar #(C.drop1 'c i) #('a) (i' - 1));
+      CP.lemma_drop_get_index_gt c i (i' - 1);
+      assert (C.opt_index (C.drop1 c i) (i' - 1) == Some (C.get_index c i'));
+      assert_norm (subst1' (XBVar i') i e == XBVar #t #(C.drop1 c i) (i' - 1));
       BSVar r rows (i' - 1))
   | XApp e1 e2 ->
     (match hBSe' with
@@ -381,13 +434,14 @@ let rec lemma_bigstep_substitute_intros_no_dep
     | BSThenS _ _ _ v2 hBS2 ->
       let hBS2' = lemma_bigstep_substitute_intros_no_dep i rows e vs e2 r v v2 hBSse hBS2 in
       BSThenS _ (subst1' e1 i e) (subst1' e2 i e) v2 hBS2')
-  | XMu _ e1 ->
+  | XMu e1 ->
     (match hBSe' with
-    | BSMu inhabited _ _ _ hBSe1 ->
+    | BSMu _ _ _ hBSe1 ->
+      let valty = XMu?.valty e' in
       lemma_direct_dependency_not_subst' i 0 e1 (XMu e1);
-      C.lemma_dropCons 'a 'c (i + 1);
-      C.lemma_get_index_Cons 'a 'c i;
-      assert (C.drop1 ('a :: 'c) (i + 1) == 'a :: C.drop1 'c i);
+      CP.lemma_dropCons valty c (i + 1);
+      CP.lemma_get_index_Cons valty c i;
+      assert (C.drop1 (valty :: c) (i + 1) == valty :: C.drop1 c i);
       let hBSX = lemma_bigstep_substitute_intros_no_dep i rows e vs (subst1 e1 (XMu e1)) r v a hBSse hBSe1 in
       lemma_bigstep_substitute_intros_no_dep_XMu i rows e vs e1 r v a hBSse hBSX)
   | XCheck p e1 e2 ->
@@ -400,112 +454,121 @@ let rec lemma_bigstep_substitute_intros_no_dep
     (match hBSe' with
     | BSLet _ _ _ _ hBSX ->
       lemma_direct_dependency_not_subst' i 0 e2 e1;
-      C.lemma_dropCons b 'c (i + 1);
-      C.lemma_get_index_Cons b 'c i;
-      assert (C.get_index (b :: 'c) (i + 1) == C.get_index 'c i);
-      assert (C.drop1 (b :: 'c) (i + 1) == b :: C.drop1 'c i);
+      CP.lemma_dropCons b c (i + 1);
+      CP.lemma_get_index_Cons b c i;
+      assert (C.get_index (b :: c) (i + 1) == C.get_index c i);
+      assert (C.drop1 (b :: c) (i + 1) == b :: C.drop1 c i);
       let hBSX' = lemma_bigstep_substitute_intros_no_dep i rows e vs (subst1 e2 e1) r v a hBSse hBSX in
       lemma_bigstep_substitute_intros_no_dep_XLet i rows e vs e1 e2 r v a hBSse hBSX')
 
   | _ -> false_elim ()
 
+*)
+
 (* used by transition system proof *)
 let lemma_bigstep_substitute_elim_XLet
-  (rows: list (C.row 'c) { Cons? rows })
-  (e1: exp 'c 'b)
-  (vs: list 'b { List.Tot.length rows == List.Tot.length vs })
+  (#t: table)
+  (#c: context t)
+  (#valty #a: t.ty)
+  (rows: list (row c) { Cons? rows })
+  (e1: exp t c valty)
+  (vs: list (t.ty_sem valty) { List.Tot.length rows == List.Tot.length vs })
   (hBS1s: bigsteps rows e1 vs)
-  (e2: exp ('b :: 'c) 'a { causal e2 })
-  (v: 'a)
-  (hBS2: bigstep rows (XLet 'b e1 e2) v):
-    (bigstep (C.row_zip2_cons vs rows) e2 v) =
+  (e2: exp t (valty :: c) a { causal e2 })
+  (v: t.ty_sem a)
+  (hBS2: bigstep rows (XLet valty e1 e2) v):
+    (bigstep (CR.zip2_cons vs rows) e2 v) =
   match hBS2 with
   | BSLet _ _ _ _ hBS2' ->
-    lemma_bigstep_substitute_elim 0 rows e1 vs e2 v hBS1s hBS2'
+    admit () // lemma_bigstep_substitute_elim 0 rows e1 vs e2 v hBS1s hBS2'
 
 (* used by transition system proof *)
 let lemma_bigstep_substitute_elim_XMu
-  {| Pipit.Inhabited.inhabited 'a |}
-  (rows: list (C.row 'c) { Cons? rows })
-  (e: exp ('a :: 'c) 'a { causal (XMu e) })
-  (vs: list 'a { List.Tot.length rows == List.Tot.length vs })
+  (#t: table)
+  (#c: context t)
+  (#valty: t.ty)
+  (rows: list (row c) { Cons? rows })
+  (e: exp t (valty :: c) valty { causal (XMu e) })
+  (vs: list (t.ty_sem valty) { List.Tot.length rows == List.Tot.length vs })
   (hBSs: bigsteps rows (XMu e) vs):
-    (bigstep (C.row_zip2_cons vs rows) e (List.Tot.hd vs)) =
+    (bigstep (CR.zip2_cons vs rows) e (List.Tot.hd vs)) =
     match hBSs with
     | BSsS _ _ _ _ _ _ hBS ->
       match hBS with
-      | BSMu _ _ _ _ hBS' ->
-        lemma_bigstep_substitute_elim 0 rows (XMu e) vs e (List.Tot.hd vs) hBSs hBS'
+      | BSMu _ _ _ hBS' ->
+        admit () // lemma_bigstep_substitute_elim 0 rows (XMu e) vs e (List.Tot.hd vs) hBSs hBS'
 
 (* used by lemma_bigstep_total *)
 let lemma_bigstep_substitute_intros_XMu
-  {| Pipit.Inhabited.inhabited 'a |}
-  (rows: list (C.row 'c))
-  (e: exp ('a :: 'c) 'a { causal (XMu e) })
-  (vs: list 'a { List.Tot.length rows == List.Tot.length vs })
-  (row: C.row 'c)
-  (v v': 'a)
+  (#t: table)
+  (#c: context t)
+  (#valty: t.ty)
+  (rows: list (row c))
+  (e: exp t (valty :: c) valty { causal (XMu e) })
+  (vs: list (t.ty_sem valty) { List.Tot.length rows == List.Tot.length vs })
+  (row: row c)
+  (v v': t.ty_sem valty)
   (hBSs: bigsteps rows (XMu e) vs)
-  (hBS1: bigstep (C.row_cons v' row :: C.row_zip2_cons vs rows) e v):
+  (hBS1: bigstep (CR.cons v' row :: CR.zip2_cons vs rows) e v):
     (bigstep (row :: rows) (XMu e) v) =
-    let hBS'': bigstep (row :: rows) (subst1 e (XMu e)) v = lemma_bigstep_substitute_intros_no_dep 0 rows (XMu e) vs e row v' v hBSs hBS1 in
-    BSMu _ (row :: rows) e v hBS''
+    let hBS'': bigstep (row :: rows) (subst1 e (XMu e)) v =
+      // lemma_bigstep_substitute_intros_no_dep 0 rows (XMu e) vs e row v' v hBSs hBS1 in
+      admit () in
+    BSMu (row :: rows) e v hBS''
 
 (* used by transition system proof *)
 let rec lemma_bigstep_total
-  (rows: list (C.row 'c) { Cons? rows }) (e: exp 'c 'a { causal e }):
-    Tot (v: 'a & bigstep rows e v) (decreases %[e; rows; 0]) =
+  (#t: table)
+  (#c: context t)
+  (#a: t.ty)
+  (rows: list (row c) { Cons? rows })
+  (e: exp t c a { causal e }):
+    Tot (v: t.ty_sem a & bigstep rows e v) (decreases %[e; rows; 0]) =
   let hd = List.Tot.hd rows in
   let tl = List.Tot.tl rows in
-  match e with
-  | XVal v -> (| v, BSVal _ v |)
-  | XVar _ -> false_elim ()
-  | XBVar i ->
-    (| C.row_index 'c hd i, BSVar hd tl i |)
-  | XApp f_e a_e ->
-    assert_norm (causal (XApp f_e a_e) == (causal f_e && causal a_e));
-    let (| f_v, hBSf |) = lemma_bigstep_total rows f_e in
-    let (| a_v, hBSa |) = lemma_bigstep_total rows a_e in
-    (| f_v a_v, BSApp _ _ _ _ _ hBSf hBSa |)
-  | XFby v0 e1 ->
-    (match rows with
-    | [_] ->
-      assert_norm (List.Tot.length rows == 1);
-      (| v0, BSFby1 rows v0 e1 |)
-    | latest :: prefix ->
-      let (| v', hBSe1 |) = lemma_bigstep_total prefix e1 in
-      (| v', BSFbyS latest prefix v0 v' e1 hBSe1 |))
-  | XThen e1 e2 ->
-    (match rows with
-    | [_] ->
-      assert_norm (List.Tot.length rows == 1);
-      let (| v1, hBS1 |) = lemma_bigstep_total rows e1 in
-      (| v1, BSThen1 rows e1 e2 v1 hBS1 |)
-    | _ ->
-      assert_norm (List.Tot.length rows > 1);
-      let (| v2, hBS2 |) = lemma_bigstep_total rows e2 in
-      (| v2, BSThenS rows e1 e2 v2 hBS2 |))
+  admit ()
+  // match e with
+  // | XVal v -> (| v, BSVal _ v |)
+  // | XPrim p -> (| t.prim_sem p, BSPrim rows p |)
+  // | XVar _ -> false_elim ()
+  // | XBVar i ->
+  //   (| CR.index (context_sem c) hd i, BSVar hd tl i |)
+  // | XApp f_e a_e ->
+  //   assert_norm (causal (XApp f_e a_e) == (causal f_e && causal a_e));
+  //   let (| f_v, hBSf |) = lemma_bigstep_total rows f_e in
+  //   let (| a_v, hBSa |) = lemma_bigstep_total rows a_e in
+  //   (| f_v a_v, BSApp _ _ _ _ _ hBSf hBSa |)
+  // | XFby v0 e1 ->
+  //   (match rows with
+  //   | [_] ->
+  //     assert_norm (List.Tot.length rows == 1);
+  //     (| v0, BSFby1 rows v0 e1 |)
+  //   | latest :: prefix ->
+  //     let (| v', hBSe1 |) = lemma_bigstep_total prefix e1 in
+  //     (| v', BSFbyS latest prefix v0 v' e1 hBSe1 |))
+  // | XMu e1 ->
+  //   let (| vs, hBSs |) = lemma_bigsteps_total tl e in
+  //   let v' = t.val_default (XMu?.valty e) in
+  //   let (| v, hBS0 |) = lemma_bigstep_total (CR.cons v' hd :: CR.zip2_cons vs tl) e1 in
+  //   let hBS' = lemma_bigstep_substitute_intros_XMu tl e1 vs hd v v' hBSs hBS0 in
+  //   (| v, hBS' |)
 
-  | XMu _ e1 ->
-    let (| vs, hBSs |) = lemma_bigsteps_total tl e in
-    let v' = Pipit.Inhabited.get_inhabited in
-    let (| v, hBS0 |) = lemma_bigstep_total (C.row_cons v' hd :: C.row_zip2_cons vs tl) e1 in
-    let hBS' = lemma_bigstep_substitute_intros_XMu tl e1 vs hd v v' hBSs hBS0 in
-    (| v, hBS' |)
+  // | XCheck p e1 e2 ->
+  //   let (| v2, hBS2 |) = lemma_bigstep_total rows e2 in
+  //   (| v2, BSCheck rows p e1 e2 v2 hBS2 |)
 
-  | XCheck p e1 e2 ->
-    let (| v2, hBS2 |) = lemma_bigstep_total rows e2 in
-    (| v2, BSCheck rows p e1 e2 v2 hBS2 |)
-
-  | XLet b e1 e2 ->
-    let (| vs, hBSs |) = lemma_bigsteps_total rows e1 in
-    let (| v, hBS2 |) = lemma_bigstep_total (C.row_zip2_cons vs rows) e2 in
-    let hBS' = lemma_bigstep_substitute_intros 0 rows e1 vs e2 v hBSs hBS2 in
-    (| v, BSLet rows e1 e2 v hBS' |)
+  // | XLet b e1 e2 ->
+  //   let (| vs, hBSs |) = lemma_bigsteps_total rows e1 in
+  //   let (| v, hBS2 |) = lemma_bigstep_total (CR.zip2_cons vs rows) e2 in
+  //   let hBS' = admit () in // lemma_bigstep_substitute_intros 0 rows e1 vs e2 v hBSs hBS2 in
+  //   (| v, BSLet rows e1 e2 v hBS' |)
 
 and lemma_bigsteps_total
-  (rows: list (C.row 'c)) (e: exp 'c 'a { causal e }):
-    Tot (vs: list 'a { List.Tot.length vs == List.Tot.length rows } & bigsteps rows e vs) (decreases %[e; rows; 1]) =
+  (#t: table)
+  (#c: context t)
+  (#a: t.ty)
+  (rows: list (row c)) (e: exp t c a { causal e }):
+    Tot (vs: list (t.ty_sem a) { List.Tot.length vs == List.Tot.length rows } & bigsteps rows e vs) (decreases %[e; rows; 1]) =
   match rows with
   | [] -> (| [], BSs0 e |)
   | r :: rows' ->
@@ -514,7 +577,10 @@ and lemma_bigsteps_total
     (| v :: vs, BSsS _ _ _ r v hBSs hBS1 |)
 
 let lemma_bigstep_total_v
-  (rows: list (C.row 'c) { Cons? rows }) (e: exp 'c 'a { causal e }):
-    'a =
+  (#t: table)
+  (#c: context t)
+  (#a: t.ty)
+  (rows: list (row c) { Cons? rows }) (e: exp t c a { causal e }):
+    t.ty_sem a =
   let (| v, _ |) = lemma_bigstep_total rows e in
   v

@@ -1,0 +1,145 @@
+(*
+  Fetch the current trigger, or the next one if there is no current trigger.
+*)
+node Trigger_Fetch(
+  reset_ck:           bool;
+  cycle_time:         Ntu;
+  cycle_index:        Cycle_Index;
+  ref_trigger_offset: Ref_Offset;
+) returns (
+  -- True when trigger changes
+  trigger_new:        bool;
+  -- True when trigger is enabled in current basic cycle index
+  trigger_enabled:    bool;
+  -- Trigger information
+  trigger:            Trigger;
+  -- If trigger has not started yet, how long to wait until it starts.
+  trigger_started:    bool;
+  -- True if trigger expiry time <= cycle_time
+  trigger_expired:    bool;
+  -- Total enabled and disabled triggers seen this cycle
+  tx_count:           int;
+)
+var
+  next_enabled:       bool;
+  next_index:         Trigger_Index;
+  next_trigger:       Trigger;
+  trigger_index:      Trigger_Index;
+  trigger_expiry:     Ntu;
+let
+  trigger_new = true -> trigger_index <> pre trigger_index;
+
+  (next_enabled, next_index, next_trigger) = Trigger_Prefetch(reset_ck, cycle_time, cycle_index, ref_trigger_offset);
+
+  -- If the new trigger is enabled and is ready to start, then the new trigger has precedence. This case allows Watch_Triggers to pre-empt Tx_Ref_Triggers, as Tx_Ref_Triggers do not expire otherwise.
+  -- Otherwise, if the old trigger expired on the previous tick, then we the new trigger can be started. The delay here ensures that the state machine gets a chance to handle the expired triggers.
+  (trigger_enabled, trigger_index, trigger) =
+    (next_enabled, next_index, next_trigger) ->
+    if reset_ck or (next_enabled and next_trigger.trigger_Time_Mark >= cycle_time) or pre trigger_expired
+    then (next_enabled, next_index, next_trigger)
+    else pre (trigger_enabled, trigger_index, trigger);
+
+  trigger_started = trigger.trigger_Time_Mark >= cycle_time;
+
+  (* We keep trying to send Tx_Ref_Triggers until they're pre-empted by the next trigger, so their expiry is very large.
+     We keep trying to send Tx_Triggers for Tx_Enable_Window ntus.
+     We don't need to keep trying Rx_Triggers or Watch_Triggers. *)
+  trigger_expiry     =
+    if trigger.trigger_Type = Tx_Ref_Trigger
+    then trigger.trigger_Time_Mark + 65535
+    else if trigger.trigger_Type = Tx_Trigger
+    then trigger.trigger_Time_Mark + config_tx_enable_window
+    else trigger.trigger_Time_Mark;
+
+  trigger_expired    = trigger_expiry <= cycle_time;
+
+  (*^5.1 Tx_Count: each time a Tx_Trigger becomes active, Tx_Count is incremented. Tx_Count is not incremented beyond Expected_Tx_Trigger. *)
+  (* CLARIFICATION: the definition of "active" is not entirely clear to me.
+    Is it whenever a Tx_Trigger trigger array entry is encountered by the trigger loop, or is it only when the trigger is enabled for the current cycle index?
+    I think it must be every time it's encountered by the loop, because otherwise we would underflow for a periodic trigger that doesn't transmit every cycle.
+    *)
+  tx_count =
+    (restart count_when every reset_ck)((false -> next_index <> pre next_index) and next_trigger.trigger_Type = Tx_Trigger);
+    -- (if reset_ck then 0 else (0 -> pre tx_count)) +
+    -- (if (false -> next_index <> pre next_index) and next_trigger.trigger_Type = Tx_Trigger then 1 else 0);
+tel
+
+(*
+  Pre-fetch the next enabled trigger.
+  This node loops through the triggers array. At each tick, it checks if the current trigger is disabled or has passed its start time. If so, it increments the index and progresses to the next trigger. Once the index reaches the end of the array, the index remains at the last value until reset_ck becomes true.
+  The time marks in the trigger array must be ascending, and must have large enough gaps to allow the prefetcher to skip over disabled triggers.
+  For example, if the prefetch executes every 10 ntus, then a configuration with a gap of 10ntus between
+  > [ Tx_Trigger { Time_Mark = 0, Cycle_Offset = 0, Repeat_Factor = 1, Message = A };
+  >   Tx_Trigger { Time_Mark = 10, Cycle_Offset = 0, Repeat_Factor = 2, Message = B };
+  >   Tx_Trigger { Time_Mark = 10, Cycle_Offset = 1, Repeat_Factor = 2, Message = C } ]
+  should result in a sequence like `AB...AC...AB...AC...`
+  but there isn't a long enough gap after A to skip over the B and reach the C.
+
+  Invariant: all trigger entries before trigger_index have start time in the past or are not enabled this cycle.
+*)
+node Trigger_Prefetch(
+  reset_ck:           bool;
+  cycle_time:         Ntu;
+  cycle_index:        Cycle_Index;
+  ref_trigger_offset: Ref_Offset;
+) returns (
+  trigger_enabled:    bool;
+  trigger_index:      Trigger_Index;
+  trigger:            Trigger;
+)
+var
+  pre_trigger_index:    Trigger_Index;
+let
+  pre_trigger_index    = 0 -> pre trigger_index;
+
+  trigger_index        = 0 ->
+    if reset_ck
+    then 0
+    else if pre (not trigger_enabled) or pre (trigger.trigger_Time_Mark <= cycle_time)
+    then clamp(0, TRIGGERS_COUNT - 1, pre_trigger_index + 1)
+    else pre_trigger_index;
+
+  trigger              = Trigger_Read_Array(trigger_index, ref_trigger_offset);
+
+  trigger_enabled      = Trigger_Check_Enabled(cycle_index, trigger.trigger_Cycle_Offset, trigger.trigger_Repeat_Factor);
+tel
+
+function Trigger_Read_Array(
+  trigger_index:      Trigger_Index;
+  ref_trigger_offset: Ref_Offset;
+) returns (
+  trigger:            Trigger;
+)
+var
+  base:       Trigger;
+let
+  base    = config_Triggers_Lookup(trigger_index);
+  trigger = Trigger {
+    trigger_Type      = base.trigger_Type;
+    trigger_Time_Mark =
+      if base.trigger_Type = Tx_Ref_Trigger
+      -- XXX: Kind2 bug: crash: it doesn't like the clamp here. Why?
+      -- then clamp(0, 65535, base.trigger_Time_Mark + ref_trigger_offset)
+      then base.trigger_Time_Mark -- + ref_trigger_offset
+      else base.trigger_Time_Mark;
+
+    trigger_Cycle_Offset = base.trigger_Cycle_Offset;
+    trigger_Repeat_Factor = base.trigger_Repeat_Factor;
+    trigger_Message_Index = base.trigger_Message_Index;
+  };
+tel
+
+-- Hide modular arithmetic with underspecified contract
+function Trigger_Check_Enabled(
+  cycle_index: Cycle_Index;
+  Cycle_Offset: Cycle_Index;
+  Repeat_Factor: Repeat_Factor;
+) returns (
+  enabled: bool;
+)
+(*@contract
+  guarantee cycle_index = Cycle_Offset => enabled;
+*)
+let
+  enabled = (cycle_index - Cycle_Offset) mod Repeat_Factor = 0;
+tel
