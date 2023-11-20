@@ -34,7 +34,7 @@ type prim    (t: table) (ty: funty t.ty)= p: t.prim { t.prim_ty p == ty }
 let _purem (#a: Type) (x: a): _m a =
   fun s -> (x, s)
 
-let _freshm (#ty: eqtype) (t: ty): _m (C.var t) =
+let _freshm (#ty: Type) (t: ty): _m (C.var t) =
   fun s ->
     let x = s.fresh in
     (C.Var x), { fresh = x + 1 }

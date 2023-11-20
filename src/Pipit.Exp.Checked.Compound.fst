@@ -70,7 +70,7 @@ let lemma_check_XApps
 let lemma_check_XApp1
   (#t: table) (#c: context t) (#arg: t.ty) (#res: funty t.ty)
   (m: PM.check_mode)
-  (p: t.prim { t.prim_ty p = FTFun arg res })
+  (p: t.prim { t.prim_ty p == FTFun arg res })
   (e: exp      t c        arg      { check'      m e }):
   Lemma (check_apps' m (XApp #t #c #arg #res (XPrim p) e))
     // [SMTPat (check_apps' m (XApp f e))]
@@ -79,7 +79,7 @@ let lemma_check_XApp1
 let lemma_check_XApps1
   (#t: table) (#c: context t) (#arg #res: t.ty)
   (m: PM.check_mode)
-  (p: t.prim { t.prim_ty p = FTFun arg (FTVal res) })
+  (p: t.prim { t.prim_ty p == FTFun arg (FTVal res) })
   (e: exp      t c        arg      { check'      m e }):
   Lemma (check' m (XApps #t #c #res (XApp (XPrim p) e)))
     // [SMTPat (check' m (XApps #t #c #res (XApp (XPrim p) e)))]
@@ -90,7 +90,7 @@ let lemma_check_XApps1
 let lemma_check_XApps2
   (#t: table) (#c: context t) (#arg1 #arg2 #res: t.ty)
   (m: PM.check_mode)
-  (p: t.prim { t.prim_ty p = FTFun arg1 (FTFun arg2 (FTVal res)) })
+  (p: t.prim { t.prim_ty p == FTFun arg1 (FTFun arg2 (FTVal res)) })
   (e1: exp      t c        arg1     { check'      m e1 })
   (e2: exp      t c        arg2     { check'      m e2 }):
   Lemma (check' m (XApps #t #c #res (XApp (XApp (XPrim p) e1) e2)))
@@ -102,7 +102,7 @@ let lemma_check_XApps2
 let lemma_check_XApps3
   (#t: table) (#c: context t) (#arg1 #arg2 #arg3 #res: t.ty)
   (m: PM.check_mode)
-  (p: t.prim { t.prim_ty p = FTFun arg1 (FTFun arg2 (FTFun arg3 (FTVal res))) })
+  (p: t.prim { t.prim_ty p == FTFun arg1 (FTFun arg2 (FTFun arg3 (FTVal res))) })
   (e1: exp      t c        arg1     { check'      m e1 })
   (e2: exp      t c        arg2     { check'      m e2 })
   (e3: exp      t c        arg3     { check'      m e3 }):

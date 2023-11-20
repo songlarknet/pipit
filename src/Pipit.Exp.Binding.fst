@@ -17,7 +17,7 @@ let close1_base' (#a #b: ('t).ty) (#c: context 't) (e: exp_base 't c a) (x: C.va
   | XBVar i ->
     XBVar (C.index_lift i n)
   | XVar x' ->
-    if C.var_eq x x'
+    if ('t).var_eq x x'
     then
       XBVar n
     else

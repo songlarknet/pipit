@@ -2,12 +2,15 @@
    This defines some basic types and primops, but nothing too fancy. These
    types are _unsound_, in that the verification uses mathematical integers and
    reals, but the generated C code uses fixed-width (machine) numbers.
+   The types here are restricted to the extent that we could reasonably extract
+   Vélus or Kind2 code.
 *)
 module Pipit.Prim.Vanilla
 
 open Pipit.Prim.Table
 module R = FStar.Real
 module PR = PipitRuntime.Prim.Bool
+module C  = Pipit.Context.Base
 
 type valtype =
  | TBool: valtype
@@ -144,10 +147,12 @@ let rec val_default (t: valtype): ty_sem t = match t with
 let table: table = {
    ty          = valtype;
    ty_sem      = ty_sem;
+   var_eq      = C.var_eq;
 
    prim        = prim;
    prim_ty     = prim_ty;
    prim_sem    = prim_sem;
+   prim_eq     = (fun a b -> a = b);
 
    val_default = val_default;
 

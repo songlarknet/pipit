@@ -4,7 +4,7 @@ module Pipit.Context.Row
 module List = FStar.List.Tot
 module C = Pipit.Context.Base
 
-let rec row (l: C.context eqtype): Type =
+let rec row (l: C.context eqtype): eqtype =
   match l with
   | [] -> unit
   | t :: ts -> t * row ts

@@ -17,6 +17,7 @@ module PM = Pipit.Prop.Metadata
   between this and a list-of-applications, or something. I don't know if it's
   a good idea or not.
 *)
+noeq
 type exp_base (t: table) (c: context t): t.ty -> Type =
   // v
   //  the type of value must be eqtype
@@ -27,6 +28,7 @@ type exp_base (t: table) (c: context t): t.ty -> Type =
   //  the types in the variable must be t.ty (which is eqtype) because we need to compare the types of variables
   | XVar   : #valty: t.ty -> x: C.var valty -> exp_base t c valty
 
+noeq
 type exp (t: table) (c: context t): t.ty -> Type =
   | XBase: #valty: t.ty -> exp_base t c valty -> exp t c valty
   | XApps: #valty: t.ty -> exp_apps t c (FTVal valty) -> exp t c valty
