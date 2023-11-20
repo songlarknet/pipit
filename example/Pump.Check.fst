@@ -45,12 +45,15 @@ let count_max = 65535
    tel
 *)
 let countsecutive_body (p: Sugar.bools) =
-  rec' (fun count ->
-    if_then_else
-      p
-      (fby 1 (min (count +^ z1) (z count_max)))
-      z0)
-  `check_that` (fun count -> z0 <=^ count)
+  let^ count =
+    rec' (fun count ->
+      if_then_else
+        p
+        (fby 1 (min (count +^ z1) (z count_max)))
+        z0)
+  in
+  check "countsecutive: nonnegative count" (z0 <=^ count);^
+  count
 
 let countsecutive': Sugar.bools -> Sugar.ints =
   let e = Check.exp_of_stream1 countsecutive_body in
@@ -113,24 +116,15 @@ let stuck_time:  int = 6000
   tel
 *)
 
-(* TODO:CSE: once we have CSE, we can use regular lets and the syntax will be a little nicer: *)
-// let controller_body_lets (estop level_low: Sugar.bools) =
-//   let sol_try   = lastn settle_time (not_ estop /\ level_low) in
-//   let nok_stuck = once (lastn stuck_time sol_try) in
-//   let sol_en    = sol_try /\ not_ nok_stuck in
-//     tup sol_en nok_stuck
-//       `check_that` (fun _ ->      estop     => not_ sol_en)
-//       `check_that` (fun _ -> not_ level_low => not_ sol_en)
-
 let controller_body (estop level_low: Sugar.bools) =
-  let' (lastn settle_time (not_ estop /\ level_low)) (fun sol_try   ->
-  let' (once (lastn stuck_time sol_try))             (fun nok_stuck   ->
-  let' (sol_try /\ not_ nok_stuck)                   (fun sol_en      ->
-    tup sol_en nok_stuck
-      // PROPERTY estop means not pumping
-      `check_that` (fun _ ->      estop     => not_ sol_en)
-      // PROPERTY level high means not pumping
-      `check_that` (fun _ -> not_ level_low => not_ sol_en))))
+  let^ sol_try   = lastn settle_time (not_ estop /\ level_low) in
+  let^ nok_stuck = once (lastn stuck_time sol_try) in
+  let^ sol_en    = sol_try /\ not_ nok_stuck in
+  check "controller: estop => not pumping"
+    (     estop     => not_ sol_en);^
+  check "controller: level high => not pumping"
+    (not_ level_low => not_ sol_en);^
+  tup sol_en nok_stuck
 
 let controller =
   let e = Check.exp_of_stream2 controller_body in
@@ -146,13 +140,13 @@ let level_low_threshold = 80
 let max_level = 100
 
 let spec_body (flow: Sugar.ints) (estop level_low: Sugar.bools) =
-  let' (controller_body estop level_low) (fun ctrl ->
-  let' (fst ctrl)                        (fun sol_en ->
-  let' (reservoir_model flow sol_en)     (fun level ->
+  let^ ctrl   = controller_body estop level_low in
+  let^ sol_en = fst ctrl in
+  let^ level  = reservoir_model flow sol_en in
   check "SPEC"
     (sofar (abs flow <^ z max_flow) =>
      (sofar (level >^ z level_low_threshold => not_ level_low) =>
-     (level <^ z max_level))))))
+     (level <^ z max_level)))
 
 let spec =
   let e = Check.exp_of_stream3 spec_body in
@@ -160,18 +154,18 @@ let spec =
   Check.stream_of_checked3 e
 
 let spec_any_needs_extra_invariant_manual_cse (flow: Sugar.ints) (estop level_low: Sugar.bools) =
-  let' (countsecutive' (not_ estop /\ level_low))    (fun sol_try_c   ->
-  let' (countsecutive' level_low)                    (fun level_low_c   ->
-  let' (sol_try_c >=^ z settle_time)                 (fun sol_try   ->
-  let' (once (lastn stuck_time sol_try))             (fun nok_stuck   ->
-  let' (sol_try /\ not_ nok_stuck)                   (fun sol_en      ->
-  let' (reservoir_model flow sol_en)                 (fun level ->
-  check' "INVARIANT: countsecutive(x /\ y) <= countsecutive(y)"
-    (sol_try_c <=^ level_low_c) (
+  let^ sol_try_c   = countsecutive' (not_ estop /\ level_low) in
+  let^ level_low_c = countsecutive' level_low in
+  let^ sol_try     = sol_try_c >=^ z settle_time in
+  let^ nok_stuck   = once (lastn stuck_time sol_try) in
+  let^ sol_en      = sol_try /\ not_ nok_stuck in
+  let^ level       = reservoir_model flow sol_en in
+  check "INVARIANT: countsecutive(x /\ y) <= countsecutive(y)"
+    (sol_try_c <=^ level_low_c);^
   check "SPEC"
     (sofar (abs flow <^ z max_flow) =>
     (sofar (level >^ z level_low_threshold => (level_low_c <^ z settle_time)) =>
-    (level <^ z max_level))))))))))
+    (level <^ z max_level)))
 
 let spec_any' =
   let e = Check.exp_of_stream3 spec_any_needs_extra_invariant_manual_cse in

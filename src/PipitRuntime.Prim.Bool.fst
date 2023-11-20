@@ -1,5 +1,7 @@
 module PipitRuntime.Prim.Bool
 
+// TODO: try with tac_opaque to defer unfolding:
+// [@"tac_opaque"]
 let p'b'not (x: bool): bool = not x
 
 let p'b'and (x y: bool): bool =

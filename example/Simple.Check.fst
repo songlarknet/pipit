@@ -28,13 +28,12 @@ let count_when (p: bools): ints =
 
 (* forall e. count_when false <= count_when e <= count_when true *)
 let count_when_prop_body (e: bools): bools =
-  let' (count_when ff) (fun count_when_false ->
-  let' (count_when  e) (fun count_when_e ->
-  let' (count_when tt) (fun count_when_true ->
-  check' "0                <= count_when false" (z0               <=^ count_when_false) (
-  check' "count_when false <= count_when e"     (count_when_false <=^ count_when_e) (
-  check' "count_when e     <= count_when true"  (count_when_e     <=^ count_when_true) (
-  const true))))))
+  let^ count_when_false = count_when ff in
+  let^ count_when_e     = count_when e  in
+  let^ count_when_true  = count_when tt in
+  check "0                <= count_when false" (z0               <=^ count_when_false);^
+  check "count_when false <= count_when e"     (count_when_false <=^ count_when_e);^
+  check "count_when e     <= count_when true"  (count_when_e     <=^ count_when_true)
 
 let count_when_prop: bools -> bools =
   let e = Check.exp_of_stream1 count_when_prop_body in
@@ -55,11 +54,9 @@ let sum: sum_contract =
   Check.contract_of_exp1 r g e
 
 let test_sum (i: ints) =
-  let' (if_then_else (i >^ z0) i z1) (fun arg ->
-  let' (Check.stream_of_contract1 sum arg) (fun sarg ->
-  check' "sum is increasing" (sarg >^ (0 `fby` sarg))
-    sarg
-  ))
+  let^ arg  = if_then_else (i >^ z0) i z1 in
+  let^ sarg = Check.stream_of_contract1 sum arg in
+  check "sum is increasing" (sarg >^ (0 `fby` sarg))
 
 let test_sum_ =
   let e = Check.exp_of_stream1 test_sum in
@@ -68,9 +65,9 @@ let test_sum_ =
 
 (* https://github.com/kind2-mc/cocospec_tcm_experiments/blob/master/systems/helpers.lus#L168 *)
 let times_guarantee (x y z: ints) =
-  let abs_x = abs x in
-  let abs_y = abs y in
-  let abs_z = abs z in
+  let^ abs_x = abs x in
+  let^ abs_y = abs y in
+  let^ abs_z = abs z in
   // Neutral
   ((z =^ y) =^ ((x =^ z1) \/ (y =^ z0))) /\
   ((z =^ x) =^ ((y =^ z1) \/ (x =^ z0))) /\

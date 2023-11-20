@@ -30,12 +30,22 @@ type reals = s TReal
 
 let const (#a: valtype) (v: table.ty_sem a): s a = S.const #table #a v
 
-// LATER: explicit let' should not be necessary once we have CSE / sharing recovery
-let let' (e: s 'a) (f: s 'a -> s 'b) = S.let' #table #'a #'b e f
+(* Applicative / monadic syntactic sugar:
+  The syntactic sugar for let^ is made for monads, but it seems to work OK for
+  our (applicative) case by changing the type slightly. The type of the bound
+  variable becomes a wrapped `s 'a` rather than a raw `'a`. However, the `and^`
+  and pattern matching don't work, as they expect a raw `'a`.
+*)
+let (let^) (f:s 'a) (g: s 'a -> s 'b) =
+    S.let' #table #'a #'b f g
+
+// let (and^) (f:s 'a) (g: s 'b): s (TPair 'a 'b) =
+//   S.liftP2 (P'T P'T'Pair 'a 'b) f g
 
 let rec' (f: s 'a -> s 'a): s 'a = S.rec' #table #'a f
 
-let letrec' (f: s 'a -> s 'a) (g: s 'a -> s 'b): s 'b = let' (rec' f) g
+let letrec' (f: s 'a -> s 'a) (g: s 'a -> s 'b): s 'b =
+  let^ a = rec' f in g a
 
 (* letrec with multiple bindings can require duplicating work.
   this duplicate work is troublesome for proofs because the transition system will
@@ -53,19 +63,18 @@ let letrec2 (#a #b #k: valtype)
        b = (rec b. mkb a b)
      in kont a b
   *)
-  letrec' (fun a -> mka a (rec' (fun b -> mkb a b)))
-                             (fun a ->
-  letrec' (fun b -> mkb a b) (fun b ->
-    kont a b))
-
-let check' (name: string) (e: bools) (f: s 'a): s 'a =
-  S.check' #table #'a e f
+  let recb a = rec' (fun b -> mkb a b) in
+  let^ a = (rec' (fun a -> mka a (recb a))) in
+  let^ b = recb a in
+  kont a b
 
 let check (name: string) (e: bools): bools =
   S.check #table e
 
 let check_that (#a: valtype) (e: s a) (p: s a -> bools): s a =
-  let' e (fun scrut -> S.check' (p scrut) scrut)
+  let^ scrut = e in
+  check "" (p scrut);^
+  scrut
 
 let fby (#a: valtype) (v: table.ty_sem a) (e: s a): s a = S.fby #table #a v e
 
@@ -160,8 +169,8 @@ let last (n: nat) (e: bools): bools =
   countsecutive e <=^ z n
 
 let abs (#a: arithtype) (r: s a): s a =
-  let' r (fun r' ->
-    if_then_else (r' >=^ zero) r' (zero -^ r'))
+  let^ r' = r in
+  if_then_else (r' >=^ zero) r' (zero -^ r')
 
 let sum (e: ints): ints =
   rec' (fun r -> fby 0 r +^ e)

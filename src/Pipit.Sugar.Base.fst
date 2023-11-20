@@ -120,6 +120,9 @@ let rec'
     let (e', s)   = f (_purem evar) s in
     (XMu (CX.close1 e' xvar), s))
 
+let (let^) (#a #b: ('t).ty) (f: s 't a) (g: s 't a -> s 't b) =
+    let' f g
+
 // XXX: this unit-check is dangerous, the check will disappear if the returned unit isn't mentioned in the result expression.
 // I really want a monadic/effectful interface that collects a list of checks.
 // when I tried this before I had trouble reifying effectful expressions inside
@@ -130,13 +133,6 @@ let check
   (fun s ->
     let (e, s) = e s in
     (XCheck PM.PSUnknown e, s))
-
-let check'
-  (#a: ('t).ty)
-  (e: s 't ('t).propty)
-  (f: s 't a):
-    s 't a =
-  let' (check e) (fun _ -> f)
 
 let const (#a: ('t).ty) (v: ('t).ty_sem a): s 't a =
   _purem (XBase (XVal v))
