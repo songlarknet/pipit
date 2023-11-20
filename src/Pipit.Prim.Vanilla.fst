@@ -9,7 +9,7 @@ module Pipit.Prim.Vanilla
 
 open Pipit.Prim.Table
 module R = FStar.Real
-module PR = PipitRuntime.Prim.Bool
+module PR = PipitRuntime.Prim
 module C  = Pipit.Context.Base
 
 type valtype =

@@ -29,7 +29,7 @@ type exp_base (t: table) (c: context t): t.ty -> Type =
   | XVar   : #valty: t.ty -> x: C.var valty -> exp_base t c valty
 
 noeq
-type exp (t: table) (c: context t): t.ty -> Type =
+type exp (t: table u#i u#j) (c: context t): t.ty -> Type u#(max i j) =
   | XBase: #valty: t.ty -> exp_base t c valty -> exp t c valty
   | XApps: #valty: t.ty -> exp_apps t c (FTVal valty) -> exp t c valty
 

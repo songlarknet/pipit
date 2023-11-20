@@ -3,60 +3,89 @@
 module Pipit.Prim.Shallow
 
 open Pipit.Prim.Table
-// module PR = PipitRuntime.Prim.Bool
-module C = Pipit.Context.Base
+module PR  = PipitRuntime.Prim
+module C   = Pipit.Context.Base
+module FRC = FStar.Reflection.Const
+
+(* Type of identifiers used as a unique key for types and primitives.
+  We assume that the front-end ensures that types with the same identifier are
+  equal, and the same for primitives. These assumptions are written as
+  axiom_var_eq and axiom_prim_eq below.
+  We could use FStar.Reflection.Types.term as the unique key, except that it
+  does not have primitive decidable equality. The hand-implemented `term_eq`
+  function in FStar.Reflection.V2.TermEq will not reduce `term_eq x x` to true
+  when x is some unknown variable, which makes it harder to use in proofs with
+  free variables (eg polymorphic definitions).
+
+  For primitives, the identifiers will be used to perform common
+  subexpression elimination (CSE). The identifiers need to be unique when they
+  are given, but they can be left as None, in which case CSE will not merge
+  them with any other operations. CSE is not yet implemented.
+
+  The identifier for types is really just a sanity check: if the front-end
+  manages its binders properly then, whenever we compare de Bruijn indices and
+  find that they are equal, the types should match. If the front-end is correct
+  the values of the type identifiers should never affect the expression.
+
+*)
+type ident = list string
 
 noeq
-type type_table = {
-  ty:          Type;
-  ty_sem:      ty -> eqtype;
-  val_default: t: ty -> ty_sem t;
-  propty:      propty: ty { ty_sem propty === bool };
+type shallow_type: Type u#1 = {
+  ty_id:       ident;
+  ty_sem:      eqtype;
+  val_default: unit -> ty_sem;
 }
 
 noeq
-type prim (t: type_table) = {
-  prim_id:  option (list string);
-  prim_ty:  funty t.ty;
-  prim_sem: funty_sem t.ty_sem prim_ty;
+type prim: Type u#1 = {
+  prim_id:  option ident;
+  prim_ty:  funty shallow_type;
+  prim_sem: funty_sem (fun t -> t.ty_sem) prim_ty;
 }
 
-let axiom_var_eq (t: type_table) (a b: t.ty) (x: C.var a) (x': C.var b):
+let axiom_var_eq (a b: shallow_type) (x: C.var a) (x': C.var b):
   Lemma
-    (requires C.Var?.v x == C.Var?.v x')
+    (requires C.Var?.v x == C.Var?.v x' /\ a.ty_id == b.ty_id)
     (ensures a == b /\ x == x') =
   admit ()
 
-let var_eq (t: type_table) (#a #b: t.ty) (x: C.var a) (x': C.var b):
-  (eq: bool { eq <==> x === x' }) =
-  if C.Var?.v x = C.Var?.v x' then (axiom_var_eq t a b x x'; true) else false
-
-let axiom_prim_eq (t: type_table) (p: prim t { Some? p.prim_id }) (q: prim t { Some? q.prim_id }):
+let axiom_prim_eq (p: prim { Some? p.prim_id }) (q: prim { Some? q.prim_id }):
   Lemma
     (requires p.prim_id == q.prim_id)
     (ensures p.prim_ty == q.prim_ty /\
       p.prim_sem == q.prim_sem) =
   admit ()
 
-let prim_eq (t: type_table): eq_dec_partial (prim t) = fun p q ->
+let var_eq (#a #b: shallow_type) (x: C.var a) (x': C.var b):
+  (eq: bool { eq <==> x === x' }) =
+  if C.Var?.v x = C.Var?.v x' && a.ty_id = b.ty_id then (axiom_var_eq a b x x'; true) else false
+
+let prim_eq: eq_dec_partial prim = fun p q ->
   match p.prim_id, q.prim_id with
   | Some p', Some q' ->
     if p' = q'
-    then (axiom_prim_eq t p q; true)
+    then (axiom_prim_eq p q; true)
     else false
   | _, _ -> false
 
-let table (t: type_table): table = {
-   ty          = t.ty;
-   ty_sem      = t.ty_sem;
-   var_eq      = var_eq t;
+let bool: shallow_type = {
+  ty_id  = FRC.bool_lid;
+  ty_sem = bool;
+  val_default = (fun _ -> false);
+}
 
-   prim        = prim t;
-   prim_ty     = (fun (p: prim t) -> p.prim_ty);
-   prim_sem    = (fun p -> p.prim_sem);
-   prim_eq     = prim_eq t;
+let table: table = {
+   ty          = shallow_type;
+   ty_sem      = (fun t -> t.ty_sem);
+   var_eq      = var_eq;
 
-   val_default = t.val_default;
+   prim        = prim;
+   prim_ty     = (fun (p: prim) -> p.prim_ty);
+   prim_sem    = (fun p -> PR.p'delay p.prim_sem);
+   prim_eq     = prim_eq;
 
-   propty      = t.propty;
+   val_default = (fun t -> t.val_default ());
+
+   propty      = bool;
 }

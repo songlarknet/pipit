@@ -44,7 +44,7 @@ type table: Type = {
   ty_sem:      ty -> eqtype;
   var_eq:      var_eq_dec ty;
 
-  prim:        Type0;
+  prim:        Type;
   prim_ty:     prim -> funty ty;
   prim_sem:    p: prim -> funty_sem ty_sem (prim_ty p);
   prim_eq:     eq_dec_partial prim;

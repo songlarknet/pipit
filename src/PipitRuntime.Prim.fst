@@ -1,4 +1,7 @@
-module PipitRuntime.Prim.Bool
+module PipitRuntime.Prim
+
+(* Delay normalisation on applications of this *)
+let p'delay (#a: Type) (x: a): a = x
 
 // TODO: try with tac_opaque to defer unfolding:
 // [@"tac_opaque"]
