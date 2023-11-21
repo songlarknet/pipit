@@ -18,7 +18,7 @@ module PM = Pipit.Prop.Metadata
   a good idea or not.
 *)
 noeq
-type exp_base (t: table) (c: context t): t.ty -> Type =
+type exp_base (t: table u#i u#j) (c: context t): t.ty -> Type =
   // v
   //  the type of value must be eqtype
   | XVal   : #valty: t.ty -> v: t.ty_sem valty -> exp_base t c valty
@@ -101,7 +101,7 @@ type exp (t: table u#i u#j) (c: context t): t.ty -> Type u#(max i j) =
   // check "" e
   | XCheck : PM.prop_status -> exp t c t.propty -> exp t c t.propty
 and
- exp_apps (t: table) (c: context t): funty t.ty -> Type =
+ exp_apps (t: table u#i u#j) (c: context t): funty t.ty -> Type =
   // primitives
   | XPrim  : p: t.prim -> exp_apps t c (t.prim_ty p)
   // f(e,...)

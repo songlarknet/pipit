@@ -15,8 +15,8 @@ module CR = Pipit.Context.Row
 module CP = Pipit.Context.Properties
 module PM = Pipit.Prop.Metadata
 
-type cexp (t: table) (c: context t) (a: t.ty) = e: exp t c a { check' PM.check_mode_valid e }
-type cexp_apps (t: table) (c: context t) (a: funty t.ty) = e: exp_apps t c a { check_apps' PM.check_mode_valid e }
+type cexp (t: table u#i u#j) (c: context t) (a: t.ty) = e: exp t c a { check' PM.check_mode_valid e }
+type cexp_apps (t: table u#i u#j) (c: context t) (a: funty t.ty) = e: exp_apps t c a { check_apps' PM.check_mode_valid e }
 
 let close1 (#a #b: ('t).ty) (#c: context 't) (e: cexp 't c a) (x: C.var b): cexp 't (b :: c) a =
   let e' = close1 e x in

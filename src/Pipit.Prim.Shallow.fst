@@ -34,7 +34,7 @@ noeq
 type shallow_type: Type u#1 = {
   ty_id:       ident;
   ty_sem:      eqtype;
-  val_default: unit -> ty_sem;
+  val_default: ty_sem;
 }
 
 noeq
@@ -43,6 +43,12 @@ type prim: Type u#1 = {
   prim_ty:  funty shallow_type;
   prim_sem: funty_sem (fun t -> t.ty_sem) prim_ty;
 }
+
+let mkPrim
+  (prim_id:  option ident)
+  (prim_ty:  funty shallow_type)
+  (prim_sem: funty_sem (fun t -> t.ty_sem) prim_ty): prim =
+  { prim_id; prim_ty; prim_sem }
 
 let axiom_var_eq (a b: shallow_type) (x: C.var a) (x': C.var b):
   Lemma
@@ -70,9 +76,9 @@ let prim_eq: eq_dec_partial prim = fun p q ->
   | _, _ -> false
 
 let bool: shallow_type = {
-  ty_id  = FRC.bool_lid;
-  ty_sem = bool;
-  val_default = (fun _ -> false);
+  ty_id       = [`%Prims.bool];
+  ty_sem      = bool;
+  val_default = false;
 }
 
 let table: table = {
@@ -85,7 +91,7 @@ let table: table = {
    prim_sem    = (fun p -> PR.p'delay p.prim_sem);
    prim_eq     = prim_eq;
 
-   val_default = (fun t -> t.val_default ());
+   val_default = (fun t -> t.val_default);
 
    propty      = bool;
 }

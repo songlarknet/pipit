@@ -31,7 +31,7 @@ module PM = Pipit.Prop.Metadata
  The stream history `streams` is in most-recent-first order.
  *)
 noeq
-type bigstep_base (#t: table) (#c: context t): (#a: t.ty) -> list (row c) -> exp_base t c a -> t.ty_sem a -> Type =
+type bigstep_base (#t: table u#i u#j) (#c: context t): (#a: t.ty) -> list (row c) -> exp_base t c a -> t.ty_sem a -> Type =
  (* Values `v` always evaluate to the value *)
  | BSVal:
           #valty: t.ty ->
@@ -49,7 +49,7 @@ type bigstep_base (#t: table) (#c: context t): (#a: t.ty) -> list (row c) -> exp
 
 (* bigstep streams e v *)
 noeq
-type bigstep (#t: table) (#c: context t): (#a: t.ty) -> list (row c) -> exp t c a -> t.ty_sem a -> Type =
+type bigstep (#t: table u#i u#j) (#c: context t): (#a: t.ty) -> list (row c) -> exp t c a -> t.ty_sem a -> Type u#(max i j) =
  (* Base expressions *)
  | BSBase:
           #valty: t.ty ->
@@ -160,7 +160,7 @@ and bigstep_apps (#t: table) (#c: context t): (#a: funty t.ty) -> list (row c) -
 (* Under streaming history `streams`, evaluate expression `e` at each step to
    produce stream of values `vs` *)
 noeq
-type bigsteps (#t: table) (#c: context t) (#a: t.ty): list (row c) -> exp t c a -> list (t.ty_sem a) -> Type =
+type bigsteps (#t: table u#i u#j) (#c: context t) (#a: t.ty): list (row c) -> exp t c a -> list (t.ty_sem a) -> Type =
  | BSs0:
     e: exp t c a                        ->
     bigsteps [] e []
@@ -174,13 +174,15 @@ type bigsteps (#t: table) (#c: context t) (#a: t.ty): list (row c) -> exp t c a 
     bigstep  (row :: rows) e  v         ->
     bigsteps (row :: rows) e (v :: vs)
 
-let rec bigstep_always (#t: table) (#c: context t)
+let rec bigstep_always (#t: table u#i u#j) (#c: context t)
   (rows: list (row c))
   (e: exp t c t.propty): Tot prop (decreases rows) =
   match rows with
   | [] -> True
   | _ :: rows' ->
-    bigstep rows e true /\
+    // XXX: squash: bigstep_always shows up in refinements, so it's useful to have it as prop.
+    // If this causes issues, try lifting to Type; requires changing Pipit.Exp.Checked.Base too
+    squash (bigstep rows e true) /\
     bigstep_always rows' e
 
 

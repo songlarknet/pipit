@@ -97,7 +97,7 @@ module PM = Pipit.Prop.Metadata
 
 
 
-let rec check (#t: table) (#c: context t) (#a: t.ty) (#streams: list (row c)) (#e: exp t c a) (#v: t.ty_sem a)  (mode: PM.check_mode)
+let rec check (#t: table u#i u#j) (#c: context t) (#a: t.ty) (#streams: list (row c)) (#e: exp t c a) (#v: t.ty_sem a)  (mode: PM.check_mode)
 (hBS: bigstep streams e v): Tot prop (decreases hBS) =
   match hBS with
   | BSBase _ _ _ _ ->
@@ -125,12 +125,12 @@ let rec check (#t: table) (#c: context t) (#a: t.ty) (#streams: list (row c)) (#
     (PM.prop_status_contains mode status ==>
       bigstep_always streams eprop)
 
-and check_apps (#t: table) (#c: context t) (#a: funty t.ty) (#streams: list (row c)) (#e: exp_apps t c a) (#v: funty_sem t.ty_sem a) (mode: PM.check_mode) (hBSA: bigstep_apps streams e v): Tot prop (decreases hBSA) =
+and check_apps (#t: table u#i u#j) (#c: context t) (#a: funty t.ty) (#streams: list (row c)) (#e: exp_apps t c a) (#v: funty_sem t.ty_sem a) (mode: PM.check_mode) (hBSA: bigstep_apps streams e v): Tot prop (decreases hBSA) =
   match hBSA with
   | BSPrim _ _ -> True
   | BSApp _ _ _ _ _ hBSA' hBS' -> check_apps mode hBSA' /\ check mode hBS'
 
-let check' (#t: table) (#c: context t) (#a: t.ty) (mode: PM.check_mode) (e: exp t c a) =
+let check' (#t: table u#i u#j) (#c: context t) (#a: t.ty) (mode: PM.check_mode) (e: exp t c a) =
   forall (streams: list (row c)) (v: t.ty_sem a) (hBS: bigstep streams e v).
     check mode hBS
 

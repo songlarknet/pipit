@@ -17,17 +17,21 @@ module C  = Pipit.Context.Base
 module CX = Pipit.Exp.Checked.Compound
 module PM = Pipit.Prop.Metadata
 
+irreducible
+let stream_ctor_attr = ()
+
 (**** Internal types ****)
 type _state = {
   fresh: nat;
 }
 
 type _m      (a: Type)                  = _state -> (a & _state)
-type _s_apps (t: table) (a: funty t.ty) = _m (cexp_apps t [] a)
+type _s_apps (t: table u#i u#j) (a: funty t.ty) = _m (cexp_apps t [] a)
 
 (**** Exposed types: s for stream ****)
-type s       (t: table) (a: t.ty)       = _m (cexp      t [] a)
-type prim    (t: table) (ty: funty t.ty)= p: t.prim { t.prim_ty p == ty }
+[@@stream_ctor_attr]
+type s       (t: table u#i u#j) (a: t.ty)       = _m (cexp      t [] a)
+type prim    (t: table u#i u#j) (ty: funty t.ty)= p: t.prim { t.prim_ty p == ty }
 
 (**** Internal combinators ****)
 

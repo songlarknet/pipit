@@ -8,11 +8,6 @@ module Pipit.Sugar.Vanilla
 
 open Pipit.Prim.Vanilla
 
-open Pipit.Exp.Base
-open Pipit.Exp.Binding
-
-module C  = Pipit.Context.Base
-
 module S = Pipit.Sugar.Base
 
 module R = FStar.Real
@@ -177,4 +172,3 @@ let sum (e: ints): ints =
 
 let count (e: bools): ints =
   sum (if_then_else e z1 z0)
-
