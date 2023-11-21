@@ -5,7 +5,6 @@ module Pipit.Prim.Shallow
 open Pipit.Prim.Table
 module PR  = PipitRuntime.Prim
 module C   = Pipit.Context.Base
-module FRC = FStar.Reflection.Const
 
 (* Type of identifiers used as a unique key for types and primitives.
   We assume that the front-end ensures that types with the same identifier are
