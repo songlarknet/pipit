@@ -47,11 +47,11 @@ include $(BUILD)/deps.mk
 .PHONY: verify
 verify: $(ALL_CHECKED_FILES)
 
-# `make lax`:
+# `make retry`:
 # Sometimes the proofs are flaky during development, so it can be useful to
-# build with retries enabled. 
-lax: FSTAR_PROOF_OPT=--retry 2
-lax: verify
+# build with retries enabled.
+retry: FSTAR_PROOF_OPT=--retry 2
+retry: verify
 
 .PHONY: extract
 extract: extract-pump extract-simple
