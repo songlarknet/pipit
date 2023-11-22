@@ -48,5 +48,6 @@ let rec fir (coeffs: list R.real):
     let ret = Check.exp_of_stream1 (fun input ->
       (input *^ const c) +^ Check.stream_of_contract1 fir' (fby 0.0R input)) in
 
+    assert R.(sum_abs coeffs == r_abs c +. sum_abs coeffs');
     assert (Check.contract_system_induct_k1' bibo_rely (bibo_guar (sum_abs coeffs)) ret) by (T.norm_full ["Fir"]);
     Check.contract_of_exp1 _ _ ret

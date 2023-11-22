@@ -4,6 +4,14 @@
    table `t` and the result type `a` (which is a `t.ty`).
    There are `run`, `run1` and `run2` functions for converting stream programs
    to core expressions.
+
+  The definitions in this module are declared to be opaque-to-SMT, as the
+  higher-order representation is expensive to encode in the SMT solver. When we
+  want to reason about actual programs, we don't want to use this higher-order
+  representation, and instead use the normalizer to go to transition systems or
+  explicit expressions. So, hiding these from the SMT solver seems to help
+  reduce the clutter in the environment.
+
 *)
 module Pipit.Sugar.Base
 
@@ -35,30 +43,36 @@ type prim    (t: table u#i u#j) (ty: funty t.ty)= p: t.prim { t.prim_ty p == ty 
 
 (**** Internal combinators ****)
 
+[@@"opaque_to_smt"]
 let _purem (#a: Type) (x: a): _m a =
   fun s -> (x, s)
 
+[@@"opaque_to_smt"]
 let _freshm (#ty: Type) (t: ty): _m (C.var t) =
   fun s ->
     let x = s.fresh in
     (C.Var x), { fresh = x + 1 }
 
+[@@"opaque_to_smt"]
 let _freshs (t: table) (ty: t.ty): s t ty =
   fun s ->
     let (x, s') = _freshm ty s in
     (XBase (XVar x), s')
 
 (**** Top-level / integration combinators ****)
+[@@"opaque_to_smt"]
 let exp_of_stream0 (#t: table) (#ty: t.ty) (e: s t ty) : cexp t [] ty =
   let (a, _) = e { fresh = 0 } in
   a
 
+[@@"opaque_to_smt"]
 let exp_of_stream1 (#t: table) (#a #b: t.ty) (f: s t a -> s t b) : cexp t [a] b =
   let (ax, s) = _freshm a { fresh = 0 } in
   let a       = XBase (XVar ax) in
   let (b,  s) = f (_purem a) s in
   CX.close1 b ax
 
+[@@"opaque_to_smt"]
 let exp_of_stream2 (#a #b #c: ('t).ty) (f: s 't a -> s 't b -> s 't c) : cexp 't [a; b] c =
   let s       = { fresh = 0 } in
   let (ax, s) = _freshm a s in
@@ -68,6 +82,7 @@ let exp_of_stream2 (#a #b #c: ('t).ty) (f: s 't a -> s 't b -> s 't c) : cexp 't
   let (c,  s) = f (_purem a) (_purem b) s in
   CX.close1 (CX.close1 c bx) ax
 
+[@@"opaque_to_smt"]
 let exp_of_stream3 (#a #b #c #d: ('t).ty) (f: s 't a -> s 't b -> s 't c -> s 't d) : cexp 't [a; b; c] d =
   let s       = { fresh = 0 } in
   let (ax, s) = _freshm a s in
@@ -79,21 +94,25 @@ let exp_of_stream3 (#a #b #c #d: ('t).ty) (f: s 't a -> s 't b -> s 't c -> s 't
   let (d,  s) = f (_purem a) (_purem b) (_purem c) s in
   CX.close1 (CX.close1 (CX.close1 d cx) bx) ax
 
+[@@"opaque_to_smt"]
 let stream_of_exp0 (#t: table) (#a: t.ty) (e: cexp t [] a): s t a =
   fun s ->
     (e, s)
 
+[@@"opaque_to_smt"]
 let stream_of_exp1 (#t: table) (#a #b: t.ty) (e: cexp t [a] b) (sa: s t a): s t b =
   fun s ->
     let (ax, s) = sa s in
     (XLet a ax e, s)
 
+[@@"opaque_to_smt"]
 let stream_of_exp2 (#t: table) (#a #b #c: t.ty) (e: cexp t [a; b] c) (sa: s t a) (sb: s t b): s t c =
   fun s ->
     let (ax, s) = sa s in
     let (bx, s) = sb s in
     (XLet b bx (XLet a (CX.weaken [b] ax) e), s)
 
+[@@"opaque_to_smt"]
 let stream_of_exp3 (#t: table) (#a #b #c #d: t.ty) (e: cexp t [a; b; c] d) (sa: s t a) (sb: s t b) (sc: s t c): s t d =
   fun s ->
     let (ax, s) = sa s in
@@ -102,6 +121,7 @@ let stream_of_exp3 (#t: table) (#a #b #c #d: t.ty) (e: cexp t [a; b; c] d) (sa: 
     (XLet c cx (XLet b (CX.weaken [c] bx) (XLet a (CX.weaken [b; c] ax) e)), s)
 
 (**** Binding combinators ****)
+[@@"opaque_to_smt"]
 let let'
   (#a #b: ('t).ty)
   (e: s 't a)
@@ -114,6 +134,7 @@ let let'
     let (e', s)   = f (_purem evar) s in
     (XLet a e (CX.close1 e' xvar), s))
 
+[@@"opaque_to_smt"]
 let rec'
   (#a: ('t).ty)
   (f: s 't a -> s 't a):
@@ -124,6 +145,7 @@ let rec'
     let (e', s)   = f (_purem evar) s in
     (XMu (CX.close1 e' xvar), s))
 
+[@@"opaque_to_smt"]
 let (let^) (#a #b: ('t).ty) (f: s 't a) (g: s 't a -> s 't b) =
     let' f g
 
@@ -131,6 +153,7 @@ let (let^) (#a #b: ('t).ty) (f: s 't a) (g: s 't a -> s 't b) =
 // I really want a monadic/effectful interface that collects a list of checks.
 // when I tried this before I had trouble reifying effectful expressions inside
 // tactics. need to work that out.
+[@@"opaque_to_smt"]
 let check
   (e: s 't ('t).propty):
     s 't ('t).propty =
@@ -138,10 +161,12 @@ let check
     let (e, s) = e s in
     (XCheck PM.PSUnknown e, s))
 
+[@@"opaque_to_smt"]
 let const (#a: ('t).ty) (v: ('t).ty_sem a): s 't a =
   _purem (XBase (XVal v))
 
 (* followed-by, initialised delay *)
+[@@"opaque_to_smt"]
 let fby (#a: ('t).ty) (v: ('t).ty_sem a) (e: s 't a): s 't a = (fun s -> let (e, s) = e s in (XFby v e, s))
 
 (* uninitialised delay, or default.
@@ -149,6 +174,7 @@ let fby (#a: ('t).ty) (v: ('t).ty_sem a) (e: s 't a): s 't a = (fun s -> let (e,
   default value is never used.
   we could imagine annotating it with a refinement of (false fby true…)
  *)
+[@@"opaque_to_smt"]
 let pre (#a: ('t).ty) (e: s 't a): s 't a = fby (('t).val_default a) e
 
 (* "p -> q" in Lustre, first element of p then remainder of q *)
@@ -161,28 +187,52 @@ let pre (#a: ('t).ty) (e: s 't a): s 't a = fby (('t).val_default a) e
 
 // #push-options "--ifuel 0 --fuel 0"
 
+[@@"opaque_to_smt"]
+let liftP'prim
+  (#ft: funty ('t).ty)
+  (f: prim 't ft):
+      _s_apps 't ft =
+  (fun s -> (XPrim f, s))
+
+[@@"opaque_to_smt"]
+let (<*>)
+  (#a: ('t).ty)
+  (#ft: funty ('t).ty)
+  (f: _s_apps 't (FTFun a ft))
+  (ea: s 't a):
+      _s_apps 't ft =
+  (fun s ->
+    let (ff, s) = f s in
+    let (aa, s) = ea s in
+    (XApp ff aa, s))
+
+[@@"opaque_to_smt"]
+let liftP'apps
+  (#a: ('t).ty)
+  (ea: _s_apps 't (FTVal a)):
+      s 't a =
+  (fun s ->
+    let (aa, s) = ea s in
+    (XApps aa, s))
+
+[@@"opaque_to_smt"]
 let liftP1
   (#a #b: ('t).ty)
   (f: prim 't (FTFun a (FTVal b)))
   (e: s 't a):
       s 't b =
-  (fun s ->
-    let (aa, s) = e s in
-    CX.lemma_check_XApps1 #'t #[] #a #b PM.check_mode_valid f aa;
-    (XApps (XApp (XPrim f) aa), s))
+    liftP'apps (liftP'prim f <*> e)
 
+[@@"opaque_to_smt"]
 let liftP2
   (#a #b #c: ('t).ty)
   (f: prim 't (FTFun a (FTFun b (FTVal c))))
   (ea: s 't a)
   (eb: s 't b):
        s 't c =
-  (fun s ->
-    let (aa, s) = ea s in
-    let (bb, s) = eb s in
-    CX.lemma_check_XApps2 #'t #[] #a #b #c PM.check_mode_valid f aa bb;
-    (XApps (XApp (XApp (XPrim f) aa) bb), s))
+    liftP'apps (liftP'prim f <*> ea <*> eb)
 
+[@@"opaque_to_smt"]
 let liftP3
   (#a #b #c #d: ('t).ty)
   (f: prim 't (FTFun a (FTFun b (FTFun c (FTVal d)))))
@@ -190,10 +240,5 @@ let liftP3
   (eb: s 't b)
   (ec: s 't c):
        s 't d =
-  (fun s ->
-    let (aa, s) = ea s in
-    let (bb, s) = eb s in
-    let (cc, s) = ec s in
-    CX.lemma_check_XApps3 #'t #[] #a #b #c #d PM.check_mode_valid f aa bb cc;
-    (XApps (XApp (XApp (XApp (XPrim f) aa) bb) cc), s))
+    liftP'apps (liftP'prim f <*> ea <*> eb <*> ec)
 
