@@ -179,7 +179,7 @@ let pre (#a: ('t).ty) (e: s 't a): s 't a = fby (('t).val_default a) e
 
 (* "p -> q" in Lustre, first element of p then remainder of q *)
 // XXX: needs ifthenelse primitive (if (true fby false) then e1 else e2)
-// let (-->) (#a: ('t).ty) (e1 e2: s 't a): s 't a =
+// let (->^) (#a: ('t).ty) (e1 e2: s 't a): s 't a =
 //   (fun s ->
 //     let (e1, s) = e1 s in
 //     let (e2, s) = e2 s in
@@ -195,7 +195,7 @@ let liftP'prim
   (fun s -> (XPrim f, s))
 
 [@@"opaque_to_smt"]
-let (<*>)
+let liftP'app
   (#a: ('t).ty)
   (#ft: funty ('t).ty)
   (f: _s_apps 't (FTFun a ft))
@@ -205,6 +205,14 @@ let (<*>)
     let (ff, s) = f s in
     let (aa, s) = ea s in
     (XApp ff aa, s))
+
+[@@"opaque_to_smt"]
+let (<*>)
+  (#a: ('t).ty)
+  (#ft: funty ('t).ty)
+  (f: _s_apps 't (FTFun a ft))
+  (ea: s 't a):
+      _s_apps 't ft = liftP'app f ea
 
 [@@"opaque_to_smt"]
 let liftP'apps

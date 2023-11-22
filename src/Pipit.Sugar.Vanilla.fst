@@ -75,7 +75,7 @@ let fby (#a: valtype) (v: table.ty_sem a) (e: s a): s a = S.fby #table #a v e
 
 let pre (e: s 'a): s 'a = S.pre #table #'a e
 
-let (-->) (e1 e2: s 'a): s 'a =
+let (->^) (e1 e2: s 'a): s 'a =
   S.liftP3 (P'V P'V'IfThenElse 'a)
     (fby #TBool true (const false))
     e1 e2
