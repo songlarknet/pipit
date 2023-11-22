@@ -26,7 +26,7 @@ FSTAR_OPT		  ?= $(FSTAR_INCLUDES) $(FSTAR_PROOF_OPT) $(FSTAR_CACHE) $(FSTAR_EXTR
 FSTAR_SRCS = $(wildcard src/*.fst src/*.fsti src/**/*.fst src/**/*.fsti example/*.fst example/*.fsti example/**/*.fst example/**/*.fsti)
 
 .PHONY: all
-all: verify extract
+all: verify-retry extract
 
 $(BUILD)/deps.mk.rsp:
 	@mkdir -p $(BUILD)
@@ -47,11 +47,11 @@ include $(BUILD)/deps.mk
 .PHONY: verify
 verify: $(ALL_CHECKED_FILES)
 
-# `make retry`:
+# `make verify-retry`:
 # Sometimes the proofs are flaky during development, so it can be useful to
 # build with retries enabled.
-retry: FSTAR_PROOF_OPT=--retry 2
-retry: verify
+verify-retry: FSTAR_PROOF_OPT=--retry 2
+verify-retry: verify
 
 .PHONY: extract
 extract: extract-pump extract-simple
