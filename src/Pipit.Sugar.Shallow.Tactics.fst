@@ -1,4 +1,5 @@
 (*
+  Exploratory work towards a nicer syntax... shelved for now
 
   Assumptions / limitations:
     * streams cannot be refined (not allowed: `ints: s int { forall i. ints `nth` i >= 0 }`)
@@ -7,6 +8,7 @@
 *)
 module Pipit.Sugar.Shallow.Tactics
 
+module PPT = Pipit.Prim.Table
 module PPS = Pipit.Prim.Shallow
 module SB  = Pipit.Sugar.Base
 module SSB = Pipit.Sugar.Shallow.Base
@@ -25,7 +27,7 @@ let norm_term (e: Ref.env) (tm: Ref.term): Tac.Tac Ref.term =
 #set-options "--print_full_names --ugly"
 
 
-let rec lift_prim_go (args: list Tac.binder) (app: Ref.term): Tac.Tac Ref.term =
+let rec lift_prim_go (args: list Tac.binder) (ret: Tac.comp) (app: Ref.term): Tac.Tac Ref.term =
   match args with
   | bv :: args ->
     (match bv.qual with
@@ -37,35 +39,44 @@ let rec lift_prim_go (args: list Tac.binder) (app: Ref.term): Tac.Tac Ref.term =
       // let wit_uvar = Tac.uvar_env (Tac.top_env ()) (Some strm_wit_sort) in
       // Tac.unshelve wit_uvar;
       // Tactics.Typeclasses.tcresolve ();
-      // let sort = (`SSB.s_explicit (`#bv.sort) (`#wit_uvar)) in
-      // let bvv  = {bv with sort = sort; uniq = Tac.fresh () } in
-      // let arg: Tac.bv = { index = List.length args; sort = FStar.Sealed.seal sort; ppname = bv.ppname } in
-      // let arg = Tac.pack (Tv_BVar arg) in
-      // let app = (`SB.liftP'app (`#app) (`#arg)) in
-      let app = lift_prim_go args app in
-      // let app = Tv_Abs bvv app in
+      let sort = (`SSB.s (`#bv.sort)) in
+      let bvv  = {bv with sort = sort; uniq = Tac.fresh () } in
+      let arg: Tac.bv = { index = List.length args; sort = FStar.Sealed.seal sort; ppname = bv.ppname } in
+      let arg = Tac.pack (Tv_BVar arg) in
+      let app = (`SB.liftP'app (`#app) (`#arg)) in
+      let app = lift_prim_go args ret app in
+      let app = Tv_Abs bvv app in
       // let app = Tv_Abs bin_strm_wit app in
       Tac.pack app
     | Ref.Q_Implicit ->
       Tac.fail "implicit"
     | Ref.Q_Meta mm ->
       Tac.fail ("meta not supported sorry" ^ Tac.term_to_string mm))
-  | [] -> (`SB.liftP'apps (`#app))
+  | [] ->
+    (match ret with
+    | Tac.C_Total t ->
+      // app
+      (`SB.liftP'apps #PPS.table #(SSB.shallow (`#t)) (`#app))
+    | _ -> Tac.fail "bad computation")
 
 let lift_prim (nm: string) (tm: Ref.term): Tac.Tac Tac.decls =
+  let full_nm = List.(Tac.cur_module () @ [nm]) in
+  let full_nm' = quote full_nm in
   let e       = Tac.top_env () in
   let ty      = Tac.tc e tm in
   let ty      = norm_term e ty in
   let (bs,cmp)= Tac.collect_arr_bs ty in
-  let tm_lift = tm in
-  let tm_lift = Tac.pack (Tv_App (Tac.pack (Tv_FVar (Tac.pack_fv [`%SB.liftP'prim]))) (tm, Ref.Q_Explicit)) in
-  // let tm_lift = (`SB.liftP'prim (`#tm)) in
-  let tm_lift = lift_prim_go bs tm_lift in
+  // let tm_lift = tm in
+  let funty   = (` (PPT.FTFun (SSB.shallow bool) (PPT.FTFun (SSB.shallow bool) (PPT.FTVal (SSB.shallow bool))) )) in
+  let tm_lift = (` PPS.mkPrim (Some (`#full_nm')) (`#funty) (`#tm)) in
+  // let tm_lift = Tac.pack (Tv_App (Tac.pack (Tv_FVar (Tac.pack_fv [`%SB.liftP'prim]))) (tm_lift, Ref.Q_Explicit)) in
+  let tm_lift = (`SB.liftP'prim #PPS.table #(`#funty) (`#tm_lift)) in
+  let tm_lift = lift_prim_go bs cmp tm_lift in
   Tac.print ("term is: " ^ Tac.term_to_string tm_lift);
   // let ty_lift = Tac.tc e tm_lift in
 
   let lb      = {
-    lb_fv = Tac.pack_fv List.(Tac.cur_module () @ [nm]);
+    lb_fv = Tac.pack_fv full_nm;
     lb_us = [];
     lb_typ = (Tac.pack Tv_Unknown);
     lb_def = tm_lift;
@@ -79,7 +90,13 @@ let plus (i j: bool) = i && j
 // let plus (a: eqtype) {| SSB.has_stream a |} (i j: int) = i + j
 
 
-%splice[] (lift_prim "plus_lift" (`plus))
+%splice[plus_lift] (lift_prim "plus_lift" (`plus))
+
+// %splice[tup_lift] (lift_prim "tup_lift" (`(fun (a: Type) {| SSB.has_stream a |} (x: a) -> a )))
+
+// let x () =
+//   plus_lift ()
+
 
 type mode = | Pure | Stream
 

@@ -118,19 +118,21 @@ let pipit_simplify_products (namespaces: list string): T.Tac unit =
     tac_products [b];
     ())
 
-// NB: this causes --extract krml to crash
-// let clear_all (): T.Tac unit =
-//   let open T in
-//   let rec go bs: Tac unit = match bs with
-//    | [] -> ()
-//    | b::bs ->
-//     (try
-//       T.clear b
-//     with err ->
-//       // T.print (T.term_to_string (quote err));
-//       ());
-//     go bs
-//   in
-//   ignore (T.repeat T.revert);
-//   let bs = T.repeat T.intro in
-//   go bs
+// NB: this causes --extract krml to crash, so need both noextract attributes
+noextract
+[@@noextract_to "krml"]
+let clear_all (): T.Tac unit =
+  let open T in
+  let rec go bs: Tac unit = match bs with
+   | [] -> ()
+   | b::bs ->
+    (try
+      T.clear b
+    with err ->
+      // T.print (T.term_to_string (quote err));
+      ());
+    go bs
+  in
+  ignore (T.repeat T.revert);
+  let bs = T.repeat T.intro in
+  go bs
