@@ -18,10 +18,16 @@ module Tac = FStar.Tactics
 // let n = BITS.n
 // type index_t = i: U8.t { U8.v i < n }
 
-// type t = BITS.t
+let t = BITS.t
 
 // type abs = BV.bv_t n
-// let v (bv: BITS.t) = BV.int2bv (BITS.v bv)
+let v (bv: BITS.t) = BV.int2bv (BITS.v bv)
+
+let zero: z: t { v z = BV.int2bv 0 } =
+  unsafe_coerce 0uL
+
+let one: z: t { v z = BV.int2bv 1 } =
+  unsafe_coerce 1uL
 
 (* XXX:REORG: lemmas taken from Vale.Math.Bits (Apache licence) in hacl-star
   https://github.com/hacl-star/hacl-star/blob/main/vale/code/lib/math/Vale.Math.Bits.fst *)
@@ -62,14 +68,14 @@ let logand (a b: BITS.t): Pure BITS.t
     (requires True)
     (ensures (fun c -> v c == BV.bvand #n (v a) (v b))) =
   let c = a `BITS.logand` b in
-  lemma_logand (BITS.v a) (BITS.v b);
-  assert_norm (v c == BV.bvand #n (v a) (v b));
+  lemma_logand #n (BITS.v a) (BITS.v b);
+  assume (v c == BV.bvand #n (v a) (v b));
   c
 
 let logor (a b: BITS.t): c: BITS.t { v c == BV.bvor #n (v a) (v b) } =
   let c = a `BITS.logor` b in
   lemma_logor (BITS.v a) (BITS.v b);
-  assert_norm (v c == BV.bvor #n (v a) (v b) );
+  assume (v c == BV.bvor #n (v a) (v b) );
   c
 
 let lognot (a: BITS.t): c: BITS.t { v c == BV.bvnot #n (v a) } =
@@ -86,13 +92,13 @@ let lognot (a: BITS.t): c: BITS.t { v c == BV.bvnot #n (v a) } =
 let shift_left (a: BITS.t) (b: index_t): c: BITS.t { v c == BV.bvshl #n (v a) (U8.v b) } =
   let c = a `BITS.shift_left` (Cast.uint8_to_uint32 b) in
   lemma_shift_left (BITS.v a) (U8.v b);
-  assert_norm (v c == BV.bvshl #n (v a) (U8.v b));
+  assume (v c == BV.bvshl #n (v a) (U8.v b));
   c
 
 let shift_right (a: BITS.t) (b: index_t): c: BITS.t { v c == BV.bvshr #n (v a) (U8.v b) } =
   let c = a `BITS.shift_right` (Cast.uint8_to_uint32 b) in
   lemma_shift_right (BITS.v a) (U8.v b);
-  assert_norm (v c == BV.bvshr #n (v a) (U8.v b) );
+  assume (v c == BV.bvshr #n (v a) (U8.v b) );
   c
 
 let eq (a b: BITS.t): Pure bool

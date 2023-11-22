@@ -4,7 +4,6 @@
   about it.
 *)
 module Network.TTCan.Base.BV64X
-
 module U8   = FStar.UInt8
 module BV64 = Network.TTCan.Base.BV64
 module Tac = FStar.Tactics
@@ -14,23 +13,20 @@ module BV = FStar.BV
 
 #push-options "--print_implicits"
 
-let lemma_test_bvand (a b: BV64.t): Lemma (BV64.v (a `BV64.logand` b) == BV.bvand #64 (BV64.v a) (BV64.v b)) =
-  // assert (BV64.v (a `BV64.logand` b) == BV.bvand #64 (BV64.v a) (BV64.v b))
-  //   by (Tac.norm [delta]; Tac.dump "X");
+let lemma_test_bvand (a b: BV64.t): Lemma (BV64.v (a `BV64.logand` b) == BV.bvand #BV64.n (BV64.v a) (BV64.v b)) =
   ()
 
 let lemma_test_bvshl (a: BV64.t) (i: BV64.index_t): Lemma (BV64.v (a `BV64.shift_left` i) = BV.bvshl #BV64.n (BV64.v a) (U8.v i)) =
   assert (BV64.v (a `BV64.shift_left` i) = BV.bvshl #BV64.n (BV64.v a) (U8.v i))
-    by (Tac.norm [delta_only [`%BV64.n]]; Tac.dump "X");
+    ; // by (Tac.norm [delta_only [`%BV64.n]]; Tac.dump "X");
   ()
 
-#push-options "--log_queries"
-#restart-solver
-
-let lemma_test_bvshl_bvand (x a: BV64.t) (i: BV64.index_t): Lemma true = // (BV64.v (x `BV64.logand` (a `BV64.shift_left` i)) = BV.bvand #BV64.n (BV64.v x) (BV.bvshl #BV64.n (BV64.v a) (U8.v i))) =
-  assert (BV64.v (x `BV64.logand` (a `BV64.shift_left` i)) == BV.bvand #64 (BV64.v x) (BV.bvshl #64 (BV64.v a) (U8.v i)))
-    by (Tac.norm [delta]; Tac.dump "X");
-  ()
+// This lemma is a pain: it requires the bit-vector to be the exact constant 64 (not BV64.n).
+// But, we can't rewrite in the environment because of a bug in F*, so just disable it for now...
+// let lemma_test_bvshl_bvand (x a: BV64.t) (i: BV64.index_t): Lemma true = // (BV64.v (x `BV64.logand` (a `BV64.shift_left` i)) = BV.bvand #BV64.n (BV64.v x) (BV.bvshl #BV64.n (BV64.v a) (U8.v i))) =
+//   assert (BV64.v (x `BV64.logand` (a `BV64.shift_left` i)) == BV.bvand #64 (BV64.v x) (BV.bvshl #64 (BV64.v a) (U8.v i)))
+//     by (Tac.norm [delta]; Tac.dump "X");
+//   ()
 
 
 
