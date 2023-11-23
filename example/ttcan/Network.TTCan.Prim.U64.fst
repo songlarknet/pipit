@@ -54,18 +54,17 @@ let lte: Sugar.stream t -> Sugar.stream t -> Sugar.stream bool =
   SugarBase.liftP2 (Sugar.p'prim2 (Some [`%REPR.lt]) REPR.lte)
 
 (*** Infix notations *)
-unfold let op_Plus_Hat = add_underspec
-unfold let op_Subtraction_Hat = sub_underspec
-unfold let op_Subtraction_Question_Hat = sub_underspec
-unfold let op_Star_Hat = mul_underspec
-unfold let op_Slash_Hat = div_underspec
-unfold let op_Percent_Hat = rem_underspec
-// unfold let op_Hat_Hat = logxor
-// unfold let op_Amp_Hat = logand
-// unfold let op_Bar_Hat = logor
-// unfold let op_Less_Less_Hat = shift_left
-// unfold let op_Greater_Greater_Hat = shift_right
-unfold let op_Greater_Hat = gt
-unfold let op_Greater_Equals_Hat = gte
-unfold let op_Less_Hat = lt
-unfold let op_Less_Equals_Hat = lte
+unfold let op_Plus = add_underspec
+unfold let op_Subtraction = sub_underspec
+unfold let op_Star = mul_underspec
+unfold let op_Slash = div_underspec
+unfold let op_Percent = rem_underspec
+// unfold let op_Hat = logxor
+// unfold let op_Amp = logand
+// unfold let op_Bar = logor
+// unfold let op_Less_Less = shift_left
+// unfold let op_Greater_Greater = shift_right
+unfold let op_Greater = gt
+unfold let op_Greater_Equals = gte
+unfold let op_Less = lt
+unfold let op_Less_Equals = lte
