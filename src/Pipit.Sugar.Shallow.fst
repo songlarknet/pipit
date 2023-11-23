@@ -56,22 +56,22 @@ let p'prim3
 // let liftP1
 //   {| has_stream 'a |} {| has_stream 'r |}:
 //   (S.prim Shallow.table (p'ftfun 'a (p'ftval 'r))) ->
-//     s 'a ->
-//     s 'r =
+//     stream 'a ->
+//     stream 'r =
 //   S.liftP1
 
 // let liftP2
 //   {| has_stream 'a |} {| has_stream 'b |} {| has_stream 'r |}:
 //   (S.prim Shallow.table (p'ftfun 'a (p'ftfun 'b (p'ftval 'r)))) ->
-//     s 'a -> s 'b ->
-//     s 'r =
+//     stream 'a -> stream 'b ->
+//     stream 'r =
 //   S.liftP2
 
 // let liftP3
 //   {| has_stream 'a |} {| has_stream 'b |} {| has_stream 'c |} {| has_stream 'r |}:
 //   (S.prim Shallow.table (p'ftfun 'a (p'ftfun 'b (p'ftfun 'c (p'ftval 'r))))) ->
-//     s 'a -> s 'b -> s 'c ->
-//     s 'r =
+//     stream 'a -> stream 'b -> stream 'c ->
+//     stream 'r =
 //   S.liftP3
 
 (* Helpers for inline anonymous primitives.
@@ -82,30 +82,30 @@ let p'prim3
 let lift1
   {| has_stream 'a |} {| has_stream 'r |}
   (f: Shallow.funty_sem (p'ftfun 'a (p'ftval 'r))):
-    s 'a ->
-    s 'r =
+    stream 'a ->
+    stream 'r =
   S.liftP1 (p'prim1 None f)
 
 let lift2
   {| has_stream 'a |} {| has_stream 'b |} {| has_stream 'r |}
   (f: Shallow.funty_sem (p'ftfun 'a (p'ftfun 'b (p'ftval 'r)))):
-    s 'a ->
-    s 'b ->
-    s 'r =
+    stream 'a ->
+    stream 'b ->
+    stream 'r =
   S.liftP2 (p'prim2 None f)
 
 let lift3
   {| has_stream 'a |} {| has_stream 'b |} {| has_stream 'c |} {| has_stream 'r |}
   (f: Shallow.funty_sem (p'ftfun 'a (p'ftfun 'b (p'ftfun 'c (p'ftval 'r))))):
-    s 'a ->
-    s 'b ->
-    s 'c ->
-    s 'r =
+    stream 'a ->
+    stream 'b ->
+    stream 'c ->
+    stream 'r =
   S.liftP3 (p'prim3 None f)
 
 
-let tt: s bool = const true
-let ff: s bool = const false
+let tt: stream bool = const true
+let ff: stream bool = const false
 
 (* Working with booleans.
   Unfortunately, there aren't many suitable operators for boolean or: none of
@@ -113,43 +113,43 @@ let ff: s bool = const false
   annoying when we want propositional or in properties. Instead, we'll just use
   names.
  *)
-let (/\):  s bool -> s bool -> s bool =
+let (/\):  stream bool -> stream bool -> stream bool =
   S.liftP2 (p'prim2 (Some [`%PR.p'b'and]) PR.p'b'and)
-let (\/):  s bool -> s bool -> s bool =
+let (\/):  stream bool -> stream bool -> stream bool =
   S.liftP2 (p'prim2 (Some [`%PR.p'b'or]) PR.p'b'or)
-let (==>): s bool -> s bool -> s bool =
+let (==>): stream bool -> stream bool -> stream bool =
   S.liftP2 (p'prim2 (Some [`%PR.p'b'implies]) PR.p'b'implies)
 
-let not: s bool -> s bool =
+let not: stream bool -> stream bool =
   S.liftP1 (p'prim1 (Some [`%PR.p'b'not]) PR.p'b'not)
 
-let (=) (#a: eqtype) {| has_stream a |}: s a -> s a -> s bool =
+let (=) (#a: eqtype) {| has_stream a |}: stream a -> stream a -> stream bool =
   S.liftP2 (p'prim2 #a #a (Some [`%(=)]) (fun x y -> x = y))
 
-let (<>) (#a: eqtype) {| has_stream a |}: s a -> s a -> s bool =
+let (<>) (#a: eqtype) {| has_stream a |}: stream a -> stream a -> stream bool =
   S.liftP2 (p'prim2 #a #a (Some [`%(<>)]) (fun x y -> x <> y))
 
-let tup (#a #b: eqtype) {| has_stream a |} {| has_stream b |}: s a -> s b -> s (a & b) #_ =
+let tup (#a #b: eqtype) {| has_stream a |} {| has_stream b |}: stream a -> stream b -> stream (a & b) #_ =
   lift2 (fun x y -> (x, y))
 
 // why does this not work with named prim?
-// let tup2 (#a #b: eqtype) {| has_stream a |} {| has_stream b |}: s a -> s b -> s (a & b) #_ =
+// let tup2 (#a #b: eqtype) {| has_stream a |} {| has_stream b |}: stream a -> stream b -> stream (a & b) #_ =
   // S.liftP2 (p'prim2 #a #b #(a&b) (Some [`%Mktuple2]) (fun x y -> (x, y)))
 
-let fst (#a #b: eqtype) {| has_stream a |} {| has_stream b |}: s (a & b) #_ -> s a =
+let fst (#a #b: eqtype) {| has_stream a |} {| has_stream b |}: stream (a & b) #_ -> stream a =
   lift1 (fun (xy: (a & b)) -> fst xy)
 
-let snd (#a #b: eqtype) {| has_stream a |} {| has_stream b |}: s (a & b) #_ -> s b =
+let snd (#a #b: eqtype) {| has_stream a |} {| has_stream b |}: stream (a & b) #_ -> stream b =
   lift1 (fun (xy: (a & b)) -> snd xy)
 
 (* if-then-else *)
-let select (#a: eqtype) {| has_stream a |} : s bool -> s a -> s a -> s a =
+let select (#a: eqtype) {| has_stream a |} : stream bool -> stream a -> stream a -> stream a =
   S.liftP3 (p'prim3 #bool #a #a (Some [`%PR.p'select]) PR.p'select)
 
 let if_then_else (#a: eqtype) {| has_stream a |} = select #a
 
-let sofar (e: s bool): s bool =
+let sofar (e: stream bool): stream bool =
   rec' (fun r -> e /\ fby true r)
 
-let once (e: s bool): s bool =
+let once (e: stream bool): stream bool =
   rec' (fun r -> e \/ fby false r)

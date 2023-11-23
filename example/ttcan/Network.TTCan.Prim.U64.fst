@@ -17,40 +17,40 @@ instance has_stream_U64: Sugar.has_stream t = {
 
 let valid' (i: t): bool = UInt.fits (REPR.v i) REPR.n
 
-let valid: Sugar.s t -> Sugar.s bool =
+let valid: Sugar.stream t -> Sugar.stream bool =
   SugarBase.liftP1 (Sugar.p'prim1 #t (Some [`%valid']) valid')
 
-let add_underspec: Sugar.s t -> Sugar.s t -> Sugar.s t =
+let add_underspec: Sugar.stream t -> Sugar.stream t -> Sugar.stream t =
   SugarBase.liftP2 (Sugar.p'prim2 (Some [`%REPR.add_underspec]) REPR.add_underspec)
 
-let sub_underspec: Sugar.s t -> Sugar.s t -> Sugar.s t =
+let sub_underspec: Sugar.stream t -> Sugar.stream t -> Sugar.stream t =
   SugarBase.liftP2 (Sugar.p'prim2 (Some [`%REPR.sub_underspec]) REPR.sub_underspec)
 
-let mul_underspec: Sugar.s t -> Sugar.s t -> Sugar.s t =
+let mul_underspec: Sugar.stream t -> Sugar.stream t -> Sugar.stream t =
   SugarBase.liftP2 (Sugar.p'prim2 (Some [`%REPR.mul_underspec]) REPR.mul_underspec)
 
 let div_underspec' (a b: t): r: t { REPR.v b <> 0 ==> r = REPR.div a b } =
   if b = 0uL then 0uL else REPR.div a b
 
-let div_underspec: Sugar.s t -> Sugar.s t -> Sugar.s t =
+let div_underspec: Sugar.stream t -> Sugar.stream t -> Sugar.stream t =
   SugarBase.liftP2 (Sugar.p'prim2 (Some [`%div_underspec']) div_underspec')
 
 let rem_underspec' (a b: t): r: t { REPR.v b <> 0 ==> r = REPR.rem a b }  =
   if b = 0uL then 0uL else REPR.rem a b
 
-let rem_underspec: Sugar.s t -> Sugar.s t -> Sugar.s t =
+let rem_underspec: Sugar.stream t -> Sugar.stream t -> Sugar.stream t =
   SugarBase.liftP2 (Sugar.p'prim2 (Some [`%rem_underspec']) rem_underspec')
 
-let gt: Sugar.s t -> Sugar.s t -> Sugar.s bool =
+let gt: Sugar.stream t -> Sugar.stream t -> Sugar.stream bool =
   SugarBase.liftP2 (Sugar.p'prim2 (Some [`%REPR.gt]) REPR.gt)
 
-let gte: Sugar.s t -> Sugar.s t -> Sugar.s bool =
+let gte: Sugar.stream t -> Sugar.stream t -> Sugar.stream bool =
   SugarBase.liftP2 (Sugar.p'prim2 (Some [`%REPR.gte]) REPR.gte)
 
-let lt: Sugar.s t -> Sugar.s t -> Sugar.s bool =
+let lt: Sugar.stream t -> Sugar.stream t -> Sugar.stream bool =
   SugarBase.liftP2 (Sugar.p'prim2 (Some [`%REPR.lt]) REPR.lt)
 
-let lte: Sugar.s t -> Sugar.s t -> Sugar.s bool =
+let lte: Sugar.stream t -> Sugar.stream t -> Sugar.stream bool =
   SugarBase.liftP2 (Sugar.p'prim2 (Some [`%REPR.lt]) REPR.lte)
 
 (*** Infix notations *)

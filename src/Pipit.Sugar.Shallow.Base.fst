@@ -35,38 +35,38 @@ instance has_stream_tup2 {| a: has_stream 'a |} {| b: has_stream 'b |}: has_stre
 }
 
 [@@S.stream_ctor_attr]
-type s (a: eqtype) {| has_stream a |} = S.s Shallow.table (shallow a)
+type stream (a: eqtype) {| has_stream a |} = S.stream Shallow.table (shallow a)
 [@@S.stream_ctor_attr]
-let s_explicit (a: eqtype) (strm: has_stream a) = s a
+let s_explicit (a: eqtype) (strm: has_stream a) = stream a
 
-let const {| has_stream 'a |} (v: 'a): s 'a = S.const v
+let const {| has_stream 'a |} (v: 'a): stream 'a = S.const v
 
 (* Applicative / monadic syntactic sugar:
   The syntactic sugar for let^ is made for monads, but it seems to work OK for
   our (applicative) case by changing the type slightly. The type of the bound
-  variable becomes a wrapped `s 'a` rather than a raw `'a`. However, the `and^`
+  variable becomes a wrapped `stream 'a` rather than a raw `'a`. However, the `and^`
   and pattern matching don't work, as they expect a raw `'a`.
 *)
-let (let^) {| has_stream 'a |}  {| has_stream 'b |} (f:s 'a) (g: s 'a -> s 'b) =
+let (let^) {| has_stream 'a |}  {| has_stream 'b |} (f:stream 'a) (g: stream 'a -> stream 'b) =
     S.let' f g
 
-// let (and^) (f:s 'a) (g: s 'b): s (TPair 'a 'b) =
+// let (and^) (f:stream 'a) (g: stream 'b): stream (TPair 'a 'b) =
 //   S.liftP2 (P'T P'T'Pair 'a 'b) f g
 
-let rec' {| has_stream 'a |} (f: s 'a -> s 'a): s 'a = S.rec' f
+let rec' {| has_stream 'a |} (f: stream 'a -> stream 'a): stream 'a = S.rec' f
 
-let check (name: string) (e: s bool): s bool =
+let check (name: string) (e: stream bool): stream bool =
   S.check e
 
-let check_that {| has_stream 'a |} (e: s 'a) (p: s 'a -> s bool): s 'a =
+let check_that {| has_stream 'a |} (e: stream 'a) (p: stream 'a -> stream bool): stream 'a =
   let^ scrut = e in
   check "" (p scrut);^
   scrut
 
 
-let fby {| has_stream 'a |} (v: 'a) (e: s 'a): s 'a = S.fby v e
+let fby {| has_stream 'a |} (v: 'a) (e: stream 'a): stream 'a = S.fby v e
 
-let pre {| has_stream 'a |} (e: s 'a): s 'a = S.pre e
+let pre {| has_stream 'a |} (e: stream 'a): stream 'a = S.pre e
 
 private
 let p'select (a: eqtype) {| has_stream a |}: Shallow.prim =
@@ -75,9 +75,9 @@ let p'select (a: eqtype) {| has_stream a |}: Shallow.prim =
 (* x -> y in Lustre means "x" at the first step, and then "y" at subsequent steps.
   we also bind this operator as (->^) for lifted arrow
  *)
-let subsequently {| has_stream 'a |} (e1 e2: s 'a): s 'a =
+let subsequently {| has_stream 'a |} (e1 e2: stream 'a): stream 'a =
   S.liftP3 (p'select 'a)
     (fby true (const false))
     e1 e2
 
-let (->^) {| has_stream 'a |} (e1 e2: s 'a): s 'a = e1 `subsequently` e2
+let (->^) {| has_stream 'a |} (e1 e2: stream 'a): stream 'a = e1 `subsequently` e2

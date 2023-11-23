@@ -3,7 +3,7 @@ module Network.TTCan.CycleTime
 module S   = Pipit.Sugar.Shallow
 module U64 = Network.TTCan.Prim.U64
 
-let stream = S.s
+let stream = S.stream
 
 type ntu = U64.t
 

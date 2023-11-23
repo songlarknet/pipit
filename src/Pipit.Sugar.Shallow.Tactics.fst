@@ -2,8 +2,8 @@
   Exploratory work towards a nicer syntax... shelved for now
 
   Assumptions / limitations:
-    * streams cannot be refined (not allowed: `ints: s int { forall i. ints `nth` i >= 0 }`)
-    * refinement types must be declared at top level (not allowed: `s (x: int { x >= 0 })`)
+    * streams cannot be refined (not allowed: `ints: stream int { forall i. ints `nth` i >= 0 }`)
+    * refinement types must be declared at top level (not allowed: `stream (x: int { x >= 0 })`)
     * variables are either fully stream or fully const
 *)
 module Pipit.Sugar.Shallow.Tactics
@@ -32,14 +32,14 @@ let rec lift_prim_go (args: list Tac.binder) (ret: Tac.comp) (app: Ref.term): Ta
   | bv :: args ->
     (match bv.qual with
     | Ref.Q_Explicit ->
-      // let sort = Tac.pack (Tv_App (`SSB.s (`#bv.sort)) 
+      // let sort = Tac.pack (Tv_App (`SSB.stream (`#bv.sort)) 
       //   (Tac.pack Tv_Unknown, Ref.Q_Meta (`Tactics.Typeclasses.tcresolve))
       //   ) in
       // let strm_wit_sort = (`SSB.has_stream (`#bv.sort)) in
       // let wit_uvar = Tac.uvar_env (Tac.top_env ()) (Some strm_wit_sort) in
       // Tac.unshelve wit_uvar;
       // Tactics.Typeclasses.tcresolve ();
-      let sort = (`SSB.s (`#bv.sort)) in
+      let sort = (`SSB.stream (`#bv.sort)) in
       let bvv  = {bv with sort = sort; uniq = Tac.fresh () } in
       let arg: Tac.bv = { index = List.length args; sort = FStar.Sealed.seal sort; ppname = bv.ppname } in
       let arg = Tac.pack (Tv_BVar arg) in
@@ -281,10 +281,10 @@ let _ =
 
 
 // type triggers = { trigger_index: nat; trigger_new: bool; }
-// type s (a: eqtype) = a
+// type stream (a: eqtype) = a
 // let fby (#a: eqtype) (p1 p2: a) = p1
 
-// let trigger (reset_ck advance_ck: s bool): s triggers =
+// let trigger (reset_ck advance_ck: stream bool): stream triggers =
 //   let rec tr =
 //     let trigger_index = 0 `fby` tr.trigger_index + (if advance_ck then 1 else 0) in
 //     let trigger_new   = trigger_index <> (0 `fby` trigger_index) in
@@ -293,7 +293,7 @@ let _ =
 //   tr
 
 // // once `let rec ... and ...` is supported by Tac.inspect:
-// let trigger (reset_ck advance_ck: s bool): s triggers =
+// let trigger (reset_ck advance_ck: stream bool): stream triggers =
 //   let rec trigger_index = 0 `fby` trigger_index + (if advance_ck then 1 else 0)
 //   and     trigger_new   = trigger_index <> (0 `fby` trigger_index)
 //   in { trigger_index; trigger_new; }
