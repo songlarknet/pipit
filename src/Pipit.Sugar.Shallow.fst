@@ -74,97 +74,82 @@ let p'prim3
 //     s 'r =
 //   S.liftP3
 
+(* Helpers for inline anonymous primitives.
+  In the future, when we implement CSE, it will be useful to have unique
+  identifiers for each primitive. But, for now, it's convenient to declare
+  anonymous primitives without needing to invent an identifier. *)
+
+let lift1
+  {| has_stream 'a |} {| has_stream 'r |}
+  (f: Shallow.funty_sem (p'ftfun 'a (p'ftval 'r))):
+    s 'a ->
+    s 'r =
+  S.liftP1 (p'prim1 None f)
+
+let lift2
+  {| has_stream 'a |} {| has_stream 'b |} {| has_stream 'r |}
+  (f: Shallow.funty_sem (p'ftfun 'a (p'ftfun 'b (p'ftval 'r)))):
+    s 'a ->
+    s 'b ->
+    s 'r =
+  S.liftP2 (p'prim2 None f)
+
+let lift3
+  {| has_stream 'a |} {| has_stream 'b |} {| has_stream 'c |} {| has_stream 'r |}
+  (f: Shallow.funty_sem (p'ftfun 'a (p'ftfun 'b (p'ftfun 'c (p'ftval 'r))))):
+    s 'a ->
+    s 'b ->
+    s 'c ->
+    s 'r =
+  S.liftP3 (p'prim3 None f)
+
 
 let tt: s bool = const true
 let ff: s bool = const false
 
-// let z (i: int): s int = const i
-// let z0 = z 0
-// let z1 = z 1
+(* Working with booleans.
+  Unfortunately, there aren't many suitable operators for boolean or: none of
+  (||), (||^) or (\/^) are allowed. We could use raw (\/) but that gets
+  annoying when we want propositional or in properties. Instead, we'll just use
+  names.
+ *)
+let (/\):  s bool -> s bool -> s bool =
+  S.liftP2 (p'prim2 (Some [`%PR.p'b'and]) PR.p'b'and)
+let (\/):  s bool -> s bool -> s bool =
+  S.liftP2 (p'prim2 (Some [`%PR.p'b'or]) PR.p'b'or)
+let (==>): s bool -> s bool -> s bool =
+  S.liftP2 (p'prim2 (Some [`%PR.p'b'implies]) PR.p'b'implies)
 
-// let r (r: R.real): reals = const r
-// let r0 = r 0.0R
-// let r1 = r 1.0R
+let not: s bool -> s bool =
+  S.liftP1 (p'prim1 (Some [`%PR.p'b'not]) PR.p'b'not)
 
-// let zero (#a: arithtype): s a = match a with
-//  | TInt  -> z0
-//  | TReal -> const R.zero
+let (=) (#a: eqtype) {| has_stream a |}: s a -> s a -> s bool =
+  S.liftP2 (p'prim2 #a #a (Some [`%(=)]) (fun x y -> x = y))
 
-(* Working with booleans *)
-let (/\): s bool -> s bool -> s bool = S.liftP2 PR.p'b'and
-let (\/): s bool -> s bool -> s bool = S.liftP2 PR.p'b'or
-let (=>): s bool -> s bool -> s bool = S.liftP2 PR.p'b'implies
+let (<>) (#a: eqtype) {| has_stream a |}: s a -> s a -> s bool =
+  S.liftP2 (p'prim2 #a #a (Some [`%(<>)]) (fun x y -> x <> y))
 
-// let op_Negation: bools -> bools = S.liftP1 (P'B P'B'Not)
-// let (!^) = op_Negation
-// let not_ = op_Negation
+let tup (#a #b: eqtype) {| has_stream a |} {| has_stream b |}: s a -> s b -> s (a & b) #_ =
+  lift2 (fun x y -> (x, y))
 
-// (* Arithmetic operators, "^" suffix means "lifted" but unfortunately boolean operators such as /\^ do not parse *)
-// let (=^) (#a: valtype): s a -> s a -> bools =
-//   S.liftP2 (P'V P'V'Eq a)
+// why does this not work with named prim?
+// let tup2 (#a #b: eqtype) {| has_stream a |} {| has_stream b |}: s a -> s b -> s (a & b) #_ =
+  // S.liftP2 (p'prim2 #a #b #(a&b) (Some [`%Mktuple2]) (fun x y -> (x, y)))
 
-// let (<>^) (#a: valtype): s a -> s a -> bools =
-//   S.liftP2 (P'V P'V'Ne a)
+let fst (#a #b: eqtype) {| has_stream a |} {| has_stream b |}: s (a & b) #_ -> s a =
+  lift1 (fun (xy: (a & b)) -> fst xy)
 
-// let (+^) (#a: arithtype): s a -> s a -> s a =
-//   S.liftP2 (P'A P'A'Add a)
-// let (-^) (#a: arithtype): s a -> s a -> s a =
-//   S.liftP2 (P'A P'A'Sub a)
-// let (/^) (#a: arithtype): s a -> s a -> s a =
-//   S.liftP2 (P'A P'A'Div a)
-// let ( *^ ) (#a: arithtype): s a -> s a -> s a =
-//   S.liftP2 (P'A P'A'Mul a)
+let snd (#a #b: eqtype) {| has_stream a |} {| has_stream b |}: s (a & b) #_ -> s b =
+  lift1 (fun (xy: (a & b)) -> snd xy)
 
-// let (<=^) (#a: arithtype): s a -> s a -> bools =
-//   S.liftP2 (P'A P'A'Le a)
-// let (<^) (#a: arithtype): s a -> s a -> bools =
-//   S.liftP2 (P'A P'A'Lt a)
-// let (>=^) (#a: arithtype): s a -> s a -> bools =
-//   S.liftP2 (P'A P'A'Ge a)
-// let (>^) (#a: arithtype): s a -> s a -> bools =
-//   S.liftP2 (P'A P'A'Gt a)
+(* if-then-else *)
+let select (#a: eqtype) {| has_stream a |} : s bool -> s a -> s a -> s a =
+  S.liftP3 (p'prim3 #bool #a #a (Some [`%PR.p'select]) PR.p'select)
 
-// let ( %^ ): s TInt -> nonzero -> s TInt =
-//   (fun a div -> S.liftP1 (P'I (P'I'ModConst div)) a)
+let if_then_else (#a: eqtype) {| has_stream a |} = select #a
 
-// let tup (#a #b: valtype): s a -> s b -> s (TPair a b) =
-//   S.liftP2 (P'T P'T'Pair a b)
+let sofar (e: s bool): s bool =
+  rec' (fun r -> e /\ fby true r)
 
-// let fst (#a #b: valtype): s (TPair a b) -> s a =
-//   S.liftP1 (P'T P'T'Fst a b)
-
-// let snd (#a #b: valtype): s (TPair a b) -> s b =
-//   S.liftP1 (P'T P'T'Snd a b)
-
-// let negate (#a: arithtype) (r: s a) = zero -^ r
-
-// (* if-then-else *)
-// let ite (#a: valtype) : bools -> s a -> s a -> s a =
-//   S.liftP3 (P'V P'V'IfThenElse a)
-
-// let if_then_else (#a: valtype) = ite #a
-
-
-// let sofar (e: bools): bools =
-//   rec' (fun r -> e /\ fby true r)
-
-// let once (e: bools): bools =
-//   rec' (fun r -> e \/ fby false r)
-
-// let countsecutive (e: bools): ints =
-//   rec' (fun r -> if_then_else e (fby 0 r +^ z1) z0)
-
-// (* last-n, true for last n ticks *)
-// let last (n: nat) (e: bools): bools =
-//   countsecutive e <=^ z n
-
-// let abs (#a: arithtype) (r: s a): s a =
-//   let^ r' = r in
-//   if_then_else (r' >=^ zero) r' (zero -^ r')
-
-// let sum (e: ints): ints =
-//   rec' (fun r -> fby 0 r +^ e)
-
-// let count (e: bools): ints =
-//   sum (if_then_else e z1 z0)
-
+let once (e: s bool): s bool =
+  rec' (fun r -> e \/ fby false r)

@@ -51,8 +51,9 @@ let esystem_mu_causal (#input #input' #v: Type)
        esystem input state1 v =
   { init = t1.init;
     step = (fun i s ->
-      let (s',r) = t1.step (extend i bottom) s in
-      t1.step (extend i r) s);
+      let (_, r) = t1.step (extend i bottom) s in
+      let (s',_) = t1.step (extend i      r) s in
+      (s', r));
   }
 
 let esystem_let (#input #input' #v1 #v2: Type)

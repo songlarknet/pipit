@@ -68,6 +68,13 @@ extract-simple: EXTRACT_FILE=example/Simple.Extract.fst
 extract-simple: EXTRACT_NAME=simple
 extract-simple: extract-mk
 
+# don't build by default yet, wait until stable
+.PHONY: extract-ttcan
+extract-ttcan: EXTRACT_MODULE=Network.TTCan.Extract
+extract-ttcan: EXTRACT_FILE=example/ttcan/Network.TTCan.Extract.fst
+extract-ttcan: EXTRACT_NAME=ttcan
+extract-ttcan: extract-mk
+
 .PHONY: extract-mk
 extract-mk:
 	@echo "* Extracting $(EXTRACT_MODULE)"

@@ -76,7 +76,6 @@ let p'select (a: eqtype) {| has_stream a |}: Shallow.prim =
   we also bind this operator as (->^) for lifted arrow
  *)
 let subsequently {| has_stream 'a |} (e1 e2: s 'a): s 'a =
-
   S.liftP3 (p'select 'a)
     (fby true (const false))
     e1 e2
