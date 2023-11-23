@@ -23,7 +23,8 @@ FSTAR_DEP_OPT     ?= $(FSTAR_INCLUDES) $(FSTAR_CACHE)
 FSTAR_EXTRA_OPT   ?=
 FSTAR_OPT		  ?= $(FSTAR_INCLUDES) $(FSTAR_PROOF_OPT) $(FSTAR_CACHE) $(FSTAR_EXTRA_OPT) $(FSTAR_MAYBE_ADMIT)
 
-FSTAR_SRCS = $(wildcard src/*.fst src/*.fsti src/**/*.fst src/**/*.fsti example/*.fst example/*.fsti example/**/*.fst example/**/*.fsti)
+FSTAR_SRC_DIRS = example/ $(wildcard example/*/) src/ $(wildcard src/*/) test/ $(wildcard test/*/)
+FSTAR_SRCS = $(wildcard $(addsuffix *.fst,$(FSTAR_SRC_DIRS)) $(addsuffix *.fsti,$(FSTAR_SRC_DIRS)))
 
 .PHONY: all
 all: verify-retry extract

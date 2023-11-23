@@ -24,57 +24,104 @@ let norm_term (e: Ref.env) (tm: Ref.term): Tac.Tac Ref.term =
   // XXX what norm options?
   Tac.norm_term_env e [delta; primops] tm
 
-#set-options "--print_full_names --ugly"
+#set-options "--print_full_names --print_implicits"
+// #set-options "--ugly"
 
+let lift_prim_assert_staging_ok (nm: string) (args: list Tac.binder): Tac.Tac unit =
+  let rec go args implicit_ok: Tac.Tac unit = match args with
+    | [] -> ()
+    | bv :: args ->
+      (match bv.qual with
+       | Ref.Q_Explicit -> go args false
+       | _ ->
+        if implicit_ok then go args true
+        else Tac.fail ("lift_prim: error: implicit arguments must go before all explicit arguments\nfor function: " ^ nm))
+  in
+  go args true
+
+
+let rec lift_prim_get_funty (args: list Tac.binder) (ret: Tac.comp) (tm: Ref.term): Tac.Tac (Ref.typ & Ref.term) =
+  match args with
+  | bv :: args ->
+    (match bv.qual with
+    | Ref.Q_Explicit ->
+      let (ty,tm) = lift_prim_get_funty args ret tm in
+      let sort = (`SSB.shallow (`#bv.sort)) in
+      let ty   = (`PPT.FTFun (`#sort) (`#ty)) in
+      (ty,tm)
+    | _ ->
+      // for both implicit and meta argument types, we insert an IMPLICIT application.
+      // the meta tactic will occur at the call site
+      let arg = Tac.pack (Tv_Var bv) in
+      let app = Tac.pack (Tv_App tm (arg, Ref.Q_Implicit)) in
+      lift_prim_get_funty args ret app)
+  | [] ->
+    (match ret with
+    | Tac.C_Total t ->
+      ((`PPT.FTVal (SSB.shallow (`#t))), tm)
+    | _ -> Tac.fail "bad computation: impure and ghost effects not supported")
+
+let lift_prim_insert_has_stream_constraint (b: Tac.binder) (abs: Ref.term): Tac.Tac Ref.term =
+  let rec go sort: Tac.Tac Ref.term =
+    match Tac.inspect_unascribe sort with
+    | Tac.Tv_Type _ ->
+      // let has_strm = Tac.pack (Tv_Var b) in
+      let bm = Tac.fresh_binder_named "has_strm" (`SSB.has_stream (`#b)) in
+      let bm = { bm with qual = Ref.Q_Meta (`Tactics.Typeclasses.tcresolve) } in
+      Tac.pack (Tv_Abs bm abs)
+    | Tac.Tv_Refine b _ -> go b.sort
+    | _ -> abs
+  in go b.sort
 
 let rec lift_prim_go (args: list Tac.binder) (ret: Tac.comp) (app: Ref.term): Tac.Tac Ref.term =
   match args with
   | bv :: args ->
     (match bv.qual with
     | Ref.Q_Explicit ->
-      // let sort = Tac.pack (Tv_App (`SSB.stream (`#bv.sort)) 
-      //   (Tac.pack Tv_Unknown, Ref.Q_Meta (`Tactics.Typeclasses.tcresolve))
-      //   ) in
       // let strm_wit_sort = (`SSB.has_stream (`#bv.sort)) in
       // let wit_uvar = Tac.uvar_env (Tac.top_env ()) (Some strm_wit_sort) in
       // Tac.unshelve wit_uvar;
       // Tactics.Typeclasses.tcresolve ();
       let sort = (`SSB.stream (`#bv.sort)) in
-      let bvv  = {bv with sort = sort; uniq = Tac.fresh () } in
-      let arg: Tac.bv = { index = List.length args; sort = FStar.Sealed.seal sort; ppname = bv.ppname } in
-      let arg = Tac.pack (Tv_BVar arg) in
+      let bvv  = {bv with sort = sort } in // ; uniq = Tac.fresh () } in
+      // let bvv  = {bv with sort = sort; uniq = Tac.fresh () } in
+      let arg = Tac.pack (Tv_Var bvv) in
       let app = (`SB.liftP'app (`#app) (`#arg)) in
       let app = lift_prim_go args ret app in
-      let app = Tv_Abs bvv app in
-      // let app = Tv_Abs bin_strm_wit app in
-      Tac.pack app
-    | Ref.Q_Implicit ->
-      Tac.fail "implicit"
-    | Ref.Q_Meta mm ->
-      Tac.fail ("meta not supported sorry" ^ Tac.term_to_string mm))
+      let app = Tac.pack (Tv_Abs bvv app) in
+      app
+    | _ ->
+      // For implicit and meta-arguments, we just construct the abstraction on the outside; the application has been inserted in the first phase by lift_prim_get_funty
+      let app = lift_prim_go args ret app in
+      let app = lift_prim_insert_has_stream_constraint bv app in
+      let app = Tac.pack (Tv_Abs bv app) in
+      app)
   | [] ->
     (match ret with
     | Tac.C_Total t ->
-      // app
       (`SB.liftP'apps #PPS.table #(SSB.shallow (`#t)) (`#app))
     | _ -> Tac.fail "bad computation")
 
-let lift_prim (nm: string) (tm: Ref.term): Tac.Tac Tac.decls =
+let lift_prim_tm (nm: string) (tm: Ref.term): Tac.Tac Tac.term =
   let full_nm = List.(Tac.cur_module () @ [nm]) in
   let full_nm' = quote full_nm in
   let e       = Tac.top_env () in
   let ty      = Tac.tc e tm in
   let ty      = norm_term e ty in
   let (bs,cmp)= Tac.collect_arr_bs ty in
+  lift_prim_assert_staging_ok nm bs;
   // let tm_lift = tm in
-  let funty   = (` (PPT.FTFun (SSB.shallow bool) (PPT.FTFun (SSB.shallow bool) (PPT.FTVal (SSB.shallow bool))) )) in
-  let tm_lift = (` PPS.mkPrim (Some (`#full_nm')) (`#funty) (`#tm)) in
-  // let tm_lift = Tac.pack (Tv_App (Tac.pack (Tv_FVar (Tac.pack_fv [`%SB.liftP'prim]))) (tm_lift, Ref.Q_Explicit)) in
+  let (funty,tm_impl) = lift_prim_get_funty bs cmp tm in
+  let tm_lift = (` PPS.mkPrim (Some (`#full_nm')) (`#funty) (`#tm_impl)) in
   let tm_lift = (`SB.liftP'prim #PPS.table #(`#funty) (`#tm_lift)) in
   let tm_lift = lift_prim_go bs cmp tm_lift in
   Tac.print ("term is: " ^ Tac.term_to_string tm_lift);
-  // let ty_lift = Tac.tc e tm_lift in
+  tm_lift
 
+
+let lift_prim (nm: string) (tm: Ref.term): Tac.Tac Tac.decls =
+  let tm_lift = lift_prim_tm nm tm in
+  let full_nm = List.(Tac.cur_module () @ [nm]) in
   let lb      = {
     lb_fv = Tac.pack_fv full_nm;
     lb_us = [];
@@ -85,17 +132,23 @@ let lift_prim (nm: string) (tm: Ref.term): Tac.Tac Tac.decls =
   let ses: list Tac.sigelt = [Tac.pack_sigelt sv] in
   ses
 
-
-let plus (i j: bool) = i && j
-// let plus (a: eqtype) {| SSB.has_stream a |} (i j: int) = i + j
-
-
-%splice[plus_lift] (lift_prim "plus_lift" (`plus))
-
-// %splice[tup_lift] (lift_prim "tup_lift" (`(fun (a: Type) {| SSB.has_stream a |} (x: a) -> a )))
-
-// let x () =
-//   plus_lift ()
+let lift_prims_named (prims: list term): Tac.Tac Tac.decls =
+  let open List in
+  let rec go prims ses: Tac.Tac Tac.decls = match prims with
+    | [] -> rev ses
+    | tm::prims ->
+      // let tm = Tac.pack (Tac.Tv_FVar (Ref.pack_fv nm)) in
+      let nm = match Tac.inspect tm with
+        | Tac.Tv_FVar fv ->
+          (match rev (Tac.inspect_fv fv) with
+           | n::_ -> n
+           | _ -> Tac.fail "lift_prims_named: impossible: empty name")
+        | _ ->  Tac.fail ("lift_prims_named: expected free variable, got " ^ Tac.term_to_string tm)
+      in
+      let ses = lift_prim nm tm @ ses in
+      go prims ses
+  in
+  go prims []
 
 
 type mode = | Pure | Stream
