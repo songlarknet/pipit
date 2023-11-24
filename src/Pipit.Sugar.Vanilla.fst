@@ -17,29 +17,29 @@ let table = table
 type valtype = valtype
 type arithtype = arithtype
 
-type s (a: valtype)  = S.s table a
+type stream (a: valtype)  = S.stream table a
 
-type bools = s TBool
-type ints  = s TInt
-type reals = s TReal
+type bools = stream TBool
+type ints  = stream TInt
+type reals = stream TReal
 
-let const (#a: valtype) (v: table.ty_sem a): s a = S.const #table #a v
+let const (#a: valtype) (v: table.ty_sem a): stream a = S.const #table #a v
 
 (* Applicative / monadic syntactic sugar:
   The syntactic sugar for let^ is made for monads, but it seems to work OK for
   our (applicative) case by changing the type slightly. The type of the bound
-  variable becomes a wrapped `s 'a` rather than a raw `'a`. However, the `and^`
+  variable becomes a wrapped `stream 'a` rather than a raw `'a`. However, the `and^`
   and pattern matching don't work, as they expect a raw `'a`.
 *)
-let (let^) (f:s 'a) (g: s 'a -> s 'b) =
+let (let^) (f:stream 'a) (g: stream 'a -> stream 'b) =
     S.let' #table #'a #'b f g
 
-// let (and^) (f:s 'a) (g: s 'b): s (TPair 'a 'b) =
+// let (and^) (f:stream 'a) (g: stream 'b): stream (TPair 'a 'b) =
 //   S.liftP2 (P'T P'T'Pair 'a 'b) f g
 
-let rec' (f: s 'a -> s 'a): s 'a = S.rec' #table #'a f
+let rec' (f: stream 'a -> stream 'a): stream 'a = S.rec' #table #'a f
 
-let letrec' (f: s 'a -> s 'a) (g: s 'a -> s 'b): s 'b =
+let letrec' (f: stream 'a -> stream 'a) (g: stream 'a -> stream 'b): stream 'b =
   let^ a = rec' f in g a
 
 (* letrec with multiple bindings can require duplicating work.
@@ -49,10 +49,10 @@ let letrec' (f: s 'a -> s 'a) (g: s 'a -> s 'b): s 'b =
   in practice, it is often possible to rearrange an expression to avoid duplication.
   how do we characterise expressions where such rearrangement is possible? *)
 let letrec2 (#a #b #k: valtype)
-  (mka: s a -> s b -> s a)
-  (mkb: s a -> s b -> s b)
-  (kont: s a -> s b -> s k):
-    s k =
+  (mka: stream a -> stream b -> stream a)
+  (mkb: stream a -> stream b -> stream b)
+  (kont: stream a -> stream b -> stream k):
+    stream k =
   (* let rec
        a = (rec a. mka a (rec b. mkb a b))
        b = (rec b. mkb a b)
@@ -66,16 +66,16 @@ let letrec2 (#a #b #k: valtype)
 let check (name: string) (e: bools): bools =
   S.check #table e
 
-let check_that (#a: valtype) (e: s a) (p: s a -> bools): s a =
+let check_that (#a: valtype) (e: stream a) (p: stream a -> bools): stream a =
   let^ scrut = e in
   check "" (p scrut);^
   scrut
 
-let fby (#a: valtype) (v: table.ty_sem a) (e: s a): s a = S.fby #table #a v e
+let fby (#a: valtype) (v: table.ty_sem a) (e: stream a): stream a = S.fby #table #a v e
 
-let pre (e: s 'a): s 'a = S.pre #table #'a e
+let pre (e: stream 'a): stream 'a = S.pre #table #'a e
 
-let (-->) (e1 e2: s 'a): s 'a =
+let (->^) (e1 e2: stream 'a): stream 'a =
   S.liftP3 (P'V P'V'IfThenElse 'a)
     (fby #TBool true (const false))
     e1 e2
@@ -91,7 +91,7 @@ let r (r: R.real): reals = const r
 let r0 = r 0.0R
 let r1 = r 1.0R
 
-let zero (#a: arithtype): s a = match a with
+let zero (#a: arithtype): stream a = match a with
  | TInt  -> z0
  | TReal -> const R.zero
 
@@ -105,46 +105,46 @@ let (!^) = op_Negation
 let not_ = op_Negation
 
 (* Arithmetic operators, "^" suffix means "lifted" but unfortunately boolean operators such as /\^ do not parse *)
-let (=^) (#a: valtype): s a -> s a -> bools =
+let (=^) (#a: valtype): stream a -> stream a -> bools =
   S.liftP2 (P'V P'V'Eq a)
 
-let (<>^) (#a: valtype): s a -> s a -> bools =
+let (<>^) (#a: valtype): stream a -> stream a -> bools =
   S.liftP2 (P'V P'V'Ne a)
 
-let (+^) (#a: arithtype): s a -> s a -> s a =
+let (+^) (#a: arithtype): stream a -> stream a -> stream a =
   S.liftP2 (P'A P'A'Add a)
-let (-^) (#a: arithtype): s a -> s a -> s a =
+let (-^) (#a: arithtype): stream a -> stream a -> stream a =
   S.liftP2 (P'A P'A'Sub a)
-let (/^) (#a: arithtype): s a -> s a -> s a =
+let (/^) (#a: arithtype): stream a -> stream a -> stream a =
   S.liftP2 (P'A P'A'Div a)
-let ( *^ ) (#a: arithtype): s a -> s a -> s a =
+let ( *^ ) (#a: arithtype): stream a -> stream a -> stream a =
   S.liftP2 (P'A P'A'Mul a)
 
-let (<=^) (#a: arithtype): s a -> s a -> bools =
+let (<=^) (#a: arithtype): stream a -> stream a -> bools =
   S.liftP2 (P'A P'A'Le a)
-let (<^) (#a: arithtype): s a -> s a -> bools =
+let (<^) (#a: arithtype): stream a -> stream a -> bools =
   S.liftP2 (P'A P'A'Lt a)
-let (>=^) (#a: arithtype): s a -> s a -> bools =
+let (>=^) (#a: arithtype): stream a -> stream a -> bools =
   S.liftP2 (P'A P'A'Ge a)
-let (>^) (#a: arithtype): s a -> s a -> bools =
+let (>^) (#a: arithtype): stream a -> stream a -> bools =
   S.liftP2 (P'A P'A'Gt a)
 
-let ( %^ ): s TInt -> nonzero -> s TInt =
+let ( %^ ): stream TInt -> nonzero -> stream TInt =
   (fun a div -> S.liftP1 (P'I (P'I'ModConst div)) a)
 
-let tup (#a #b: valtype): s a -> s b -> s (TPair a b) =
+let tup (#a #b: valtype): stream a -> stream b -> stream (TPair a b) =
   S.liftP2 (P'T P'T'Pair a b)
 
-let fst (#a #b: valtype): s (TPair a b) -> s a =
+let fst (#a #b: valtype): stream (TPair a b) -> stream a =
   S.liftP1 (P'T P'T'Fst a b)
 
-let snd (#a #b: valtype): s (TPair a b) -> s b =
+let snd (#a #b: valtype): stream (TPair a b) -> stream b =
   S.liftP1 (P'T P'T'Snd a b)
 
-let negate (#a: arithtype) (r: s a) = zero -^ r
+let negate (#a: arithtype) (r: stream a) = zero -^ r
 
 (* if-then-else *)
-let ite (#a: valtype) : bools -> s a -> s a -> s a =
+let ite (#a: valtype) : bools -> stream a -> stream a -> stream a =
   S.liftP3 (P'V P'V'IfThenElse a)
 
 let if_then_else (#a: valtype) = ite #a
@@ -163,7 +163,7 @@ let countsecutive (e: bools): ints =
 let last (n: nat) (e: bools): bools =
   countsecutive e <=^ z n
 
-let abs (#a: arithtype) (r: s a): s a =
+let abs (#a: arithtype) (r: stream a): stream a =
   let^ r' = r in
   if_then_else (r' >=^ zero) r' (zero -^ r')
 

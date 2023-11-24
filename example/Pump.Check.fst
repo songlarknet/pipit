@@ -24,7 +24,7 @@ open Pipit.Sugar.Vanilla
      m = if a <= b then a else b;
    tel
 *)
-let min (#ty: Sugar.arithtype) (a b: Sugar.s ty) =
+let min (#ty: Sugar.arithtype) (a b: Sugar.stream ty) =
  if_then_else (a <=^ b) a b
 
 (* We need to limit integers so they don't overflow.

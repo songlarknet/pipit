@@ -36,17 +36,20 @@ type shallow_type: Type u#1 = {
   val_default: ty_sem;
 }
 
+let funty_sem (t: funty shallow_type): Type0 =
+  funty_sem (fun t -> t.ty_sem) t
+
 noeq
 type prim: Type u#1 = {
   prim_id:  option ident;
   prim_ty:  funty shallow_type;
-  prim_sem: funty_sem (fun t -> t.ty_sem) prim_ty;
+  prim_sem: funty_sem prim_ty;
 }
 
 let mkPrim
   (prim_id:  option ident)
   (prim_ty:  funty shallow_type)
-  (prim_sem: funty_sem (fun t -> t.ty_sem) prim_ty): prim =
+  (prim_sem: funty_sem prim_ty): prim =
   { prim_id; prim_ty; prim_sem }
 
 let axiom_var_eq (a b: shallow_type) (x: C.var a) (x': C.var b):

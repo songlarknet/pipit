@@ -23,7 +23,8 @@ FSTAR_DEP_OPT     ?= $(FSTAR_INCLUDES) $(FSTAR_CACHE)
 FSTAR_EXTRA_OPT   ?=
 FSTAR_OPT		  ?= $(FSTAR_INCLUDES) $(FSTAR_PROOF_OPT) $(FSTAR_CACHE) $(FSTAR_EXTRA_OPT) $(FSTAR_MAYBE_ADMIT)
 
-FSTAR_SRCS = $(wildcard src/*.fst src/*.fsti src/**/*.fst src/**/*.fsti example/*.fst example/*.fsti example/**/*.fst example/**/*.fsti)
+FSTAR_SRC_DIRS = example/ $(wildcard example/*/) src/ $(wildcard src/*/) test/ $(wildcard test/*/)
+FSTAR_SRCS = $(wildcard $(addsuffix *.fst,$(FSTAR_SRC_DIRS)) $(addsuffix *.fsti,$(FSTAR_SRC_DIRS)))
 
 .PHONY: all
 all: verify-retry extract
@@ -67,6 +68,13 @@ extract-simple: EXTRACT_MODULE=Simple.Extract
 extract-simple: EXTRACT_FILE=example/Simple.Extract.fst
 extract-simple: EXTRACT_NAME=simple
 extract-simple: extract-mk
+
+# don't build by default yet, wait until stable
+.PHONY: extract-ttcan
+extract-ttcan: EXTRACT_MODULE=Network.TTCan.Extract
+extract-ttcan: EXTRACT_FILE=example/ttcan/Network.TTCan.Extract.fst
+extract-ttcan: EXTRACT_NAME=ttcan
+extract-ttcan: extract-mk
 
 .PHONY: extract-mk
 extract-mk:
