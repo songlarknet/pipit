@@ -1,3 +1,19 @@
+# Main targets:
+#
+# `make dev-init`: set up local opam switch for development
+#
+# `make all` (default): verify Pipit itself, verify examples, and extract C code for examples
+#
+# `make verify`
+# `make verify-retry`: enable retries on failures (useful for developing with flaky SMT proofs)
+#
+# `make build/cache/Module.Name.fst.checked`: check specific file
+#
+# `make extract`: extract C code for examples
+# `make extract-pump`, `extract-simple`, `extract-ttcan`
+#
+# `make clean`
+#
 BUILD       ?= build
 
 FSTAR_EXE   ?= fstar.exe
@@ -91,3 +107,18 @@ clean:
 	@echo "* Cleaning deps"
 	@rm -f $(BUILD)/deps.mk
 	@rm -f $(BUILD)/deps.mk.rsp
+
+.PHONY: dev-init
+dev-init:
+	@echo "* Setting up development environment"
+	@echo "* Checking for Python 2.7"
+	@python2.7 -c 'print "Python 2.7 OK"' || (echo 'Cannot find Python 2.7. FStar and Z3 need Python 2.7. See https://github.com/songlarknet/pipit#modern-linux-no-python-27'; exit 1)
+	@echo "* Updating opam index"
+	@opam update
+	@echo "* Create a local opam switch with OCaml 4.14"
+	@opam switch create . 4.14.1
+	@echo "* Pinning development version of F*"
+	@opam pin add fstar --dev-repo --no-action
+	@echo "* Pinning development version of karamel; building"
+	@opam pin add karamel --dev-repo --yes --no-depexts
+# no-depexts is required for Linux without Python 2.7 apt package

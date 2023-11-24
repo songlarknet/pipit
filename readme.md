@@ -25,20 +25,17 @@ There are examples available in the `example` subdirectory ([readme](example/rea
 ## Dependencies and development
 
 Pipit requires F\* and Karamel for generating C code.
-Pipit indirectly requires [opam](https://opam.ocaml.org/), the OCaml package manager. 
+Pipit uses [opam](https://opam.ocaml.org/), the OCaml package manager.
 
-Pipit requires a recent development version of F\*; I usually install it from source, available at [FStar on github](https://github.com/FStarLang/FStar).
-(TODO: I am using version F* 2023.04.08~dev; test with a released version)
-
-Karamel can be installed from source at [karamel on github](https://github.com/FStarLang/karamel/).
+Pipit requires a recent development version of F\*.
 
 ### Dependency installation
 
-The following script should set up an environment.
-Make sure you have [opam](https://opam.ocaml.org/) and some version of Python 2 installed.
-Unfortunately, the latest release of Ubuntu (23.04) does not include any packages for Python 2, so you'll have to install it manually (see below).
-Run this from the Pipit directory:
+Before setting up a local development environment, make sure you have [opam](https://opam.ocaml.org/) and Python 2.7 installed.
+If you are running a modern Linux distribution, such as the latest release of Ubuntu (23.04), you may need to [install Python 2.7 manually (see below)](#modern-linux-no-python-27).
 
+The makefile target `make dev-init` will initialise a local development environment.
+This target runs the following commands:
 ``` sh
 # Make sure the opam index is up-to-date
 opam update
