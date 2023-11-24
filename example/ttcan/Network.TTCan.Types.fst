@@ -2,8 +2,12 @@ module Network.TTCan.Types
 
 module Sugar     = Pipit.Sugar.Shallow
 module SugarBase = Pipit.Sugar.Base
+module SugarTac  = Pipit.Sugar.Shallow.Tactics
 
-module U64       = Network.TTCan.Prim.U64
+module U64        = Network.TTCan.Prim.U64
+module Subrange   = Network.TTCan.Prim.S32R
+
+module List       = FStar.List.Tot
 
 type mode =
   | Mode_Configure | Mode_Running
@@ -28,27 +32,24 @@ type trigger_type =
 (* Network time unit: time in terms of CAN-bitrate clock. The spec specifies a 16-bit local time that overflows regularly, but for now we'll use 64-bit to avoid worrying about overflow. *)
 type ntu = U64.t
 
-// configuration values could be statically limited to 16-bits
-// TODO subrange16
-type ntu_config = ntu // U16.t
+// configuration values can be statically limited to 16-bits
+type ntu_config = Subrange.t { min = 0; max = 65535 } // U16.t
 
-// TODO subrange
-type subrange (x: int) (y: int) = U64.t
-
-type ref_offset = subrange (-127) 127
-type master_index = subrange 0 7
-type cycle_index = subrange 0 63
+(* @7.4.3 Ref_Trigger_Offset may only take values between -127 [sic] and 127. *)
+type ref_offset    = Subrange.t { min = -127; max = 127 }
+type master_index  = Subrange.t { min = 0; max = 7 }
+type cycle_index   = Subrange.t { min = 0; max = 63 }
 // power-of-two denoting how often to repeat
-type repeat_factor = subrange 0 6
+type repeat_factor = Subrange.t { min = 0; max = 6 }
 
 type ref_message = {
   sof:         ntu;
   master:      master_index;
   cycle_index: cycle_index;
-  // ref_message_Next_Is_Gap not supported
+  // Next_Is_Gap not supported
 }
 
-type message_status_counter = subrange 0 7
+type message_status_counter = Subrange.t { min = 0; max = 7 }
 
 
 type trigger = {
@@ -59,15 +60,20 @@ type trigger = {
 }
 
 type fault_bits = {
-  fault_scheduling_error_1:    bool;
-  fault_tx_underflow:          bool;
-  fault_scheduling_error_2:    bool;
-  fault_tx_overflow:           bool;
-  fault_can_bus_off:           bool;
-  fault_watch_trigger_reached: bool;
+  scheduling_error_1:    bool;
+  tx_underflow:          bool;
+  scheduling_error_2:    bool;
+  tx_overflow:           bool;
+  can_bus_off:           bool;
+  watch_trigger_reached: bool;
 }
 
-let init_watch_trigger_time: ntu_config = 65535uL
+let init_watch_trigger_time: ntu_config = Subrange.s32r' 65535
+(* We are packing the 3-bit MSCs into 64-bits, so a node can only send/receive up to 21 application-specific message types *)
+let max_app_message_count = 21
+(* The maximum cycle duration is 65ms / 65000µs; if we process a trigger every 10µs, then we can handle 6500 triggers.
+  The limit is just to ensure we can index into the array. *)
+let max_trigger_count = 6500
 
 type config = {
   initial_ref_offset: ref_offset;
@@ -75,19 +81,24 @@ type config = {
   tx_enable_window: n: nat { 1 <= n /\ n <= 16 };
   cycle_count_max: cycle_index;
 
-  triggers: list trigger;
+  triggers: tr: list trigger { List.length tr <= max_trigger_count };
 
-  app_message_count: pos;
+  app_message_count: n: nat { 1 <= n /\ n <= max_app_message_count };
 }
 
-
-// todo bundle in config
-type app_message_index (cfg: config) = subrange 0 (cfg.app_message_count - 1)
-
+type app_message_index (cfg: config) = Subrange.t { min = 0; max = cfg.app_message_count - 1 }
+type trigger_index (cfg: config) = Subrange.t { min = 0; max = List.length cfg.triggers }
 
 
 
-// TODO: write a splice tactic to generate this
+(**** Pipit.Shallow stream instances:
+  The following boilerplate is required to embed types in Pipit programs. The
+  typeclass instances provide a unique identifier and default value for each
+  class. For each record, we also provide a stream-lifted constructor and
+  field accessor functions. This is a bit of a pain! We can automate this with
+  a tactic later.
+*)
+
 instance has_stream_mode: Sugar.has_stream mode = {
   ty_id       = [`%mode];
   val_default = Mode_Configure;
@@ -128,19 +139,31 @@ instance has_stream_trigger_type: Sugar.has_stream trigger_type = {
   val_default = Tx_Trigger;
 }
 
-
 instance has_stream_ref_message: Sugar.has_stream ref_message = {
   ty_id       = [`%ref_message];
   val_default = { sof = Sugar.val_default; master = Sugar.val_default; cycle_index = Sugar.val_default; };
 }
+
+%splice[ref_message_new] (SugarTac.lift_prim "ref_message_new" (`(fun sof master cycle_index -> {sof; master; cycle_index })))
+%splice[get_sof] (SugarTac.lift_prim "get_sof" (`(fun r -> r.sof)))
+%splice[get_master] (SugarTac.lift_prim "get_master" (`(fun r -> r.master)))
+%splice[get_cycle_index] (SugarTac.lift_prim "get_cycle_index" (`(fun r -> r.cycle_index)))
 
 instance has_stream_trigger: Sugar.has_stream trigger = {
   ty_id       = [`%trigger];
   val_default = { trigger_type = Sugar.val_default; time_mark = Sugar.val_default; cycle_offset = Sugar.val_default; repeat_factor = Sugar.val_default; };
 }
 
+%splice[trigger_new] (SugarTac.lift_prim "trigger_new" (`(fun trigger_type time_mark cycle_offset repeat_factor -> {trigger_type; time_mark; cycle_offset; repeat_factor })))
+%splice[get_trigger_type] (SugarTac.lift_prim "get_trigger_type" (`(fun r -> r.trigger_type)))
+%splice[get_time_mark] (SugarTac.lift_prim "get_time_mark" (`(fun r -> r.time_mark)))
+%splice[get_cycle_offset] (SugarTac.lift_prim "get_cycle_offset" (`(fun r -> r.cycle_offset)))
+%splice[get_repeat_factor] (SugarTac.lift_prim "get_repeat_factor" (`(fun r -> r.repeat_factor)))
+
 instance has_stream_fault_bits: Sugar.has_stream fault_bits = {
   ty_id       = [`%fault_bits];
-  val_default = { fault_scheduling_error_1 = false; fault_tx_underflow = false; fault_scheduling_error_2 = false; fault_tx_overflow = false; fault_can_bus_off = false; fault_watch_trigger_reached = false; }
+  val_default = { scheduling_error_1 = false; tx_underflow = false; scheduling_error_2 = false; tx_overflow = false; can_bus_off = false; watch_trigger_reached = false; }
 }
 
+%splice[fault_bits_new] (SugarTac.lift_prim "fault_bits_new" (`(fun scheduling_error_1 tx_underflow scheduling_error_2 tx_overflow can_bus_off watch_trigger_reached -> {scheduling_error_1; tx_underflow; scheduling_error_2; tx_overflow; can_bus_off; watch_trigger_reached })))
+// accessors may not be required...
