@@ -110,8 +110,8 @@ let ff: stream bool = const false
 (* Working with booleans.
   Unfortunately, there aren't many suitable operators for boolean or: none of
   (||), (||^) or (\/^) are allowed. We could use raw (\/) but that gets
-  annoying when we want propositional or in properties. Instead, we'll just use
-  names.
+  annoying when we want propositional or in properties, and it's not
+  totally consistent as `not` doesn't work...
  *)
 let (/\):  stream bool -> stream bool -> stream bool =
   S.liftP2 (p'prim2 (Some [`%PR.p'b'and]) PR.p'b'and)
@@ -120,8 +120,10 @@ let (\/):  stream bool -> stream bool -> stream bool =
 let (==>): stream bool -> stream bool -> stream bool =
   S.liftP2 (p'prim2 (Some [`%PR.p'b'implies]) PR.p'b'implies)
 
-let not: stream bool -> stream bool =
+let notb: stream bool -> stream bool =
   S.liftP1 (p'prim1 (Some [`%PR.p'b'not]) PR.p'b'not)
+
+unfold let (~) = notb
 
 let (=) (#a: eqtype) {| has_stream a |}: stream a -> stream a -> stream bool =
   S.liftP2 (p'prim2 #a #a (Some [`%(=)]) (fun x y -> x = y))

@@ -23,75 +23,109 @@ open Pipit.Exp.Checked.Compound
 
 module C  = Pipit.Context.Base
 module CX = Pipit.Exp.Checked.Compound
+module CB = Pipit.Exp.CollectBinds
 module PM = Pipit.Prop.Metadata
 
 irreducible
 let stream_ctor_attr = ()
 
 (**** Internal types ****)
-type _state = {
+noeq
+type _state (t: table) = {
   fresh: nat;
+  binds: list (CB.bind t);
 }
 
-type _m      (a: Type)                  = _state -> (a & _state)
-type _s_apps (t: table u#i u#j) (a: funty t.ty) = _m (cexp_apps t [] a)
+let _state0 (t: table): _state t = { fresh = 0; binds = []; }
+
+type _m      (t: table) (a: Type)       = _state t -> (a & _state t)
+type _s_apps (t: table) (a: funty t.ty) = _m t (cexp_apps t [] a)
 
 (**** Exposed types: delayed streams and primitives ****)
-[@@stream_ctor_attr]
-type stream  (t: table u#i u#j) (a: t.ty)       = _m (cexp      t [] a)
-type prim    (t: table u#i u#j) (ty: funty t.ty)= p: t.prim { t.prim_ty p == ty }
+type stream  (t: table) (a: t.ty)       = _m t (cexp      t [] a)
+type prim    (t: table) (ty: funty t.ty)= p: t.prim { t.prim_ty p == ty }
 
 (**** Internal combinators ****)
 
 [@@"opaque_to_smt"]
-let _purem (#a: Type) (x: a): _m a =
+let _purem (#t: table) (#a: Type) (x: a): _m t a =
   fun s -> (x, s)
 
 [@@"opaque_to_smt"]
-let _freshm (#ty: Type) (t: ty): _m (C.var t) =
+let _freshm (#t: table) (ty: t.ty): _m t (C.var ty) =
   fun s ->
     let x = s.fresh in
-    (C.Var x), { fresh = x + 1 }
+    C.Var x, { s with fresh = x + 1 }
 
 [@@"opaque_to_smt"]
-let _freshs (t: table) (ty: t.ty): stream t ty =
+let _freshs (#t: table) (ty: t.ty): stream t ty =
   fun s ->
-    let (x, s') = _freshm ty s in
-    (XBase (XVar x), s')
+    let (x, s) = _freshm ty s in
+    (XBase (XVar x), s)
+
+[@@"opaque_to_smt"]
+let _mk_bind (#t: table) (#ty: t.ty) (def: cexp t [] ty): stream t ty =
+  fun s ->
+    let open CB in
+    match find_equivalent s.binds def with
+    | None ->
+      let (x, s) = _freshm ty s in
+      let binds  = { bind_ty = ty; bind_var = x; bind_expr = def } :: s.binds in
+      (XBase (XVar x), { s with binds = binds })
+    | Some x ->
+      (XBase (XVar x), s)
+
+[@@"opaque_to_smt"]
+let _mk_let (#t: table) (#ty1 #ty2: t.ty) (def: cexp t [] ty1) (body: cexp t [ty1] ty2): _m t (cexp t [] ty2) =
+  fun s ->
+    let (def', s) = _mk_bind def s in
+    (CX.subst1 body def', s)
+
+[@@"opaque_to_smt"]
+let _take_dependent_lets (#t: table) (#ty #ty': t.ty) (body: cexp t [] ty) (xvar: C.var ty'): stream t ty =
+  fun s ->
+    let (here, later) = CB.dependent_binds s.binds [C.Var?.v xvar] in
+    (CB.binds_to_lets here body, { s with binds = later })
+
+[@@"opaque_to_smt"]
+let _exp_of_stream (#t: table) (#ty: t.ty) (e: stream t ty) (s: _state t): cexp t [] ty =
+  let (a, s) = e s in
+  let b      = CB.binds_to_lets s.binds a in
+  b
+
 
 (**** Top-level / integration combinators ****)
 [@@"opaque_to_smt"]
 let exp_of_stream0 (#t: table) (#ty: t.ty) (e: stream t ty) : cexp t [] ty =
-  let (a, _) = e { fresh = 0 } in
-  a
+  _exp_of_stream e (_state0 t)
 
 [@@"opaque_to_smt"]
 let exp_of_stream1 (#t: table) (#a #b: t.ty) (f: stream t a -> stream t b) : cexp t [a] b =
-  let (ax, s) = _freshm a { fresh = 0 } in
+  let (ax, s) = _freshm a (_state0 t) in
   let a       = XBase (XVar ax) in
-  let (b,  s) = f (_purem a) s in
+  let b       = _exp_of_stream (f (_purem a)) s in
   CX.close1 b ax
 
 [@@"opaque_to_smt"]
 let exp_of_stream2 (#a #b #c: ('t).ty) (f: stream 't a -> stream 't b -> stream 't c) : cexp 't [a; b] c =
-  let s       = { fresh = 0 } in
+  let s       = _state0 't in
   let (ax, s) = _freshm a s in
   let (bx, s) = _freshm b s in
   let a       = XBase (XVar ax) in
   let b       = XBase (XVar bx) in
-  let (c,  s) = f (_purem a) (_purem b) s in
+  let c       = _exp_of_stream (f (_purem a) (_purem b)) s in
   CX.close1 (CX.close1 c bx) ax
 
 [@@"opaque_to_smt"]
 let exp_of_stream3 (#a #b #c #d: ('t).ty) (f: stream 't a -> stream 't b -> stream 't c -> stream 't d) : cexp 't [a; b; c] d =
-  let s       = { fresh = 0 } in
+  let s       = _state0 't in
   let (ax, s) = _freshm a s in
   let (bx, s) = _freshm b s in
   let (cx, s) = _freshm c s in
   let a       = XBase (XVar ax) in
   let b       = XBase (XVar bx) in
   let c       = XBase (XVar cx) in
-  let (d,  s) = f (_purem a) (_purem b) (_purem c) s in
+  let d       = _exp_of_stream (f (_purem a) (_purem b) (_purem c)) s in
   CX.close1 (CX.close1 (CX.close1 d cx) bx) ax
 
 [@@"opaque_to_smt"]
@@ -103,22 +137,30 @@ let stream_of_exp0 (#t: table) (#a: t.ty) (e: cexp t [] a): stream t a =
 let stream_of_exp1 (#t: table) (#a #b: t.ty) (e: cexp t [a] b) (sa: stream t a): stream t b =
   fun s ->
     let (ax, s) = sa s in
-    (XLet a ax e, s)
+    let (ax, s) = _mk_bind ax s in
+    (CX.subst1 e ax, s)
 
 [@@"opaque_to_smt"]
 let stream_of_exp2 (#t: table) (#a #b #c: t.ty) (e: cexp t [a; b] c) (sa: stream t a) (sb: stream t b): stream t c =
   fun s ->
     let (ax, s) = sa s in
+    let (ax, s) = _mk_bind ax s in
     let (bx, s) = sb s in
-    (XLet b bx (XLet a (CX.weaken [b] ax) e), s)
+    let (bx, s) = _mk_bind bx s in
+    let ex = CX.subst1 (CX.subst1 e (CX.weaken [b] ax)) bx in
+    (ex, s)
 
 [@@"opaque_to_smt"]
 let stream_of_exp3 (#t: table) (#a #b #c #d: t.ty) (e: cexp t [a; b; c] d) (sa: stream t a) (sb: stream t b) (sc: stream t c): stream t d =
   fun s ->
     let (ax, s) = sa s in
+    let (ax, s) = _mk_bind ax s in
     let (bx, s) = sb s in
+    let (bx, s) = _mk_bind bx s in
     let (cx, s) = sc s in
-    (XLet c cx (XLet b (CX.weaken [c] bx) (XLet a (CX.weaken [b; c] ax) e)), s)
+    let (cx, s) = _mk_bind cx s in
+    let ex      = CX.subst1 (CX.subst1 (CX.subst1 e (CX.weaken [b; c] ax)) (CX.weaken [c] bx)) cx in
+    (ex, s)
 
 (**** Binding combinators ****)
 [@@"opaque_to_smt"]
@@ -128,11 +170,10 @@ let let'
   (f: stream 't a -> stream 't b):
     stream 't b =
   (fun s ->
-    let (xvar, s) = _freshm a s in
-    let evar      = XBase (XVar xvar) in
     let (e, s)    = e s in
-    let (e', s)   = f (_purem evar) s in
-    (XLet a e (CX.close1 e' xvar), s))
+    let (e, s)    = _mk_bind e s in
+    let (e', s)   = f (_purem e) s in
+    (e', s))
 
 [@@"opaque_to_smt"]
 let rec'
@@ -143,6 +184,7 @@ let rec'
     let (xvar, s) = _freshm a s in
     let evar      = XBase (XVar xvar) in
     let (e', s)   = f (_purem evar) s in
+    let (e', s)   = _take_dependent_lets e' xvar s in
     (XMu (CX.close1 e' xvar), s))
 
 [@@"opaque_to_smt"]
@@ -167,7 +209,9 @@ let const (#a: ('t).ty) (v: ('t).ty_sem a): stream 't a =
 
 (* followed-by, initialised delay *)
 [@@"opaque_to_smt"]
-let fby (#a: ('t).ty) (v: ('t).ty_sem a) (e: stream 't a): stream 't a = (fun s -> let (e, s) = e s in (XFby v e, s))
+let fby (#a: ('t).ty) (v: ('t).ty_sem a) (e: stream 't a): stream 't a =
+  (fun s ->
+    let (e, s) = e s in (XFby v e, s))
 
 (* uninitialised delay, or default.
   this can be convenient, but it's kind of unsafe: we don't check that the

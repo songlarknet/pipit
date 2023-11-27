@@ -19,6 +19,9 @@ type bounds = { min: bound; max: max: bound { min <= max }}
 
 type t (b: bounds) = { repr: s32: REPR.t { b.min <= REPR.v s32 /\ REPR.v s32 <= b.max } }
 
+let v (#b: bounds) (r: t b): i: int { b.min <= i /\ i <= b.max } =
+  REPR.v r.repr
+
 let s32r' (#b: bounds) (x: int { b.min <= x /\ x <= b.max }): t b =
   { repr = REPR.int_to_t x }
 
@@ -29,12 +32,12 @@ instance has_stream_S32R (b: bounds): Sugar.has_stream (t b) = {
 
 
 let inc_sat' (#b: bounds) (x: t b): t b =
-  if REPR.v x.repr < b.max
+  if v x < b.max
   then { repr = REPR.add x.repr 1l }
   else x
 
 let dec_sat' (#b: bounds) (x: t b): t b =
-  if REPR.v x.repr > b.min
+  if v x > b.min
   then { repr = REPR.sub x.repr 1l }
   else x
 
@@ -43,7 +46,7 @@ let extend' (#b: bounds) (#b': bounds { b'.min <= b.min /\ b.max <= b'.max }) (x
 
 let s32r_to_u64' (#b: bounds { 0 <= b.min }) (x: t b): U64.t =
   let r = Cast.int32_to_uint64 x.repr in
-  assert (U64.v r == REPR.v x.repr);
+  assert (U64.v r == v x);
   r
 
 // TODO add saturated operations...
@@ -54,7 +57,7 @@ let s32r_to_u64' (#b: bounds { 0 <= b.min }) (x: t b): U64.t =
 // very under-specified rem: requires minimum bound to be 0 to avoid overflows like -32768/-1
 let rem_underspec' (#b: bounds { b.min == 0 }) (x y: t b): t b  =
   // refinement? { REPR.v y.repr <> 0 ==> REPR.v r.repr == REPR.v x.repr % REPR.v y.repr }
-  if REPR.v y.repr <> 0 then begin
+  if v y <> 0 then begin
     let r = REPR.rem x.repr y.repr in
     { repr = r }
   end else
