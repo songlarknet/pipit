@@ -81,14 +81,16 @@ type config = {
   tx_enable_window: n: nat { 1 <= n /\ n <= 16 };
   cycle_count_max: cycle_index;
 
-  triggers: tr: list trigger { List.length tr <= max_trigger_count };
+  triggers: tr: list trigger { 1 <= List.length tr /\ List.length tr <= max_trigger_count };
 
   app_message_count: n: nat { 1 <= n /\ n <= max_app_message_count };
 }
 
 type app_message_index (cfg: config) = Subrange.t { min = 0; max = cfg.app_message_count - 1 }
-type trigger_index (cfg: config) = Subrange.t { min = 0; max = List.length cfg.triggers }
+type trigger_index (cfg: config) = Subrange.t { min = 0; max = List.length cfg.triggers - 1 }
 
+let trigger_index_lookup (cfg: config) (ix: trigger_index cfg): trigger =
+  List.index cfg.triggers (Subrange.v ix)
 
 
 (**** Pipit.Shallow stream instances:
