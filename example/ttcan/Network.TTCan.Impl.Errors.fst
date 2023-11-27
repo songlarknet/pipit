@@ -3,6 +3,7 @@ module Network.TTCan.Impl.Errors
 module S     = Pipit.Sugar.Shallow
 module U64   = Network.TTCan.Prim.U64
 module S32R  = Network.TTCan.Prim.S32R
+module Clocked= Network.TTCan.Prim.Clocked
 
 open Network.TTCan.Types
 
@@ -22,7 +23,8 @@ let summary' (fault: fault_bits): error_severity =
 %splice[summary] (SugarTac.lift_prim "summary" (`summary'))
 
 (* Resettable latch.
-  Named arguments would be nice, having two boolean args is a bit iffy.
+  Named arguments would be nice. It's easy to confuse the set/reset so we
+  package them up in a record.
 *)
 noeq
 type latch_args = { set: S.stream bool; reset: S.stream bool }
@@ -39,38 +41,37 @@ let latch (args: latch_args): S.stream bool =
     if_then_else args.set (const true)
       (if_then_else args.reset (const false) (false `fby` latch)))
 
-(* Latch for self-correcting errors *)
-noeq
-type transient_args = { ref_ck: S.stream bool; error_cond: S.stream bool }
+(* Latch for self-correcting errors.
+  We set the error flag whenever we see an error (args.set), but we do not
+  reset immediately on args.reset. Instead, we wait until we see another reset
+  with no error in-between.
+  This is used for errors that should only reset once we've seen a completely
+  new cycle with no errors in it.
+ *)
 
-let transient (args: transient_args): S.stream bool =
+let transient (args: latch_args): S.stream bool =
   let open S in
   let^
-  (* reset at every new cycle (ref_ck) *)
-    any_error_this_cycle = latch { set = args.error_cond; reset = args.ref_ck }
+    (* reset at every new cycle (reset) *)
+    any_error_this_cycle = latch args
   in
   (* becomes true whenever we see an error; resets when we start a new cycle, and the previous cycle did not have any errors *)
   latch {
-    set   = args.error_cond;
-    reset = args.ref_ck /\ ~ (false `fby` any_error_this_cycle) }
+    set   = args.set;
+    reset = args.reset /\ ~ (false `fby` any_error_this_cycle);
+  }
 
-(*
+(* Check the error flag at the end of the cycle.
+  Some error conditions are only known at the end of a cycle, such as transmit
+  trigger underflow. We need to check the error condition just before starting
+  the new cycle (denoted by args.reset). *)
+let cycle_end_check (args: latch_args): S.stream bool =
+  let open S in
+  latch {
+    set   = args.reset /\ (false `fby` args.set);
+    reset = args.reset;
+  }
 
-
-(* Error flag to check just before starting a new cycle. *)
-node Error_Cycle_End_Check(
-  ref_ck:      bool;
-  error_cond:  bool;
-) returns (
-  error:       bool;
-)
-let
-  error =
-    Error_Latch(
-      ref_ck and previously(error_cond),
-      ref_ck
-    );
-tel
 
 
 (*^ 9.1 Scheduling_Error_1:
@@ -90,41 +91,26 @@ tel
   I believe this online accumulation is the intended behaviour, however, as the above quote from the MTTCAN user's manual refers to "trigger memory elements" rather than "message objects".
   The alternative of checking the MSC array at the beginning of each basic cycle would be more difficult to implement without significantly increasing the worst-case-execution-time.
 *)
-node Error_Scheduling_Error_1(
-  ref_ck:      bool;
-  msc_ck:      bool;
-  msc:         Message_Status_Counter; -- when msc_ck
-) returns (
-  error:       bool;
-)
-var
-  minimum:     Message_Status_Counter;
-  maximum:     Message_Status_Counter;
-let
-  minimum =
-    if ref_ck and msc_ck
-    then msc
-    else if ref_ck
-    then 7
-    else if msc_ck and msc < (7 -> pre minimum)
-    then msc
-    else (7 -> pre minimum);
+let scheduling_error_1 (ref_ck: S.stream bool) (msc: S.stream (Clocked.t message_status_counter)): S.stream bool =
+  let open S in
+  let open S32R in
+  let^ minimum = Clocked.stream_fold {
+      initial = s32r' 7;
+      update  = (fun m1 m2 -> if_then_else (m1 < m2) m1 m2);
+      clocked = msc;
+      reset   = ref_ck;
+    } in
+  let^ maximum = Clocked.stream_fold {
+      initial = s32r' 0;
+      update  = (fun m1 m2 -> if_then_else (m1 > m2) m1 m2);
+      clocked = msc;
+      reset   = ref_ck;
+    } in
 
-  maximum =
-    if ref_ck and msc_ck
-    then msc
-    else if ref_ck
-    then 0
-    else if msc_ck and msc > (0 -> pre maximum)
-    then msc
-    else (0 -> pre maximum);
-
-  error =
-    Error_Cycle_End_Check(
-      ref_ck,
-      -- DISCREPANCY: according to the spec, the `maximum=7` check should only apply to read triggers, as `Scheduling_Error_2` triggers when any write triggers have `msc=7`.
-      -- In this implementation, msc=7 will trigger both errors, but Scheduling_Error_2 (S2) will have precedence.
-      minimum < maximum - 1 or maximum = 7
-    );
-tel
-*)
+  cycle_end_check {
+    reset = ref_ck;
+    set =
+      // DISCREPANCY: according to the spec, the `maximum=7` check should only apply to read triggers, as `Scheduling_Error_2` triggers when any write triggers have `msc=7`.
+      // In this implementation, msc=7 will trigger both errors, but Scheduling_Error_2 (S2) will have precedence.
+      minimum < dec_sat maximum \/ maximum = s32r 7
+  }
