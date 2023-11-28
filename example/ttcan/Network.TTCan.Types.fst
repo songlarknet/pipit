@@ -42,6 +42,8 @@ type cycle_index   = Subrange.t { min = 0; max = 63 }
 // power-of-two denoting how often to repeat
 type repeat_factor = Subrange.t { min = 0; max = 6 }
 
+type tx_count      = Subrange.t { min = 0; max = 65535 }
+
 type ref_message = {
   sof:         ntu;
   master:      master_index;
@@ -78,7 +80,7 @@ let max_trigger_count = 6500
 type config = {
   initial_ref_offset: ref_offset;
   master_index: option master_index;
-  tx_enable_window: n: nat { 1 <= n /\ n <= 16 };
+  tx_enable_window: Subrange.t { min = 1; max = 16 };
   cycle_count_max: cycle_index;
 
   triggers: tr: list trigger { 1 <= List.length tr /\ List.length tr <= max_trigger_count };
@@ -91,7 +93,6 @@ type trigger_index (cfg: config) = Subrange.t { min = 0; max = List.length cfg.t
 
 let trigger_index_lookup (cfg: config) (ix: trigger_index cfg): trigger =
   List.index cfg.triggers (Subrange.v ix)
-
 
 (**** Pipit.Shallow stream instances:
   The following boilerplate is required to embed types in Pipit programs. The

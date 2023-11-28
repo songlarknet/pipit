@@ -11,8 +11,12 @@ module U64X      = Network.TTCan.Prim.U64
 
 module REPR    = FStar.Int32
 module Int     = FStar.Int
+module UInt    = FStar.UInt
 module Cast    = FStar.Int.Cast
+module U8      = FStar.UInt8
 module U64     = FStar.UInt64
+
+module Math    = FStar.Math.Lemmas
 
 type bound = i: int { Int.fits i REPR.n }
 type bounds = { min: bound; max: max: bound { min <= max }}
@@ -49,8 +53,24 @@ let s32r_to_u64' (#b: bounds { 0 <= b.min }) (x: t b): U64.t =
   assert (U64.v r == v x);
   r
 
-// TODO add saturated operations...
-// let add_sat': t min max -> t min max -> t min max =
+let s32r_to_u8' (#b: bounds { 0 <= b.min /\ b.max <= 255 }) (x: t b): U8.t =
+  let r = Cast.int32_to_uint8 x.repr in
+  assert (U8.v r == v x);
+  r
+
+// TODO implement remaining saturated operations...
+
+let clamp' (#b: bounds) (x: REPR.t): t b =
+  let min = REPR.int_to_t b.min in
+  let max = REPR.int_to_t b.max in
+  if REPR.lt x min then { repr = min }
+  else if REPR.gt x max then { repr = max }
+  else { repr = x }
+
+let add_sat' (#b1: bounds) (#b2: bounds { Int.fits (b1.min + b2.min) REPR.n /\ Int.fits (b1.max + b2.max) REPR.n }) (x: t b1) (y: t b2): t b1 =
+  let r = REPR.add x.repr y.repr in
+  clamp' r
+
 // let div_underspec' (a b: t min max): r: t { REPR.v b <> 0 ==> r = REPR.div a b } =
 //   if b = 0uL then 0uL else REPR.div a b
 
@@ -64,6 +84,23 @@ let rem_underspec' (#b: bounds { b.min == 0 }) (x y: t b): t b  =
     { repr = 0l }
 
 
+#push-options "--split_queries always"
+// #push-options "--fuel 1 --ifuel 1"
+
+
+(* Bit-shifting power-of-two; pow2 and Int.pow2_n are not extractable to C. *)
+let pow2_n (#b: bounds { b.min == 0 /\ b.max <= 30 }) (x: t b): t { min = 1; max = Int.pow2_n #REPR.n b.max } =
+  let shift = Cast.int32_to_uint32 x.repr in
+  Math.pow2_le_compat 30 (UInt32.v shift);
+  Math.pow2_le_compat b.max (UInt32.v shift);
+  let pow = REPR.shift_left REPR.one shift in
+  { repr = pow }
+
+#pop-options
+
+let pow2_minus_one (#b: bounds { b.min == 0 /\ b.max <= 30 }) (x: t b): t { min = 0; max = Int.pow2_n #REPR.n b.max - 1 } =
+  let pow = pow2_n x in
+  { repr = REPR.sub pow.repr REPR.one }
 
 let gt'  (#b: bounds) (x y: t b): bool = REPR.gt  x.repr y.repr
 let gte' (#b: bounds) (x y: t b): bool = REPR.gte x.repr y.repr
