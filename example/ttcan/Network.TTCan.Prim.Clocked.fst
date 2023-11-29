@@ -57,6 +57,13 @@ let get_or_else (#a: eqtype) {| Sugar.has_stream a |}
        : Sugar.stream a =
   fold dflt (fun v -> v) clck
 
+
+let map (#a #b: eqtype) {| Sugar.has_stream a |} {| Sugar.has_stream b |}
+  (fn: Sugar.stream a -> Sugar.stream b)
+  (clck: Sugar.stream (t a))
+       : Sugar.stream (t b) =
+  Sugar.if_then_else (get_clock clck) (some (fn (get_value clck))) none
+
 (* Aggregation over a stream of clocked values *)
 noeq
 type stream_fold_args (a b: eqtype) {| Sugar.has_stream a |} {| Sugar.has_stream b |} = {
