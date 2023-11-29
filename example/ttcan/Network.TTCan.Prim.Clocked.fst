@@ -37,18 +37,25 @@ let none (#a: eqtype) {| Sugar.has_stream a |}: Sugar.stream (t a) #(has_stream_
 (* Pattern matching on a single clocked value *)
 let fold' (#a #b: eqtype)
   (zero: b)
-  (kons: a -> b -> b)
+  (kons: a -> b)
   (clck: t a)
        : b =
-  if clck.clock then kons clck.value zero else zero
+  if clck.clock then kons clck.value else zero
 
 (* Pattern matching on a stream of clocked values *)
 let fold (#a #b: eqtype) {| Sugar.has_stream a |} {| Sugar.has_stream b |}
   (zero: Sugar.stream b)
-  (kons: Sugar.stream a -> Sugar.stream b -> Sugar.stream b)
+  (kons: Sugar.stream a -> Sugar.stream b)
   (clck: Sugar.stream (t a))
        : Sugar.stream b =
-  Sugar.if_then_else (get_clock clck) (kons (get_value clck) zero) zero
+  Sugar.if_then_else (get_clock clck) (kons (get_value clck)) zero
+
+(* Safely extracting a value *)
+let get_or_else (#a: eqtype) {| Sugar.has_stream a |}
+  (dflt: Sugar.stream a)
+  (clck: Sugar.stream (t a))
+       : Sugar.stream a =
+  fold dflt (fun v -> v) clck
 
 (* Aggregation over a stream of clocked values *)
 noeq
@@ -64,5 +71,5 @@ let stream_fold (#a #b: eqtype) {| Sugar.has_stream a |} {| Sugar.has_stream b |
   let open Sugar in
   rec' (fun acc ->
     let^ prev = if_then_else args.reset (const args.initial) (args.initial `fby` acc) in
-    fold prev args.update args.clocked
+    fold prev (fun v -> args.update v prev) args.clocked
   )

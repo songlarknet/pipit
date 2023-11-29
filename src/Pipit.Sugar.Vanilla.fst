@@ -76,9 +76,9 @@ let fby (#a: valtype) (v: table.ty_sem a) (e: stream a): stream a = S.fby #table
 let pre (e: stream 'a): stream 'a = S.pre #table #'a e
 
 let (->^) (e1 e2: stream 'a): stream 'a =
+  let^ init_flag = fby #TBool true (const false) in
   S.liftP3 (P'V P'V'IfThenElse 'a)
-    (fby #TBool true (const false))
-    e1 e2
+    init_flag e1 e2
 
 let tt: bools = const true
 let ff: bools = const false

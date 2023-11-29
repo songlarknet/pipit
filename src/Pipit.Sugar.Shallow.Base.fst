@@ -76,8 +76,7 @@ let p'select (a: eqtype) {| has_stream a |}: Shallow.prim =
   we also bind this operator as (->^) for lifted arrow
  *)
 let subsequently {| has_stream 'a |} (e1 e2: stream 'a): stream 'a =
-  S.liftP3 (p'select 'a)
-    (fby true (const false))
-    e1 e2
+  let^ init_flag = true `fby` (const false) in
+  S.liftP3 (p'select 'a) init_flag e1 e2
 
 let (->^) {| has_stream 'a |} (e1 e2: stream 'a): stream 'a = e1 `subsequently` e2

@@ -155,3 +155,20 @@ let sofar (e: stream bool): stream bool =
 
 let once (e: stream bool): stream bool =
   rec' (fun r -> e \/ fby false r)
+
+(* Ideas for improving syntax:
+
+  rename fby to fby', implement fby with type (s a -> s a -> s a)
+    fby (XVal v) e' = XFby v e'
+    fby e e' = if (XFby true false) then e else XFby bottom e'
+
+  implicit coercions from a -> s a
+    how badly will type inference suffer?
+
+  select/if-then-else syntax maybe `select [x ->: e1; y ->: e2]`
+    `select [cond1 ->: e1; cond2 ->: e2] generates assertion (cond1 \/ cond2)`
+
+  named tuple syntax?
+    `Tuple.t ["x",  U64.t; "y", Clocked.t U64.t]`
+    `x ^. "x"`
+*)

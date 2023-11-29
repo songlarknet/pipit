@@ -6,6 +6,7 @@ module S32R  = Network.TTCan.Prim.S32R
 module Clocked= Network.TTCan.Prim.Clocked
 
 open Network.TTCan.Types
+open Network.TTCan.Impl.Util
 
 module SugarTac  = Pipit.Sugar.Shallow.Tactics
 
@@ -21,25 +22,6 @@ let summary' (fault: fault_bits): error_severity =
   else S0_No_Error
 
 %splice[summary] (SugarTac.lift_prim "summary" (`summary'))
-
-(* Resettable latch.
-  Named arguments would be nice. It's easy to confuse the set/reset so we
-  package them up in a record.
-*)
-noeq
-type latch_args = { set: S.stream bool; reset: S.stream bool }
-
-let latch (args: latch_args): S.stream bool =
-  let open S in
-  rec' (fun latch ->
-    // if_then_else is ugly. maybe a syntax like this would be ok...
-    // selects [
-    //     When args.set,   const true;
-    //     When args.reset, const false;
-    //     Otherwise,       false `fby` latch
-    //   ]
-    if_then_else args.set (const true)
-      (if_then_else args.reset (const false) (false `fby` latch)))
 
 (* Latch for self-correcting errors.
   We set the error flag whenever we see an error (args.set), but we do not

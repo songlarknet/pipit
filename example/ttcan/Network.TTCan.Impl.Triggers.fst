@@ -4,6 +4,7 @@ module S     = Pipit.Sugar.Shallow
 module U64   = Network.TTCan.Prim.U64
 module S32R  = Network.TTCan.Prim.S32R
 module Clocked= Network.TTCan.Prim.Clocked
+module Util  = Network.TTCan.Impl.Util
 
 open Network.TTCan.Types
 
@@ -38,7 +39,7 @@ let trigger_compute_expiry' (#cfg: config) (ix: trigger_index cfg) (trigger: tri
 
 
 let trigger_load' (#cfg: config) (ix: trigger_index cfg) (ref_trigger_offset: ref_offset): trigger =
-  let base = trigger_index_lookup cfg ix in
+  let base = cfg.trigger_index_fun ix in
   let time_mark =
     match base.trigger_type with
     | Tx_Ref_Trigger ->
@@ -139,11 +140,6 @@ let prefetch
     let^ expiry  = trigger_compute_expiry index trigger in
     prefetch_result_new index enabled expiry trigger)
 
-let edge (#a: eqtype) {| S.has_stream a |}
-  (v: S.stream a): S.stream bool =
-  let open S in
-  (const true) ->^ (v <> pre v)
-
 (*^5.1 Tx_Count: each time a Tx_Trigger becomes active, Tx_Count is incremented. Tx_Count is not incremented beyond Expected_Tx_Trigger. *)
 (* CLARIFICATION: the definition of "active" is not entirely clear to me.
   Is it whenever a Tx_Trigger trigger array entry is encountered by the trigger loop, or is it only when the trigger is enabled for the current cycle index?
@@ -162,7 +158,7 @@ let tx_counter
         (s32r 0)
         (s32r' 0 `fby` tx_count) in
     let^ incr =
-      edge (get_index prefetch) /\
+      Util.edge (get_index prefetch) /\
       get_trigger_type (get_trigger prefetch) = const Tx_Trigger in
     if_then_else incr (inc_sat prev) prev
   )
@@ -193,7 +189,7 @@ let fetch
     in
 
     let^ index = get_index current in
-    let^ is_new = const true ->^ (index <> pre index) in
+    let^ is_new = Util.edge index in
     let^ is_started = is_trigger_started (get_trigger current) in
     let^ is_expired = U64.(get_expiry current <= cycle_time) in
     let^ tx_count = tx_counter cfg reset_ck next in

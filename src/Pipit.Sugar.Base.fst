@@ -221,14 +221,6 @@ let fby (#a: ('t).ty) (v: ('t).ty_sem a) (e: stream 't a): stream 't a =
 [@@"opaque_to_smt"]
 let pre (#a: ('t).ty) (e: stream 't a): stream 't a = fby (('t).val_default a) e
 
-(* "p -> q" in Lustre, first element of p then remainder of q *)
-// XXX: needs ifthenelse primitive (if (true fby false) then e1 else e2)
-// let (->^) (#a: ('t).ty) (e1 e2: s 't a): s 't a =
-//   (fun s ->
-//     let (e1, s) = e1 s in
-//     let (e2, s) = e2 s in
-//     (XThen e1 e2, s))
-
 // #push-options "--ifuel 0 --fuel 0"
 
 [@@"opaque_to_smt"]
