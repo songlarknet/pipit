@@ -15,19 +15,20 @@ module BV   = FStar.BV
 
 module Tac = FStar.Tactics
 
-// let n = BITS.n
-// type index_t = i: U8.t { U8.v i < n }
+let n = BITS.n
+
+type index_t = i: U8.t { U8.v i < n }
 
 let t = BITS.t
 
-// type abs = BV.bv_t n
-let v (bv: BITS.t) = BV.int2bv (BITS.v bv)
+type abs = BV.bv_t n
 
-let zero: z: t { v z = BV.int2bv 0 } =
-  unsafe_coerce 0uL
+let v (bv: BITS.t) = BV.int2bv #n (BITS.v bv)
+let v_64 (bv: BITS.t): BV.bv_t 64 = v bv
 
-let one: z: t { v z = BV.int2bv 1 } =
-  unsafe_coerce 1uL
+let zero: z: t { v z = BV.int2bv #n 0 } = 0uL
+
+let one: z: t { v z = BV.int2bv #n 1 } = 1uL
 
 (* XXX:REORG: lemmas taken from Vale.Math.Bits (Apache licence) in hacl-star
   https://github.com/hacl-star/hacl-star/blob/main/vale/code/lib/math/Vale.Math.Bits.fst *)
@@ -69,47 +70,51 @@ let logand (a b: BITS.t): Pure BITS.t
     (ensures (fun c -> v c == BV.bvand #n (v a) (v b))) =
   let c = a `BITS.logand` b in
   lemma_logand #n (BITS.v a) (BITS.v b);
-  assume (v c == BV.bvand #n (v a) (v b));
   c
 
 let logor (a b: BITS.t): c: BITS.t { v c == BV.bvor #n (v a) (v b) } =
   let c = a `BITS.logor` b in
-  lemma_logor (BITS.v a) (BITS.v b);
-  assume (v c == BV.bvor #n (v a) (v b) );
+  lemma_logor #n (BITS.v a) (BITS.v b);
   c
 
 let lognot (a: BITS.t): c: BITS.t { v c == BV.bvnot #n (v a) } =
   let c = BITS.lognot a in
-  lemma_lognot (BITS.v a);
-  // assert (BITS.v (BITS.lognot a) == UInt.lognot (BITS.v a));
-  // assert (v c == BV.bvnot (v a)) by (Tac.norm [delta_only [`%v; `%BITS.lognot]; iota; zeta; primops]; Tac.dump "X");
-  // assert_norm (v c == BV.bvnot (v a));
-  // stuck - why?
-  assume (v c == BV.bvnot #n (v a));
-  // assert_norm (v c == BV.bvnot #n (v a));
+  lemma_lognot #n (BITS.v a);
   c
 
 let shift_left (a: BITS.t) (b: index_t): c: BITS.t { v c == BV.bvshl #n (v a) (U8.v b) } =
   let c = a `BITS.shift_left` (Cast.uint8_to_uint32 b) in
-  lemma_shift_left (BITS.v a) (U8.v b);
-  assume (v c == BV.bvshl #n (v a) (U8.v b));
+  lemma_shift_left #n (BITS.v a) (U8.v b);
   c
 
 let shift_right (a: BITS.t) (b: index_t): c: BITS.t { v c == BV.bvshr #n (v a) (U8.v b) } =
   let c = a `BITS.shift_right` (Cast.uint8_to_uint32 b) in
-  lemma_shift_right (BITS.v a) (U8.v b);
-  assume (v c == BV.bvshr #n (v a) (U8.v b) );
+  lemma_shift_right #n (BITS.v a) (U8.v b);
   c
+
+let lemma_v_inj (a b: BITS.t):
+  Lemma (v a == v b <==> a == b) =
+  if a = b
+  then assert (v a == v b)
+  else (
+    if v a = v b
+    then (
+      // contradiction: v a = v b but a <> b
+      BV.int2bv_lemma_2 #n (BITS.v a) (BITS.v b);
+      false_elim ())
+    else (
+      assert (v a <> v b)
+    )
+  )
 
 let eq (a b: BITS.t): Pure bool
     (requires True)
-    (ensures (fun c -> c <==> v a = v b)) =
-  // TODO finish
-  assume ((a = b) <==> v a = v b);
+    (ensures (fun c -> c <==> v a == v b)) =
+  lemma_v_inj a b;
   a = b
 
 let ne (a b: BITS.t): Pure bool
     (requires True)
-    (ensures (fun c -> c <==> v a <> v b)) =
-  assume ((a <> b) <==> v a <> v b);
+    (ensures (fun c -> v a <> v b <==> c)) =
+  lemma_v_inj a b;
   a <> b
