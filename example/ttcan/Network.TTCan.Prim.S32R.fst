@@ -58,6 +58,12 @@ let s32r_to_u8' (#b: bounds { 0 <= b.min /\ b.max <= 255 }) (x: t b): U8.t =
   assert (U8.v r == v x);
   r
 
+let u64_to_s32r' (#b: bounds) (x: U64.t { b.min <= U64.v x /\ U64.v x <= b.max }): t b =
+  // Deprecated, but this is a safe usage
+  let r = { repr = Cast.uint64_to_int32 x } in
+  assert (v r == U64.v x);
+  r
+
 // TODO implement remaining saturated operations...
 
 let clamp' (#b: bounds) (x: REPR.t): t b =
