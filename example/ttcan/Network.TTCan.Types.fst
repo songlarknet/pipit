@@ -71,6 +71,7 @@ type fault_bits = {
 let init_watch_trigger_time: ntu_config = Subrange.s32r' 65535
 (* We are packing the 3-bit MSCs into 64-bits, so a node can only send/receive up to 21 application-specific message types *)
 let max_app_message_count = 21
+type app_message_index = Subrange.t { min = 0; max = max_app_message_count }
 
 noeq
 type config = {
@@ -89,11 +90,8 @@ type config = {
   trigger_count_max: Subrange.t { min = 1; max = 6500 };
   trigger_index_fun: Subrange.t { min = 0; max = Subrange.v trigger_count_max - 1 } -> trigger;
   // TODO: trigger validity check: space between them;
-
-  app_message_count: n: nat { 1 <= n /\ n <= max_app_message_count };
 }
 
-type app_message_index (cfg: config) = Subrange.t { min = 0; max = cfg.app_message_count - 1 }
 type trigger_index (cfg: config) = Subrange.t { min = 0; max = Subrange.v cfg.trigger_count_max - 1 }
 
 let config_master_enable (cfg: config): bool = Some? cfg.master_index
