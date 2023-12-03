@@ -30,7 +30,9 @@ FSTAR_ARITH_UNBOX ?= --smtencoding.l_arith_repr native --smtencoding.elim_box tr
 # Disable FSTAR_NL_DISABLE and FSTAR_ARITH_UNBOX: for some reason this breaks the proof of lemma_lift_subst_distribute_le.
 FSTAR_PROOF_OPT   ?=
 
-FSTAR_INCLUDES	  ?= --include src --include example --include example/ttcan
+FSTAR_SRC_DIRS = example/ $(wildcard example/*/) src/ $(wildcard src/*/) test/ $(wildcard test/*/) rts/fstar
+
+FSTAR_INCLUDES	  ?= $(addprefix --include ,$(FSTAR_SRC_DIRS))
 FSTAR_CACHE       ?= --cache_dir $(BUILD)/cache --cache_checked_modules --already_cached Prims,FStar,LowStar
 FSTAR_HINTS       ?= --hint_dir $(BUILD)/hint --use_hints --record_hints --warn_error -333
 
@@ -39,7 +41,6 @@ FSTAR_DEP_OPT     ?= $(FSTAR_INCLUDES) $(FSTAR_CACHE)
 FSTAR_EXTRA_OPT   ?=
 FSTAR_OPT		  ?= $(FSTAR_INCLUDES) $(FSTAR_PROOF_OPT) $(FSTAR_CACHE) $(FSTAR_EXTRA_OPT) $(FSTAR_MAYBE_ADMIT)
 
-FSTAR_SRC_DIRS = example/ $(wildcard example/*/) src/ $(wildcard src/*/) test/ $(wildcard test/*/)
 FSTAR_SRCS = $(wildcard $(addsuffix *.fst,$(FSTAR_SRC_DIRS)) $(addsuffix *.fsti,$(FSTAR_SRC_DIRS)))
 
 .PHONY: all

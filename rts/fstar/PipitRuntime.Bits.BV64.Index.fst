@@ -3,9 +3,9 @@
   The module can be extracted to C.
   It is currently unverified.
 *)
-module Network.TTCan.Base.BV64.Index
+module PipitRuntime.Bits.BV64.Index
 module U8   = FStar.UInt8
-module BV64 = Network.TTCan.Base.BV64
+module BV64 = PipitRuntime.Bits.BV64
 module Tac  = FStar.Tactics
 
 module BV = FStar.BV

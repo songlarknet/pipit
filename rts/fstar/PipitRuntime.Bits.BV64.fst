@@ -24,7 +24,7 @@
     definitions somehow.
   * Sometimes, it is sufficient to normalize the goal, eg with assert_norm.
 *)
-module Network.TTCan.Base.BV64
+module PipitRuntime.Bits.BV64
 
 module U8   = FStar.UInt8
 module BITS = FStar.UInt64
