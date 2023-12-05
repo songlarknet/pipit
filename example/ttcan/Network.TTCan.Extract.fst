@@ -1,3 +1,4 @@
+(* XXX: broken: extraction causes stack overflow *)
 module Network.TTCan.Extract
 
 module Types   = Network.TTCan.Types
@@ -33,11 +34,11 @@ let tac_normalize_pure (namespaces: list string) () =
   Tac.dump "nX";
   Tac.trefl ()
 
+(*
 [@@(Tac.postprocess_with (tac_normalize_pure ["Network.TTCan"]))]
 noextract
 let expr = SugarBase.exp_of_stream6 (Top.controller cfg)
 
-(*
 [@@(Tac.postprocess_with (XL.tac_normalize_pure ["Network.TTCan"]))]
 type state = XX.state_of_exp expr
 
