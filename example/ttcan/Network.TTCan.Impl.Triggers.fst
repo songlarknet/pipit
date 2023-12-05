@@ -195,3 +195,7 @@ let fetch
     let^ tx_count = tx_counter cfg reset_ck next in
     fetch_result_new current is_new is_started is_expired tx_count
   )
+
+
+let get_message_index (#cfg: config) (fet: S.stream (fetch_result cfg)): S.stream app_message_index =
+  get_message_index (get_trigger (get_current fet))

@@ -1,7 +1,7 @@
 module Network.TTCan.Extract
 
 module Types = Network.TTCan.Types
-module Top = Network.TTCan.Impl.States
+module Top = Network.TTCan.Impl.Controller
 
 module SugarBase = Pipit.Sugar.Base
 module XX  = Pipit.Exec.Exp

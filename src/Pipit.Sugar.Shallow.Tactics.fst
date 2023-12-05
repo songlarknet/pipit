@@ -115,7 +115,7 @@ let lift_prim_tm (nm: string) (tm: Ref.term): Tac.Tac Tac.term =
   let tm_lift = (` PPS.mkPrim (Some (`#full_nm')) (`#funty) (`#tm_impl)) in
   let tm_lift = (`SB.liftP'prim #PPS.table #(`#funty) (`#tm_lift)) in
   let tm_lift = lift_prim_go bs cmp tm_lift in
-  Tac.print ("term is: " ^ Tac.term_to_string tm_lift);
+  // Tac.print ("term is: " ^ Tac.term_to_string tm_lift);
   tm_lift
 
 

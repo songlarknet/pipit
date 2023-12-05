@@ -51,12 +51,16 @@ type ref_message = {
 
 type message_status_counter = Subrange.t { min = 0; max = 7 }
 
+(* We are packing the 3-bit MSCs into 64-bits, so a node can only send/receive up to 21 application-specific message types *)
+let max_app_message_count = 21
+type app_message_index = Subrange.t { min = 0; max = max_app_message_count }
 
 type trigger = {
   trigger_type:  trigger_type;
   time_mark:     ntu_config;
   cycle_offset:  cycle_index;
   repeat_factor: repeat_factor;
+  message_index: app_message_index;
 }
 
 type fault_bits = {
@@ -69,9 +73,6 @@ type fault_bits = {
 }
 
 let init_watch_trigger_time: ntu_config = Subrange.s32r' 65535
-(* We are packing the 3-bit MSCs into 64-bits, so a node can only send/receive up to 21 application-specific message types *)
-let max_app_message_count = 21
-type app_message_index = Subrange.t { min = 0; max = max_app_message_count }
 
 noeq
 type config = {
@@ -90,6 +91,8 @@ type config = {
   trigger_count_max: Subrange.t { min = 1; max = 6500 };
   trigger_index_fun: Subrange.t { min = 0; max = Subrange.v trigger_count_max - 1 } -> trigger;
   // TODO: trigger validity check: space between them;
+
+  expected_tx_triggers: tx_count;
 }
 
 type trigger_index (cfg: config) = Subrange.t { min = 0; max = Subrange.v cfg.trigger_count_max - 1 }
@@ -99,6 +102,8 @@ let config_master_index (cfg: config): master_index =
   match cfg.master_index with
   | None -> Subrange.s32r' 0
   | Some ix -> ix
+
+// let config_trigger_count (cfg: config): 
 
 (**** Pipit.Shallow stream instances:
   The following boilerplate is required to embed types in Pipit programs. The
@@ -155,14 +160,15 @@ instance has_stream_ref_message: Sugar.has_stream ref_message = {
 
 instance has_stream_trigger: Sugar.has_stream trigger = {
   ty_id       = [`%trigger];
-  val_default = { trigger_type = Sugar.val_default; time_mark = Sugar.val_default; cycle_offset = Sugar.val_default; repeat_factor = Sugar.val_default; };
+  val_default = { trigger_type = Sugar.val_default; time_mark = Sugar.val_default; cycle_offset = Sugar.val_default; repeat_factor = Sugar.val_default; message_index = Sugar.val_default; };
 }
 
-%splice[trigger_new] (SugarTac.lift_prim "trigger_new" (`(fun trigger_type time_mark cycle_offset repeat_factor -> {trigger_type; time_mark; cycle_offset; repeat_factor })))
+%splice[trigger_new] (SugarTac.lift_prim "trigger_new" (`(fun trigger_type time_mark cycle_offset repeat_factor message_index -> {trigger_type; time_mark; cycle_offset; repeat_factor; message_index })))
 %splice[get_trigger_type] (SugarTac.lift_prim "get_trigger_type" (`(fun r -> r.trigger_type)))
 %splice[get_time_mark] (SugarTac.lift_prim "get_time_mark" (`(fun r -> r.time_mark)))
 %splice[get_cycle_offset] (SugarTac.lift_prim "get_cycle_offset" (`(fun r -> r.cycle_offset)))
 %splice[get_repeat_factor] (SugarTac.lift_prim "get_repeat_factor" (`(fun r -> r.repeat_factor)))
+%splice[get_message_index] (SugarTac.lift_prim "get_message_index" (`(fun r -> r.message_index)))
 
 instance has_stream_fault_bits: Sugar.has_stream fault_bits = {
   ty_id       = [`%fault_bits];

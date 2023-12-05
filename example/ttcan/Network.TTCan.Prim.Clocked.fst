@@ -80,3 +80,8 @@ let stream_fold (#a #b: eqtype) {| Sugar.has_stream a |} {| Sugar.has_stream b |
     let^ prev = if_then_else args.reset (const args.initial) (args.initial `fby` acc) in
     fold prev (fun v -> args.update v prev) args.clocked
   )
+
+let current_or_else (#a: eqtype) {| Sugar.has_stream a |} (dflt: a) (clck: Sugar.stream (t a)): Sugar.stream a =
+  let open Sugar in
+  rec' (fun acc ->
+    get_or_else (dflt `fby` acc) clck)

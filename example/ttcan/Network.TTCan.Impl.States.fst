@@ -28,11 +28,7 @@ let cycle_time_capture
 let mode_states
   (mode_cmd: S.stream (Clocked.t mode))
     : S.stream mode =
-  let open S in
-  rec' (fun mode ->
-    Clocked.get_or_else
-      (Mode_Configure `fby` mode)
-      mode_cmd)
+  Clocked.current_or_else Mode_Configure mode_cmd
 
 let sync_states
   (mode:       S.stream mode)
@@ -219,8 +215,3 @@ let tx_ref_messages
   if_then_else tx_ref_ck
     (Clocked.some tx_ref)
     Clocked.none
-
-
-let top (local_time: S.stream ntu) (reset_ck: S.stream bool): S.stream ntu =
-  cycle_time_capture local_time reset_ck (Clocked.some (S.const 0uL))
-
