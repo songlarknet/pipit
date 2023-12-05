@@ -136,3 +136,20 @@ let clear_all (): T.Tac unit =
   ignore (T.repeat T.revert);
   let bs = T.repeat T.intro in
   go bs
+
+(* Left-to-right, top-down; see FStar.Tactics.l_to_r, which is the bottom-up version. *)
+let top_down (lems: list T.term): T.Tac unit =
+  let first_or_trefl () : T.Tac unit =
+      T.fold_left (fun k l () ->
+                  (fun () -> T.apply_lemma_rw l)
+                  `T.or_else` k)
+                T.trefl lems () in
+  T.t_pointwise T.TopDown first_or_trefl
+
+(* Rewrite left-to-right, top-down in environment. This tactic first reverts
+  all binders into the goal, performs the rewrite, and then re-introduces the
+  binders. See also FStar.Tactics.l_to_r *)
+let top_down_in_env (lems:list T.term): T.Tac unit =
+  ignore (T.repeat T.revert);
+  top_down lems;
+  ignore (T.repeat T.intro)

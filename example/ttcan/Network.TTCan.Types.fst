@@ -11,8 +11,6 @@ module List       = FStar.List.Tot
 
 type mode =
   | Mode_Configure | Mode_Running
-type mode_cmd =
-  | Mode_Cmd_None | Mode_Cmd_Configure | Mode_Cmd_Run
 
 type sync_mode =
   | Sync_Off | Synchronising | In_Schedule // not supported: In_Gap
@@ -42,6 +40,8 @@ type cycle_index   = Subrange.t { min = 0; max = 63 }
 // power-of-two denoting how often to repeat
 type repeat_factor = Subrange.t { min = 0; max = 6 }
 
+type tx_count      = Subrange.t { min = 0; max = 65535 }
+
 type ref_message = {
   sof:         ntu;
   master:      master_index;
@@ -51,12 +51,16 @@ type ref_message = {
 
 type message_status_counter = Subrange.t { min = 0; max = 7 }
 
+(* We are packing the 3-bit MSCs into 64-bits, so a node can only send/receive up to 21 application-specific message types *)
+let max_app_message_count = 21
+type app_message_index = Subrange.t { min = 0; max = max_app_message_count }
 
 type trigger = {
   trigger_type:  trigger_type;
   time_mark:     ntu_config;
   cycle_offset:  cycle_index;
   repeat_factor: repeat_factor;
+  message_index: app_message_index;
 }
 
 type fault_bits = {
@@ -69,29 +73,37 @@ type fault_bits = {
 }
 
 let init_watch_trigger_time: ntu_config = Subrange.s32r' 65535
-(* We are packing the 3-bit MSCs into 64-bits, so a node can only send/receive up to 21 application-specific message types *)
-let max_app_message_count = 21
-(* The maximum cycle duration is 65ms / 65000µs; if we process a trigger every 10µs, then we can handle 6500 triggers.
-  The limit is just to ensure we can index into the array. *)
-let max_trigger_count = 6500
 
+noeq
 type config = {
   initial_ref_offset: ref_offset;
   master_index: option master_index;
-  tx_enable_window: n: nat { 1 <= n /\ n <= 16 };
+  tx_enable_window: Subrange.t { min = 1; max = 16 }; // spec says upper limit is 16 - why 16?
   cycle_count_max: cycle_index;
 
-  triggers: tr: list trigger { 1 <= List.length tr /\ List.length tr <= max_trigger_count };
 
-  app_message_count: n: nat { 1 <= n /\ n <= max_app_message_count };
+  (*^8.3 When a failed time master reconnects to the system with active time-triggered communication, it shall wait until it is synchronised to the network before attempting to become time master again. *)
+  (* This requirement is somewhat vague and seems to introduce a potential deadlock if all masters had previously failed. I have implemented it by specifying a delay to stop transmissions after a severe failure occurs. *)
+  severe_error_ref_cooldown: ntu_config;
+
+  (* The maximum cycle duration is 65ms / 65000µs; if we process a trigger every 10µs, then we can handle 6500 triggers.
+  The limit is just to ensure we can index into the array. *)
+  trigger_count_max: Subrange.t { min = 1; max = 6500 };
+  trigger_index_fun: Subrange.t { min = 0; max = Subrange.v trigger_count_max - 1 } -> trigger;
+  // TODO: trigger validity check: space between them;
+
+  expected_tx_triggers: tx_count;
 }
 
-type app_message_index (cfg: config) = Subrange.t { min = 0; max = cfg.app_message_count - 1 }
-type trigger_index (cfg: config) = Subrange.t { min = 0; max = List.length cfg.triggers - 1 }
+type trigger_index (cfg: config) = Subrange.t { min = 0; max = Subrange.v cfg.trigger_count_max - 1 }
 
-let trigger_index_lookup (cfg: config) (ix: trigger_index cfg): trigger =
-  List.index cfg.triggers (Subrange.v ix)
+let config_master_enable (cfg: config): bool = Some? cfg.master_index
+let config_master_index (cfg: config): master_index =
+  match cfg.master_index with
+  | None -> Subrange.s32r' 0
+  | Some ix -> ix
 
+// let config_trigger_count (cfg: config): 
 
 (**** Pipit.Shallow stream instances:
   The following boilerplate is required to embed types in Pipit programs. The
@@ -104,11 +116,6 @@ let trigger_index_lookup (cfg: config) (ix: trigger_index cfg): trigger =
 instance has_stream_mode: Sugar.has_stream mode = {
   ty_id       = [`%mode];
   val_default = Mode_Configure;
-}
-
-instance has_stream_mode_cmd: Sugar.has_stream mode_cmd = {
-  ty_id       = [`%mode_cmd];
-  val_default = Mode_Cmd_None;
 }
 
 instance has_stream_sync_mode: Sugar.has_stream sync_mode = {
@@ -153,14 +160,15 @@ instance has_stream_ref_message: Sugar.has_stream ref_message = {
 
 instance has_stream_trigger: Sugar.has_stream trigger = {
   ty_id       = [`%trigger];
-  val_default = { trigger_type = Sugar.val_default; time_mark = Sugar.val_default; cycle_offset = Sugar.val_default; repeat_factor = Sugar.val_default; };
+  val_default = { trigger_type = Sugar.val_default; time_mark = Sugar.val_default; cycle_offset = Sugar.val_default; repeat_factor = Sugar.val_default; message_index = Sugar.val_default; };
 }
 
-%splice[trigger_new] (SugarTac.lift_prim "trigger_new" (`(fun trigger_type time_mark cycle_offset repeat_factor -> {trigger_type; time_mark; cycle_offset; repeat_factor })))
+%splice[trigger_new] (SugarTac.lift_prim "trigger_new" (`(fun trigger_type time_mark cycle_offset repeat_factor message_index -> {trigger_type; time_mark; cycle_offset; repeat_factor; message_index })))
 %splice[get_trigger_type] (SugarTac.lift_prim "get_trigger_type" (`(fun r -> r.trigger_type)))
 %splice[get_time_mark] (SugarTac.lift_prim "get_time_mark" (`(fun r -> r.time_mark)))
 %splice[get_cycle_offset] (SugarTac.lift_prim "get_cycle_offset" (`(fun r -> r.cycle_offset)))
 %splice[get_repeat_factor] (SugarTac.lift_prim "get_repeat_factor" (`(fun r -> r.repeat_factor)))
+%splice[get_message_index] (SugarTac.lift_prim "get_message_index" (`(fun r -> r.message_index)))
 
 instance has_stream_fault_bits: Sugar.has_stream fault_bits = {
   ty_id       = [`%fault_bits];
