@@ -156,8 +156,8 @@ let bigstep_equivalent (#t: table) (#c: context t) (#a: t.ty) (e e': exp t c a):
     bigstep streams e v <==> bigstep streams e' v
 
 let check_equivalent (#t: table) (#c: context t) (#a: t.ty) (m m': PM.check_mode) (e e': exp t c a): prop =
-  forall (streams: list (row c)) (v: t.ty_sem a) (hBS: bigstep streams e v).
-    check m hBS <==> check m' hBS
+  forall (streams: list (row c)) (v: t.ty_sem a) (hBS: bigstep streams e v) (hBS': bigstep streams e' v).
+    check m hBS <==> check m' hBS'
 
 let bless_equivalent (#t: table) (#c: context t) (#a: t.ty) (e e': exp t c a): prop =
   bigstep_equivalent e e' /\

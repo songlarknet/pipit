@@ -88,13 +88,6 @@ let lemma_drop_context_sem
     =
   admit ()
 
-let lemma_rev_acc_context_sem
-  (#t: table) (c c': context t):
-  Lemma (context_sem (C.rev_acc c c') == C.rev_acc (context_sem c) (context_sem c'))
-    [SMTPat (context_sem (C.rev_acc c c'))]
-    =
-  admit ()
-
 let lemma_append_context_sem
   (#t: table) (c c': context t):
   Lemma (context_sem (C.append c c') == C.append (context_sem c) (context_sem c'))
@@ -108,23 +101,6 @@ assume val lemma_context_sem_length (t: table) (c: context t):
   Lemma (List.Tot.length (context_sem c) == List.Tot.length c)
     [SMTPat (List.Tot.length (context_sem c))]
 
-assume val lemma_rev_acc_length (c c': C.context 'a):
-  Lemma (List.Tot.length (C.rev_acc c c') == List.Tot.length c + List.Tot.length c')
-    [SMTPat (List.Tot.length (C.rev_acc c c'))]
-
 assume val lemma_rev_length (c: C.context 'a):
   Lemma (List.Tot.length (List.Tot.rev c) == List.Tot.length c)
     [SMTPat (List.Tot.length (List.Tot.rev c))]
-
-assume val lemma_rev_acc_index_lift (c c': C.context 'a) (i: C.index_lookup c'):
-  Lemma (C.get_index (C.rev_acc c c') (i + List.Tot.length c) == C.get_index c' i)
-
-assume val lemma_rev_acc_index_weaken (t: table) (c c': context t) (i: C.index_lookup c):
-  Lemma (C.get_index (C.rev_acc c c') i == C.get_index (List.Tot.rev c) i)
-
-// assume val lemma_rev_acc_row_index_lift (t: table) (c c': context t) (i: C.index_lookup c') (r: row c) (r': row c'):
-//   Lemma (CR.index _ (CR.rev_acc r r') (i + List.Tot.length c) == CR.index _ r' i)
-
-// assume val lemma_rev_acc_row_index_weaken (t: table) (c c': context t) (i: C.index_lookup c):
-//   Lemma (CR.index _ (CR.rev_acc r r') i == CR.index _ (CR.rev r) i)
-

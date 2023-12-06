@@ -1,4 +1,4 @@
 { "fstar_exe":"_opam/bin/fstar.exe",
   "options":["--smt", "_opam/bin/z3", "--cache_dir", "build/cache"],
-  "include_dirs":["src","example","example/ttcan"]
+  "include_dirs":["example", "example/ttcan", "rts/fstar", "src", "test"]
 }
