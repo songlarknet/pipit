@@ -30,7 +30,8 @@ FSTAR_ARITH_UNBOX ?= --smtencoding.l_arith_repr native --smtencoding.elim_box tr
 # Disable FSTAR_NL_DISABLE and FSTAR_ARITH_UNBOX: for some reason this breaks the proof of lemma_lift_subst_distribute_le.
 FSTAR_PROOF_OPT   ?=
 
-FSTAR_SRC_DIRS = example/ $(wildcard example/*/) src/ $(wildcard src/*/) test/ $(wildcard test/*/) rts/fstar
+# Make 3.81 on OSX expands `$(wildcard example/*/)` to include example/blah.fst, despite the trailing slash. So, it's better to just list the directories for now
+FSTAR_SRC_DIRS = example/ example/ttcan src/ test/ rts/fstar
 
 FSTAR_INCLUDES	  ?= $(addprefix --include ,$(FSTAR_SRC_DIRS))
 FSTAR_CACHE       ?= --cache_dir $(BUILD)/cache --cache_checked_modules --already_cached Prims,FStar,LowStar
