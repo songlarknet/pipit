@@ -31,7 +31,7 @@ FSTAR_ARITH_UNBOX ?= --smtencoding.l_arith_repr native --smtencoding.elim_box tr
 FSTAR_PROOF_OPT   ?=
 
 # Make 3.81 on OSX expands `$(wildcard example/*/)` to include example/blah.fst, despite the trailing slash. So, it's better to just list the directories for now
-FSTAR_SRC_DIRS = example/ example/ttcan src/ test/ rts/fstar
+FSTAR_SRC_DIRS = example/ example/ttcan/ src/ test/ rts/fstar/
 
 FSTAR_INCLUDES	  ?= $(addprefix --include ,$(FSTAR_SRC_DIRS))
 FSTAR_CACHE       ?= --cache_dir $(BUILD)/cache --cache_checked_modules --already_cached Prims,FStar,LowStar
@@ -43,6 +43,9 @@ FSTAR_EXTRA_OPT   ?=
 FSTAR_OPT		  ?= $(FSTAR_INCLUDES) $(FSTAR_PROOF_OPT) $(FSTAR_CACHE) $(FSTAR_EXTRA_OPT) $(FSTAR_MAYBE_ADMIT)
 
 FSTAR_SRCS = $(wildcard $(addsuffix *.fst,$(FSTAR_SRC_DIRS)) $(addsuffix *.fsti,$(FSTAR_SRC_DIRS)))
+
+x:
+	echo $(FSTAR_SRCS)
 
 .PHONY: all
 all: verify-retry extract

@@ -74,6 +74,12 @@ type fault_bits = {
 
 let init_watch_trigger_time: ntu_config = Subrange.s32r' 65535
 
+(* The maximum cycle duration is 65ms / 65000µs; if we process a trigger every 10µs, then we can handle 6500 triggers.
+  Some limit is required to ensure we can index into the array without overflowing,
+  but in practice, we will have much fewer triggers. *)
+let max_trigger_index = 6500
+type trigger_index = Subrange.t { min = 0; max = max_trigger_index }
+
 noeq
 type config = {
   initial_ref_offset: ref_offset;
@@ -86,16 +92,11 @@ type config = {
   (* This requirement is somewhat vague and seems to introduce a potential deadlock if all masters had previously failed. I have implemented it by specifying a delay to stop transmissions after a severe failure occurs. *)
   severe_error_ref_cooldown: ntu_config;
 
-  (* The maximum cycle duration is 65ms / 65000µs; if we process a trigger every 10µs, then we can handle 6500 triggers.
-  The limit is just to ensure we can index into the array. *)
-  trigger_count_max: Subrange.t { min = 1; max = 6500 };
-  trigger_index_fun: Subrange.t { min = 0; max = Subrange.v trigger_count_max - 1 } -> trigger;
+  trigger_index_fun: trigger_index -> trigger;
   // TODO: trigger validity check: space between them;
 
   expected_tx_triggers: tx_count;
 }
-
-type trigger_index (cfg: config) = Subrange.t { min = 0; max = Subrange.v cfg.trigger_count_max - 1 }
 
 let config_master_enable (cfg: config): bool = Some? cfg.master_index
 let config_master_index (cfg: config): master_index =
