@@ -40,6 +40,7 @@ let trigger_compute_expiry' (#cfg: config) (ix: trigger_index) (trigger: trigger
 
 
 let trigger_load' (#cfg: config) (ix: trigger_index) (ref_trigger_offset: ref_offset): trigger =
+  [@@no_inline_let] // do not inline index function into use-sites
   let base = cfg.trigger_index_fun ix in
   let time_mark =
     match base.trigger_type with

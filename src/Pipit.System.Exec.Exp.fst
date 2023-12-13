@@ -57,7 +57,10 @@ let rec esystem_of_exp
       let t' = esystem_of_exp e1 in
       esystem_mu_causal #(row c) #(t.ty_sem a & row c) (t.val_default a) (fun i v -> (v, i)) t'
     | XLet b e1 e2 ->
-      esystem_let (fun i v -> (v, i)) (esystem_of_exp e1) (esystem_of_exp e2)
+      // Tiny optimisation: mark interesting lets as no-inline; variables and values can be inlined
+      (match e1 with
+      | XBase _ -> esystem_let (fun i v -> (v, i)) (esystem_of_exp e1) (esystem_of_exp e2)
+      | _ -> esystem_let_no_inline (fun i v -> (v, i)) (esystem_of_exp e1) (esystem_of_exp e2))
     | XCheck status e1 ->
       esystem_of_exp e1
     | XContract status rely guar impl ->
