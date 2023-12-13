@@ -98,6 +98,33 @@ let trigger_tx_step
   (error:         Types.error_severity)
   = XL.mk_step trigger_tx_system (tx_status, (bus_status, (fetch, (sync_state, (error, ())))))
 
+
+
+
+[@@(Tac.postprocess_with (XL.tac_normalize_pure tac_opt))]
+noextract
+let trigger_rx_expr = SugarBase.exp_of_stream2 Ctrl.trigger_rx
+
+[@@(Tac.postprocess_with (XL.tac_normalize_pure tac_opt))]
+type trigger_rx_state = XX.state_of_exp trigger_rx_expr
+
+[@@(Tac.postprocess_with (XL.tac_normalize_pure tac_opt))]
+noextract
+inline_for_extraction
+let trigger_rx_system: XX.esystem (Clocked.t Types.app_message_index & ((Triggers.fetch_result & unit))) trigger_rx_state (Clocked.t bool) =
+  assert_norm (XX.extractable trigger_rx_expr);
+  XX.exec_of_exp trigger_rx_expr
+
+
+[@@(Tac.postprocess_with (XL.tac_extract tac_opt))]
+let trigger_rx_reset = XL.mk_reset trigger_rx_system
+
+[@@(Tac.postprocess_with (XL.tac_extract tac_opt))]
+let trigger_rx_step
+  (rx_app:        Clocked.t Types.app_message_index)
+  (fetch:         Triggers.fetch_result)
+  = XL.mk_step trigger_rx_system (rx_app, (fetch, ()))
+
 (*
 [@@(Tac.postprocess_with (tac_normalize_pure ["Network.TTCan"]))]
 noextract

@@ -46,11 +46,11 @@ let rx_pendings
   let^ array = rec' (fun array ->
     let^ pre_array = BV64I.zero `fby` array in
     // first clear rx from previous check
-    let^ clear_check = Clocked.fold array (fun chk_ix ->
-        BV64I.clear array (S32R.extend chk_ix)
+    let^ clear_check = Clocked.fold pre_array (fun chk_ix ->
+        BV64I.clear pre_array (S32R.extend chk_ix)
       ) (Clocked.none' `fby` chk) in
     // next update with newest receive
-    let^ rx_array = Clocked.fold array (fun rx_ix ->
+    let^ rx_array = Clocked.fold pre_array (fun rx_ix ->
         BV64I.set clear_check (S32R.extend rx_ix)
       ) rx in
     rx_array
