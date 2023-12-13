@@ -44,9 +44,6 @@ FSTAR_OPT		  ?= $(FSTAR_INCLUDES) $(FSTAR_PROOF_OPT) $(FSTAR_CACHE) $(FSTAR_EXTR
 
 FSTAR_SRCS = $(wildcard $(addsuffix *.fst,$(FSTAR_SRC_DIRS)) $(addsuffix *.fsti,$(FSTAR_SRC_DIRS)))
 
-x:
-	echo $(FSTAR_SRCS)
-
 .PHONY: all
 all: verify-retry extract
 
