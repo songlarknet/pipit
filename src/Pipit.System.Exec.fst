@@ -16,17 +16,20 @@ type esystem (input: Type) (state: option Type) (result: Type) = {
     (option_type_sem state & result);
 }
 
+noextract inline_for_extraction
 let esystem_const (#input #result: Type) (v: result): esystem input None result =
   { init = ();
     step = (fun i s -> ((), v));
   }
 
+noextract inline_for_extraction
 let esystem_project (#input #result: Type) (f: input -> result):
        esystem input None result =
   { init = ();
     step = (fun i s -> ((), f i));
   }
 
+noextract inline_for_extraction
 let esystem_with_input (#input #input' #result: Type) (#state: option Type) (f: input' -> input)
     (t: esystem input state result):
         esystem input' state result =
@@ -34,6 +37,7 @@ let esystem_with_input (#input #input' #result: Type) (#state: option Type) (f: 
     step = (fun i s -> t.step (f i) s);
   }
 
+noextract inline_for_extraction
 let esystem_pre (#input #v: Type) (#state1: option Type) (init: v)
   (t1: esystem input state1 v):
        esystem input (Some v `type_join` state1) v =
@@ -43,6 +47,7 @@ let esystem_pre (#input #v: Type) (#state1: option Type) (init: v)
       (type_join_tup v' s1', type_join_fst s));
   }
 
+noextract inline_for_extraction
 let esystem_mu_causal (#input #input' #v: Type)
   (#state1: option Type)
   (bottom: v)
@@ -59,6 +64,7 @@ let esystem_mu_causal (#input #input' #v: Type)
       (s', r));
   }
 
+noextract inline_for_extraction
 let esystem_let (#input #input' #v1 #v2: Type)
   (#state1 #state2: option Type)
   (extend: input -> v1 -> input')
@@ -72,6 +78,7 @@ let esystem_let (#input #input' #v1 #v2: Type)
       (type_join_tup s1' s2', r2));
   }
 
+noextract inline_for_extraction
 let esystem_let_no_inline (#input #input' #v1 #v2: Type)
   (#state1 #state2: option Type)
   (extend: input -> v1 -> input')
@@ -89,6 +96,7 @@ let esystem_let_no_inline (#input #input' #v1 #v2: Type)
       (type_join_tup s1' s2', r2));
   }
 
+noextract inline_for_extraction
 let esystem_unit_state (#input #result: Type)
     (t: esystem input None result):
         esystem input (Some unit) result =
