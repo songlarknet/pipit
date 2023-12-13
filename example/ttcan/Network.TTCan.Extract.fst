@@ -4,6 +4,7 @@ module Network.TTCan.Extract
 module Types   = Network.TTCan.Types
 module Clocked = Network.TTCan.Prim.Clocked
 module Ctrl    = Network.TTCan.Impl.Controller
+module Triggers= Network.TTCan.Impl.Triggers
 
 module SugarBase = Pipit.Sugar.Base
 module XX      = Pipit.Exec.Exp
@@ -41,31 +42,61 @@ let tac_opt = ["Network.TTCan"]
 // noextract
 // let modes_expr = SugarBase.exp_of_stream7 (Ctrl.modes cfg)
 
-// [@@(Tac.postprocess_with (XL.tac_normalize_pure tac_opt))]
-// noextract
-// let trigger_fetch_expr = SugarBase.exp_of_stream4 (Ctrl.trigger_fetch cfg)
+[@@(Tac.postprocess_with (XL.tac_normalize_pure tac_opt))]
+noextract
+let trigger_fetch_expr = SugarBase.exp_of_stream4 (Ctrl.trigger_fetch cfg)
 
-// [@@(Tac.postprocess_with (XL.tac_normalize_pure tac_opt))]
-// type trigger_fetch_state = XX.state_of_exp trigger_fetch_expr
+[@@(Tac.postprocess_with (XL.tac_normalize_pure tac_opt))]
+type trigger_fetch_state = XX.state_of_exp trigger_fetch_expr
 
-// [@@(Tac.postprocess_with (XL.tac_normalize_pure tac_opt))]
-// noextract
-// inline_for_extraction
-// let trigger_fetch_system =
-//   assert_norm (XX.extractable trigger_fetch_expr);
-//   XX.exec_of_exp trigger_fetch_expr
+[@@(Tac.postprocess_with (XL.tac_normalize_pure tac_opt))]
+noextract
+inline_for_extraction
+let trigger_fetch_system: XX.esystem (bool & (Types.ntu & (Types.cycle_index & (Types.ref_offset & unit)))) trigger_fetch_state Triggers.fetch_result =
+  assert_norm (XX.extractable trigger_fetch_expr);
+  XX.exec_of_exp trigger_fetch_expr
 
-// [@@(Tac.postprocess_with (XL.tac_extract tac_opt))]
-// let trigger_fetch_reset = XL.mk_reset trigger_fetch_system
 
-// [@@(Tac.postprocess_with (XL.tac_extract tac_opt))]
-// let trigger_fetch_step
-//   (ref_ck:        bool)
-//   (cycle_time:    Types.ntu)
-//   (cycle_index:   Types.cycle_index)
-//   (ref_trigger_offset:
-//                   Types.ref_offset)
-//   = XL.mk_step trigger_fetch_system (ref_ck, (cycle_time, (cycle_index, (ref_trigger_offset, ()))))
+[@@(Tac.postprocess_with (XL.tac_extract tac_opt))]
+let trigger_fetch_reset = XL.mk_reset trigger_fetch_system
+
+[@@(Tac.postprocess_with (XL.tac_extract tac_opt))]
+let trigger_fetch_step
+  (ref_ck:        bool)
+  (cycle_time:    Types.ntu)
+  (cycle_index:   Types.cycle_index)
+  (ref_trigger_offset:
+                  Types.ref_offset)
+  = XL.mk_step trigger_fetch_system (ref_ck, (cycle_time, (cycle_index, (ref_trigger_offset, ()))))
+
+
+
+[@@(Tac.postprocess_with (XL.tac_normalize_pure tac_opt))]
+noextract
+let trigger_tx_expr = SugarBase.exp_of_stream5 Ctrl.trigger_tx
+
+[@@(Tac.postprocess_with (XL.tac_normalize_pure tac_opt))]
+type trigger_tx_state = XX.state_of_exp trigger_tx_expr
+
+[@@(Tac.postprocess_with (XL.tac_normalize_pure tac_opt))]
+noextract
+inline_for_extraction
+let trigger_tx_system: XX.esystem (Types.tx_status & (Types.bus_status & (Triggers.fetch_result & (Types.sync_mode & (Types.error_severity & unit))))) trigger_tx_state (Clocked.t Types.app_message_index & Clocked.t bool) =
+  assert_norm (XX.extractable trigger_tx_expr);
+  XX.exec_of_exp trigger_tx_expr
+
+
+[@@(Tac.postprocess_with (XL.tac_extract tac_opt))]
+let trigger_tx_reset = XL.mk_reset trigger_tx_system
+
+[@@(Tac.postprocess_with (XL.tac_extract tac_opt))]
+let trigger_tx_step
+  (tx_status:     Types.tx_status)
+  (bus_status:    Types.bus_status)
+  (fetch:         Triggers.fetch_result)
+  (sync_state:    Types.sync_mode)
+  (error:         Types.error_severity)
+  = XL.mk_step trigger_tx_system (tx_status, (bus_status, (fetch, (sync_state, (error, ())))))
 
 (*
 [@@(Tac.postprocess_with (tac_normalize_pure ["Network.TTCan"]))]
@@ -97,3 +128,10 @@ let step
   (bus_status: Types.bus_status)
   = XL.mk_step system (local_time, (mode_cmd, (rx_ref, (rx_app, (tx_status, (bus_status, ()))))))
 *)
+
+
+
+// #push-options "--trace_tactics"
+// #push-options "--tactic_trace_d 1"
+// #push-options "--debug Network.TTCan.Extract --debug_level NBE"
+

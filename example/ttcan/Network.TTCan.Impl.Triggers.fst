@@ -177,8 +177,8 @@ let fetch
   let open S in
   let is_trigger_started (tr: S.stream trigger) =
     U64.(S32R.s32r_to_u64 (get_time_mark tr) <= cycle_time) in
+  let^ next = prefetch cfg reset_ck cycle_time cycle_index ref_trigger_offset in
   rec' (fun (fetch: S.stream fetch_result) ->
-    let^ next = prefetch cfg reset_ck cycle_time cycle_index ref_trigger_offset in
     // If the new trigger is enabled and is ready to start, then the new trigger has precedence. This case allows Watch_Triggers to pre-empt Tx_Ref_Triggers, as Tx_Ref_Triggers do not expire otherwise.
     // Otherwise, if the old trigger expired on the previous tick, then we the new trigger can be started. The delay here ensures that the caller gets a chance to handle the expired triggers.
     let^ advance = reset_ck \/
