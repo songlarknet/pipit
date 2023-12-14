@@ -21,6 +21,16 @@ module UInt8 = FStar.UInt8
 module UInt64= FStar.UInt64
 module Cast  = FStar.Int.Cast
 
+
+type driver_input = {
+  local_time:  ntu;
+  mode_cmd:    Clocked.t mode;
+  tx_status:   tx_status;
+  bus_status:  bus_status;
+  rx_ref:      Clocked.t ref_message;
+  rx_app:      Clocked.t app_message_index;
+}
+
 (* Result of top-level controller node *)
 type controller_result = {
   // Bare minimum fields:
@@ -55,7 +65,19 @@ type modes_result = {
 }
 
 
-(**** Streaming boilerplate: controller_result stream instance. ****)
+(**** Streaming boilerplate: struct stream instances and lifting getters/constructors. ****)
+instance has_stream_driver_input: S.has_stream driver_input = {
+  ty_id       = [`%driver_input];
+  val_default = { local_time = S.val_default; mode_cmd = S.val_default; tx_status = S.val_default; bus_status = S.val_default; rx_ref = S.val_default; rx_app = S.val_default; } <: driver_input;
+}
+
+%splice[get_local_time] (SugarTac.lift_prim "get_local_time" (`(fun (d: driver_input) -> d.local_time)))
+%splice[get_mode_cmd] (SugarTac.lift_prim "get_mode_cmd" (`(fun (d: driver_input) -> d.mode_cmd)))
+%splice[get_tx_status] (SugarTac.lift_prim "get_tx_status" (`(fun (d: driver_input) -> d.tx_status)))
+%splice[get_bus_status] (SugarTac.lift_prim "get_bus_status" (`(fun (d: driver_input) -> d.bus_status)))
+%splice[get_rx_ref] (SugarTac.lift_prim "get_rx_ref" (`(fun (d: driver_input) -> d.rx_ref)))
+%splice[get_rx_app] (SugarTac.lift_prim "get_rx_app" (`(fun (d: driver_input) -> d.rx_app)))
+
 instance has_stream_controller_result: S.has_stream controller_result = {
   ty_id       = [`%controller_result];
   val_default = { error = S.val_default; driver_enable_acks = S.val_default; tx_ref = S.val_default; tx_app = S.val_default; tx_delay = S.val_default; } <: controller_result;
@@ -75,31 +97,27 @@ instance has_stream_modes_result: S.has_stream modes_result = {
 
 let modes
   (cfg: config)
+  (input:         S.stream driver_input)
   (pre_error:     S.stream error_severity)
-  (local_time:    S.stream ntu)
-  (mode_cmd:      S.stream (Clocked.t mode))
-  (rx_ref:        S.stream (Clocked.t ref_message))
   (pre_tx_ref:    S.stream (Clocked.t ref_message))
-  (tx_status:     S.stream tx_status)
-  (bus_status:    S.stream bus_status)
     : S.stream modes_result =
   let open S in
-  let^ mode        = States.mode_states mode_cmd in
+  let^ mode        = States.mode_states (get_mode_cmd input) in
 
-  let^ last_ref    = States.rx_ref_filters rx_ref pre_tx_ref tx_status in
+  let^ last_ref    = States.rx_ref_filters (get_rx_ref input) pre_tx_ref (get_tx_status input) in
   let^ ref_ck      = Clocked.get_clock last_ref in
   let^ ref_master  = Clocked.map get_master last_ref in
   let^ ref_sof     = Clocked.map get_sof last_ref in
   let^ cycle_index = Clocked.current_or_else (S32R.s32r' 0) (Clocked.map get_cycle_index last_ref) in
 
-  let^ cycle_time  = States.cycle_times mode ref_sof local_time in
+  let^ cycle_time  = States.cycle_times mode ref_sof (get_local_time input) in
 
   (*^9.3.7 CAN_Bus_Off (S3): the controller went bus-off due to CAN-specific errors *)
   let^ error_CAN_Bus_Off
-                   = Util.latch { set = bus_status = const Bus_Off; reset = mode = const Mode_Configure } in
+                   = Util.latch { set = get_bus_status input = const Bus_Off; reset = mode = const Mode_Configure } in
   let^ error       = if_then_else error_CAN_Bus_Off (const S3_Severe) pre_error in
 
-  let^ sync_state  = States.sync_states mode error ref_sof local_time in
+  let^ sync_state  = States.sync_states mode error ref_sof (get_local_time input) in
   let^ master_state= States.master_modes cfg mode error ref_master in
 
   let^ ref_trigger_offset
@@ -209,7 +227,7 @@ let trigger_ref
 
 
 
-let controller
+let controller'
   (cfg:           config)
   (ref_ck:        S.stream bool)
   (mode:          S.stream mode)
@@ -295,6 +313,25 @@ let controller
   controller_result_new error driver_enable_acks tx_ref tx_app tx_delay
 
 
+
+let controller
+  (cfg:           config)
+  (input:         S.stream driver_input)
+  (ref_ck:        S.stream bool)
+  (mode:          S.stream mode)
+  (cycle_index:   S.stream cycle_index)
+  (cycle_time:    S.stream ntu)
+  (fetch:         S.stream Triggers.fetch_result)
+  (sync_state:    S.stream sync_mode)
+  (error_CAN_Bus_Off:
+                  S.stream bool)
+  (error:         S.stream error_severity)
+    : S.stream controller_result =
+  let open S in
+  let^ tx_ref = trigger_ref cfg (get_local_time input) (get_tx_status input) (get_bus_status input) cycle_index cycle_time fetch sync_state error in
+  let^ rx_msc_upd = trigger_rx (get_rx_app input) fetch in
+  let^ tx = trigger_tx (get_tx_status input) (get_bus_status input) fetch sync_state error in
+  controller' cfg ref_ck mode cycle_time fetch sync_state error_CAN_Bus_Off error tx_ref (fst tx) (snd tx) rx_msc_upd
 (*
 
 

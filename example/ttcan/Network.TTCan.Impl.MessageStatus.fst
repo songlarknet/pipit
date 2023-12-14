@@ -33,9 +33,9 @@ let message_status_counters
   let^ array = rec' (fun array ->
     let^ pre_array = MSC64.zero `fby` array in
     Clocked.fold pre_array (fun inc ->
-      let^ msc = MSC64.index array message_id in
+      let^ msc = MSC64.index pre_array message_id in
       let^ msc = if_then_else inc (S32R.inc_sat msc) (S32R.dec_sat msc) in
-      MSC64.update array message_id msc) update) in
+      MSC64.update pre_array message_id msc) update) in
   MSC64.index array message_id
 
 let rx_pendings
