@@ -11,10 +11,10 @@ Pipit reuses F\*'s proof automation for proving properties of programs.
 We also reuse F\*'s C code generation to generate real-time code.
 
 The Pipit library is in the `src` subdirectory and has four main pieces:
-* the source language, which provides some syntactic niceties for writing language (`Pipit.Sugar`);
+* the source language, which provides some syntactic niceties for writing programs (`Pipit.Sugar`);
 * the core expression language, which provides a bigstep semantics (`Pipit.Exp` and submodules);
-* transition systems, which is used for reasoning about programs (`Pipit.System` and submodules); and
-* executable systems, which are used for compiling to C code (`Pipit.Exec` and submodules).
+* transition systems, which are used for reasoning about programs (`Pipit.System` and submodules); and
+* executable systems, which are used for compiling to C code (`Pipit.System.Exec` and submodules).
 
 Programs written in the core language are translated to a transition system for verification; this translation is verified (it preserves semantics).
 The translation to executable systems preserves types, but is not yet verified to preserve semantics.
@@ -28,6 +28,8 @@ Pipit requires F\* and Karamel for generating C code.
 Pipit uses [opam](https://opam.ocaml.org/), the OCaml package manager.
 
 Pipit requires a recent development version of F\*.
+We maintain a fork with the right version at [https://github.com/songlarknet/FStar/tree/pipit](songlarknet/FStar).
+This fork currently has some minor improvements to avoid duplication of work during code-generation, which we expect to be integrated upstream in the near future.
 
 ### Dependency installation
 
@@ -44,10 +46,10 @@ opam update
 opam switch create . 4.14.1
 
 # Tell opam to use the development version of F* but don't install it yet
-opam pin add fstar --dev-repo --no-action
+opam pin add fstar git+https://github.com/songlarknet/FStar#pipit --no-action
 
 # Tell opam where to find the local repo for Karamel and install it and F*
-opam pin add karamel --dev-repo --yes
+opam pin add karamel git+https://github.com/songlarknet/karamel#pipit --yes
 ```
 #### Modern Linux (no Python 2.7)
 

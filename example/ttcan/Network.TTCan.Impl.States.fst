@@ -25,6 +25,20 @@ let cycle_time_capture
   // check "" (sofar (time_ascending local_time /\ cycle_time_capture <= local_time) ==> cycle_time <= local_time);^
   cycle_time
 
+let cycle_times
+  (mode:       S.stream mode)
+  (ref_mark:   S.stream (Clocked.t ntu))
+  (local_time: S.stream ntu)
+    : S.stream ntu =
+  let open S in
+  // Reset cycle_time=0 when leaving configure to satisfy Sync_Mode.TS1 below; also reset when in configure time to avoid returning an invalid cycle time
+  let^ cycle_time_reset = (mode = const Mode_Configure \/ pre (mode = const Mode_Configure)) in
+  let^ cycle_time = cycle_time_capture local_time cycle_time_reset ref_mark in
+  (*^9.4.2 transition Sync_Mode.TS1: Config_Mode is left, Cycle_Time shall be zero *)
+  // --%PROPERTY "^9.4.2 Sync_Mode.TS1: Config_Mode is left, Cycle_Time shall be zero" falling_edge(mode = Mode_Configure) => cycle_time = 0;
+  // --%PROPERTY "Sync_Mode.Cycle_Time:ref_mark reset" sync_state = In_Schedule and ref_mark_ck => cycle_time = local_time - ref_mark;
+  cycle_time
+
 let mode_states
   (mode_cmd: S.stream (Clocked.t mode))
     : S.stream mode =
@@ -35,15 +49,8 @@ let sync_states
   (error:      S.stream error_severity)
   (ref_mark:   S.stream (Clocked.t ntu))
   (local_time: S.stream ntu)
-    : S.stream (sync_mode & ntu) =
+    : S.stream sync_mode =
   let open S in
-  // Reset cycle_time=0 when leaving configure to satisfy Sync_Mode.TS1 below; also reset when in configure time to avoid returning an invalid cycle time
-  let^ cycle_time_reset = (mode = const Mode_Configure \/ pre (mode = const Mode_Configure)) in
-  let^ cycle_time = cycle_time_capture local_time cycle_time_reset ref_mark in
-  (*^9.4.2 transition Sync_Mode.TS1: Config_Mode is left, Cycle_Time shall be zero *)
-  // --%PROPERTY "^9.4.2 Sync_Mode.TS1: Config_Mode is left, Cycle_Time shall be zero" falling_edge(mode = Mode_Configure) => cycle_time = 0;
-  // --%PROPERTY "Sync_Mode.Cycle_Time:ref_mark reset" sync_state = In_Schedule and ref_mark_ck => cycle_time = local_time - ref_mark;
-
   (*^9.4.2 Sync_Mode *)
   let sync_state = rec' (fun sync_state ->
     let^ pre_sync = Sync_Off `fby` sync_state in
@@ -71,7 +78,7 @@ let sync_states
             // IMPOSSIBLE
             (const Sync_Off)))))
   in
-  tup sync_state cycle_time
+  sync_state
   // --%PROPERTY mode = Mode_Configure => sync_state = Sync_Off;
   // --%PROPERTY error = S3_Severe => sync_state = Sync_Off;
 

@@ -36,12 +36,12 @@ instance has_stream_S32R (b: bounds): Sugar.has_stream (t b) = {
 
 
 let inc_sat' (#b: bounds) (x: t b): t b =
-  if v x < b.max
+  if x.repr `REPR.lt` REPR.int_to_t b.max
   then { repr = REPR.add x.repr 1l }
   else x
 
 let dec_sat' (#b: bounds) (x: t b): t b =
-  if v x > b.min
+  if x.repr `REPR.gt` REPR.int_to_t b.min
   then { repr = REPR.sub x.repr 1l }
   else x
 
@@ -83,7 +83,7 @@ let add_sat' (#b1: bounds) (#b2: bounds { Int.fits (b1.min + b2.min) REPR.n /\ I
 // very under-specified rem: requires minimum bound to be 0 to avoid overflows like -32768/-1
 let rem_underspec' (#b: bounds { b.min == 0 }) (x y: t b): t b  =
   // refinement? { REPR.v y.repr <> 0 ==> REPR.v r.repr == REPR.v x.repr % REPR.v y.repr }
-  if v y <> 0 then begin
+  if y.repr <> 0l then begin
     let r = REPR.rem x.repr y.repr in
     { repr = r }
   end else
@@ -99,20 +99,19 @@ let pow2_n (#b: bounds { b.min == 0 /\ b.max <= 30 }) (x: t b): t { min = 1; max
   let shift = Cast.int32_to_uint32 x.repr in
   Math.pow2_le_compat 30 (UInt32.v shift);
   Math.pow2_le_compat b.max (UInt32.v shift);
-  let pow = REPR.shift_left REPR.one shift in
+  let pow = REPR.shift_left 1l shift in
   { repr = pow }
 
 #pop-options
 
 let pow2_minus_one (#b: bounds { b.min == 0 /\ b.max <= 30 }) (x: t b): t { min = 0; max = Int.pow2_n #REPR.n b.max - 1 } =
   let pow = pow2_n x in
-  { repr = REPR.sub pow.repr REPR.one }
+  { repr = REPR.sub pow.repr 1l }
 
 let gt'  (#b: bounds) (x y: t b): bool = REPR.gt  x.repr y.repr
 let gte' (#b: bounds) (x y: t b): bool = REPR.gte x.repr y.repr
 let lt'  (#b: bounds) (x y: t b): bool = REPR.lt  x.repr y.repr
 let lte' (#b: bounds) (x y: t b): bool = REPR.lte x.repr y.repr
-
 
 let s32r (#b: bounds) (x: int { b.min <= x /\ x <= b.max }): Sugar.stream (t b) =
   Sugar.const (s32r' #b x)

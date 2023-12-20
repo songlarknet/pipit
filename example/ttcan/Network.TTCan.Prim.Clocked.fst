@@ -85,3 +85,7 @@ let current_or_else (#a: eqtype) {| Sugar.has_stream a |} (dflt: a) (clck: Sugar
   let open Sugar in
   rec' (fun acc ->
     get_or_else (dflt `fby` acc) clck)
+
+let or_else (#a: eqtype) {| Sugar.has_stream a |} (u v: Sugar.stream (t a)): Sugar.stream (t a) =
+  let open Sugar in
+  if_then_else (get_clock u) u v

@@ -31,7 +31,7 @@ FSTAR_ARITH_UNBOX ?= --smtencoding.l_arith_repr native --smtencoding.elim_box tr
 FSTAR_PROOF_OPT   ?=
 
 # Make 3.81 on OSX expands `$(wildcard example/*/)` to include example/blah.fst, despite the trailing slash. So, it's better to just list the directories for now
-FSTAR_SRC_DIRS = example/ example/ttcan src/ test/ rts/fstar
+FSTAR_SRC_DIRS = example/ example/ttcan/ src/ test/ rts/fstar/
 
 FSTAR_INCLUDES	  ?= $(addprefix --include ,$(FSTAR_SRC_DIRS))
 FSTAR_CACHE       ?= --cache_dir $(BUILD)/cache --cache_checked_modules --already_cached Prims,FStar,LowStar
@@ -120,7 +120,7 @@ dev-init:
 	@echo "* Create a local opam switch with OCaml 4.14"
 	@opam switch create . 4.14.1
 	@echo "* Pinning development version of F*"
-	@opam pin add fstar --dev-repo --no-action
+	@opam pin add fstar git+https://github.com/songlarknet/FStar#pipit --no-action
 	@echo "* Pinning development version of karamel; building"
-	@opam pin add karamel --dev-repo --yes --no-depexts
+	@opam pin add karamel git+https://github.com/songlarknet/karamel#pipit --yes --no-depexts
 # no-depexts is required for Linux without Python 2.7 apt package

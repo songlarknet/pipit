@@ -33,9 +33,9 @@ let message_status_counters
   let^ array = rec' (fun array ->
     let^ pre_array = MSC64.zero `fby` array in
     Clocked.fold pre_array (fun inc ->
-      let^ msc = MSC64.index array message_id in
+      let^ msc = MSC64.index pre_array message_id in
       let^ msc = if_then_else inc (S32R.inc_sat msc) (S32R.dec_sat msc) in
-      MSC64.update array message_id msc) update) in
+      MSC64.update pre_array message_id msc) update) in
   MSC64.index array message_id
 
 let rx_pendings
@@ -46,11 +46,11 @@ let rx_pendings
   let^ array = rec' (fun array ->
     let^ pre_array = BV64I.zero `fby` array in
     // first clear rx from previous check
-    let^ clear_check = Clocked.fold array (fun chk_ix ->
-        BV64I.clear array (S32R.extend chk_ix)
+    let^ clear_check = Clocked.fold pre_array (fun chk_ix ->
+        BV64I.clear pre_array (S32R.extend chk_ix)
       ) (Clocked.none' `fby` chk) in
     // next update with newest receive
-    let^ rx_array = Clocked.fold array (fun rx_ix ->
+    let^ rx_array = Clocked.fold pre_array (fun rx_ix ->
         BV64I.set clear_check (S32R.extend rx_ix)
       ) rx in
     rx_array

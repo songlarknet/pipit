@@ -9,7 +9,7 @@ irreducible
 let norm_attr = ()
 
 // Evaluate anything inside Pipit, anything in F*, and anything marked with [@@norm_attr]
-let norm_delta_options (namespaces: list string) = [delta_namespace ("Pipit" :: "FStar" :: namespaces); delta_attr [`%norm_attr]; nbe; zeta; iota; primops]
+let norm_delta_options (namespaces: list string) = [delta_namespace ("Pipit" :: "FStar.Pervasives" :: "FStar.List" :: "FStar.Option" :: "FStar.Seq" :: namespaces); delta_attr [`%norm_attr]; nbe; zeta; iota; primops]
 
 (* Re-exports *)
 let norm_full (namespaces: list string) =

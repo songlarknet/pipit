@@ -11,7 +11,7 @@ module PM = Pipit.Prop.Metadata
 open Pipit.System.Base
 open Pipit.System.Exec
 
-
+noextract inline_for_extraction
 let rec estate_of_exp (#t: table) (#c: context t) (#a: t.ty) (e: exp t c a): Tot (option Type) (decreases e) =
   match e with
   | XBase _ -> None
@@ -32,6 +32,7 @@ and estate_of_exp_apps (#t: table) (#c: context t) (#a: funty t.ty) (e: exp_apps
 let exsystem (#t: table) (#c: context t) (#a: t.ty) (e: exp t c a) = esystem (row c) (estate_of_exp e) (t.ty_sem a)
 
 
+noextract inline_for_extraction
 let esystem_of_exp_base
   (#t: table) (#c: context t) (#a: t.ty)
   (e: exp_base t c a { Causal.causal_base e }):
@@ -41,7 +42,7 @@ let esystem_of_exp_base
     | XBVar x -> esystem_project (fun i -> CR.index (context_sem c) i x)
     | XVar x -> false_elim ()
 
-
+noextract inline_for_extraction
 let rec esystem_of_exp
   (#t: table) (#c: context t) (#a: t.ty)
   (e: exp t c a { Causal.causal e }):
@@ -57,13 +58,17 @@ let rec esystem_of_exp
       let t' = esystem_of_exp e1 in
       esystem_mu_causal #(row c) #(t.ty_sem a & row c) (t.val_default a) (fun i v -> (v, i)) t'
     | XLet b e1 e2 ->
-      esystem_let (fun i v -> (v, i)) (esystem_of_exp e1) (esystem_of_exp e2)
+      // Tiny optimisation: mark interesting lets as no-inline; variables and values can be inlined
+      (match e1 with
+      | XBase _ -> esystem_let (fun i v -> (v, i)) (esystem_of_exp e1) (esystem_of_exp e2)
+      | _ -> esystem_let_no_inline (fun i v -> (v, i)) (esystem_of_exp e1) (esystem_of_exp e2))
     | XCheck status e1 ->
       esystem_of_exp e1
     | XContract status rely guar impl ->
       esystem_of_exp impl
 
-and esystem_of_exp_apps
+and
+esystem_of_exp_apps
   (#t: table) (#c: context t) (#a: funty t.ty) (#res #inp: Type0)
   (e: exp_apps t c a { Causal.causal_apps e })
   (f: funty_sem t.ty_sem a -> inp -> res):

@@ -107,88 +107,60 @@ let _exp_of_stream (#t: table) (#ty: t.ty) (e: stream t ty) (s: _state t): cexp 
   a
 
 
+[@@"opaque_to_smt"]
+let _exp_of_streamS (#t: table) (#a #b: t.ty) (#c: context t) (#rem: Type)
+  (g: rem -> _state t -> cexp t c b)
+  (f: stream t a -> rem)
+  (s: _state t)
+    : cexp t (a :: c) b =
+  let (ax, s) = _freshm a s in
+  let a       = XBase (XVar ax) in
+  let astrm   = _purem a in
+  let rem     = f astrm in
+  let expb    = g rem s in
+  CX.close1 expb ax
+
 (**** Top-level / integration combinators ****)
 [@@"opaque_to_smt"]
 let exp_of_stream0 (#t: table) (#ty: t.ty) (e: stream t ty) : cexp t [] ty =
   _exp_of_stream e (_state0 t)
 
+
 [@@"opaque_to_smt"]
 let exp_of_stream1 (#t: table) (#a #b: t.ty) (f: stream t a -> stream t b) : cexp t [a] b =
-  let (ax, s) = _freshm a (_state0 t) in
-  let a       = XBase (XVar ax) in
-  let b       = _exp_of_stream (f (_purem a)) s in
-  CX.close1 b ax
+  _exp_of_streamS _exp_of_stream f (_state0 t)
 
 [@@"opaque_to_smt"]
 let exp_of_stream2 (#a #b #c: ('t).ty) (f: stream 't a -> stream 't b -> stream 't c) : cexp 't [a; b] c =
-  let s       = _state0 't in
-  let (ax, s) = _freshm a s in
-  let (bx, s) = _freshm b s in
-  let a       = XBase (XVar ax) in
-  let b       = XBase (XVar bx) in
-  let c       = _exp_of_stream (f (_purem a) (_purem b)) s in
-  CX.close1 (CX.close1 c bx) ax
+  _exp_of_streamS (_exp_of_streamS _exp_of_stream) f (_state0 't)
 
 [@@"opaque_to_smt"]
 let exp_of_stream3 (#a #b #c #d: ('t).ty) (f: stream 't a -> stream 't b -> stream 't c -> stream 't d) : cexp 't [a; b; c] d =
-  let s       = _state0 't in
-  let (ax, s) = _freshm a s in
-  let (bx, s) = _freshm b s in
-  let (cx, s) = _freshm c s in
-  let a       = XBase (XVar ax) in
-  let b       = XBase (XVar bx) in
-  let c       = XBase (XVar cx) in
-  let d       = _exp_of_stream (f (_purem a) (_purem b) (_purem c)) s in
-  CX.close1 (CX.close1 (CX.close1 d cx) bx) ax
+  _exp_of_streamS (_exp_of_streamS (_exp_of_streamS _exp_of_stream)) f (_state0 't)
 
 [@@"opaque_to_smt"]
 let exp_of_stream4 (#a #b #c #d #e: ('t).ty) (f: stream 't a -> stream 't b -> stream 't c -> stream 't d -> stream 't e) : cexp 't [a; b; c; d] e =
-  let s       = _state0 't in
-  let (ax, s) = _freshm a s in
-  let (bx, s) = _freshm b s in
-  let (cx, s) = _freshm c s in
-  let (dx, s) = _freshm d s in
-  let a       = XBase (XVar ax) in
-  let b       = XBase (XVar bx) in
-  let c       = XBase (XVar cx) in
-  let d       = XBase (XVar dx) in
-  let e       = _exp_of_stream (f (_purem a) (_purem b) (_purem c) (_purem d)) s in
-  CX.close1 (CX.close1 (CX.close1 (CX.close1 e dx) cx) bx) ax
+  _exp_of_streamS (_exp_of_streamS (_exp_of_streamS (_exp_of_streamS _exp_of_stream))) f (_state0 't)
 
 [@@"opaque_to_smt"]
 let exp_of_stream5 (#a #b #c #d #e #f: ('t).ty) (fn: stream 't a -> stream 't b -> stream 't c -> stream 't d -> stream 't e -> stream 't f) : cexp 't [a; b; c; d; e] f =
-  let s       = _state0 't in
-  let (ax, s) = _freshm a s in
-  let (bx, s) = _freshm b s in
-  let (cx, s) = _freshm c s in
-  let (dx, s) = _freshm d s in
-  let (ex, s) = _freshm e s in
-  let a       = XBase (XVar ax) in
-  let b       = XBase (XVar bx) in
-  let c       = XBase (XVar cx) in
-  let d       = XBase (XVar dx) in
-  let e       = XBase (XVar ex) in
-  let f       = _exp_of_stream (fn (_purem a) (_purem b) (_purem c) (_purem d) (_purem e)) s in
-  CX.close1 (CX.close1 (CX.close1 (CX.close1 (CX.close1 f ex) dx) cx) bx) ax
+  _exp_of_streamS (_exp_of_streamS (_exp_of_streamS (_exp_of_streamS (_exp_of_streamS _exp_of_stream)))) fn (_state0 't)
 
 [@@"opaque_to_smt"]
-// let exp_of_stream6 (#a #b #c #d #e #f #g: ('t).ty) (fn: stream 't a -> stream 't b -> stream 't c -> stream 't d -> stream 't e -> stream 't f -> stream 't g) : cexp 't [] g =
 let exp_of_stream6 (#a #b #c #d #e #f #g: ('t).ty) (fn: stream 't a -> stream 't b -> stream 't c -> stream 't d -> stream 't e -> stream 't f -> stream 't g) : cexp 't [a; b; c; d; e; f] g =
-  let s       = _state0 't in
-  let (ax, s) = _freshm a s in
-  let (bx, s) = _freshm b s in
-  let (cx, s) = _freshm c s in
-  let (dx, s) = _freshm d s in
-  let (ex, s) = _freshm e s in
-  let (fx, s) = _freshm f s in
-  let a       = XBase (XVar ax) in
-  let b       = XBase (XVar bx) in
-  let c       = XBase (XVar cx) in
-  let d       = XBase (XVar dx) in
-  let e       = XBase (XVar ex) in
-  let f       = XBase (XVar fx) in
-  let g       = _exp_of_stream (fn (_purem a) (_purem b) (_purem c) (_purem d) (_purem e) (_purem f)) s in
-  CX.close1 (CX.close1 (CX.close1 (CX.close1 (CX.close1 (CX.close1 g fx) ex) dx) cx) bx) ax
+  _exp_of_streamS (_exp_of_streamS (_exp_of_streamS (_exp_of_streamS (_exp_of_streamS (_exp_of_streamS _exp_of_stream))))) fn (_state0 't)
+
+[@@"opaque_to_smt"]
+let exp_of_stream7 (#a #b #c #d #e #f #g #h: ('t).ty) (fn: stream 't a -> stream 't b -> stream 't c -> stream 't d -> stream 't e -> stream 't f -> stream 't g -> stream 't h) : cexp 't [a; b; c; d; e; f; g] h =
+  _exp_of_streamS (_exp_of_streamS (_exp_of_streamS (_exp_of_streamS (_exp_of_streamS (_exp_of_streamS (_exp_of_streamS _exp_of_stream)))))) fn (_state0 't)
+
+[@@"opaque_to_smt"]
+let exp_of_stream8 (#a #b #c #d #e #f #g #h #i: ('t).ty) (fn: stream 't a -> stream 't b -> stream 't c -> stream 't d -> stream 't e -> stream 't f -> stream 't g -> stream 't h -> stream 't i) : cexp 't [a; b; c; d; e; f; g; h] i =
+  _exp_of_streamS (_exp_of_streamS (_exp_of_streamS (_exp_of_streamS (_exp_of_streamS (_exp_of_streamS (_exp_of_streamS (_exp_of_streamS _exp_of_stream))))))) fn (_state0 't)
+
+[@@"opaque_to_smt"]
+let exp_of_stream9 (#a #b #c #d #e #f #g #h #i #j: ('t).ty) (fn: stream 't a -> stream 't b -> stream 't c -> stream 't d -> stream 't e -> stream 't f -> stream 't g -> stream 't h -> stream 't i -> stream 't j) : cexp 't [a; b; c; d; e; f; g; h; i] j =
+  _exp_of_streamS (_exp_of_streamS (_exp_of_streamS (_exp_of_streamS (_exp_of_streamS (_exp_of_streamS (_exp_of_streamS (_exp_of_streamS (_exp_of_streamS _exp_of_stream)))))))) fn (_state0 't)
 
 
 [@@"opaque_to_smt"]
