@@ -73,62 +73,6 @@ let trigger_fetch_step
   = XL.mk_step trigger_fetch_system (ref_ck, (cycle_time, (cycle_index, (ref_trigger_offset, ()))))
 
 
-
-// [@@(Tac.postprocess_with (XL.tac_normalize_pure tac_opt))]
-// noextract
-// let trigger_tx_expr = SugarBase.exp_of_stream5 Ctrl.trigger_tx
-
-// [@@(Tac.postprocess_with (XL.tac_normalize_pure tac_opt))]
-// type trigger_tx_state = XX.state_of_exp trigger_tx_expr
-
-// [@@(Tac.postprocess_with (XL.tac_normalize_pure tac_opt))]
-// noextract
-// inline_for_extraction
-// let trigger_tx_system: XX.esystem (Types.tx_status & (Types.bus_status & (Triggers.fetch_result & (Types.sync_mode & (Types.error_severity & unit))))) trigger_tx_state (Clocked.t Types.app_message_index & Clocked.t bool) =
-//   assert_norm (XX.extractable trigger_tx_expr);
-//   XX.exec_of_exp trigger_tx_expr
-
-
-// [@@(Tac.postprocess_with (XL.tac_extract tac_opt))]
-// let trigger_tx_reset = XL.mk_reset trigger_tx_system
-
-// [@@(Tac.postprocess_with (XL.tac_extract tac_opt))]
-// let trigger_tx_step
-//   (tx_status:     Types.tx_status)
-//   (bus_status:    Types.bus_status)
-//   (fetch:         Triggers.fetch_result)
-//   (sync_state:    Types.sync_mode)
-//   (error:         Types.error_severity)
-//   = XL.mk_step trigger_tx_system (tx_status, (bus_status, (fetch, (sync_state, (error, ())))))
-
-
-
-
-// [@@(Tac.postprocess_with (XL.tac_normalize_pure tac_opt))]
-// noextract
-// let trigger_rx_expr = SugarBase.exp_of_stream2 Ctrl.trigger_rx
-
-// [@@(Tac.postprocess_with (XL.tac_normalize_pure tac_opt))]
-// type trigger_rx_state = XX.state_of_exp trigger_rx_expr
-
-// [@@(Tac.postprocess_with (XL.tac_normalize_pure tac_opt))]
-// noextract
-// inline_for_extraction
-// let trigger_rx_system: XX.esystem (Clocked.t Types.app_message_index & ((Triggers.fetch_result & unit))) trigger_rx_state (Clocked.t bool) =
-//   assert_norm (XX.extractable trigger_rx_expr);
-//   XX.exec_of_exp trigger_rx_expr
-
-
-// [@@(Tac.postprocess_with (XL.tac_extract tac_opt))]
-// let trigger_rx_reset = XL.mk_reset trigger_rx_system
-
-// [@@(Tac.postprocess_with (XL.tac_extract tac_opt))]
-// let trigger_rx_step
-//   (rx_app:        Clocked.t Types.app_message_index)
-//   (fetch:         Triggers.fetch_result)
-//   = XL.mk_step trigger_rx_system (rx_app, (fetch, ()))
-
-
 [@@(Tac.postprocess_with (XL.tac_normalize_pure tac_opt))]
 noextract
 let controller_expr = SugarBase.exp_of_stream9 (Ctrl.controller cfg)
@@ -159,42 +103,4 @@ let controller_step
                   bool)
   (error:         Types.error_severity)
  = XL.mk_step controller_system (input, (ref_ck, (mode, (cycle_index, (cycle_time, (fetch, (sync_state, (error_CAN_Bus_Off, (error, ())))))))))
-
-
-(*
-[@@(Tac.postprocess_with (tac_normalize_pure ["Network.TTCan"]))]
-noextract
-let expr = SugarBase.exp_of_stream6 (Top.controller cfg)
-
-[@@(Tac.postprocess_with (XL.tac_normalize_pure ["Network.TTCan"]))]
-type state = XX.state_of_exp expr
-
-type result = Top.controller_result
-
-[@@(Tac.postprocess_with (XL.tac_normalize_pure ["Network.TTCan"]))]
-noextract
-inline_for_extraction
-let system: XX.esystem (Types.ntu & (Clocked.t Types.mode & (Clocked.t Types.ref_message & (Clocked.t Types.app_message_index & (Types.tx_status & (Types.bus_status & unit)))))) state result =
-  assert_norm (XX.extractable expr);
-  XX.exec_of_exp expr
-
-[@@(Tac.postprocess_with (XL.tac_extract ["Network.TTCan"]))]
-let reset = XL.mk_reset system
-
-[@@(Tac.postprocess_with (XL.tac_extract ["Network.TTCan"]))]
-let step
-  (local_time: Types.ntu)
-  (mode_cmd: Clocked.t Types.mode)
-  (rx_ref: Clocked.t Types.ref_message)
-  (rx_app: Clocked.t Types.app_message_index)
-  (tx_status: Types.tx_status)
-  (bus_status: Types.bus_status)
-  = XL.mk_step system (local_time, (mode_cmd, (rx_ref, (rx_app, (tx_status, (bus_status, ()))))))
-*)
-
-
-
-// #push-options "--trace_tactics"
-// #push-options "--tactic_trace_d 1"
-// #push-options "--debug Network.TTCan.Extract --debug_level NBE"
 
