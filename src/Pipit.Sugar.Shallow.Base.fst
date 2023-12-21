@@ -29,6 +29,11 @@ instance has_stream_bool: has_stream bool = {
   val_default = false;
 }
 
+instance has_stream_unit: has_stream unit = {
+  ty_id       = [`%Prims.unit];
+  val_default = ();
+}
+
 instance has_stream_tup2 {| a: has_stream 'a |} {| b: has_stream 'b |}: has_stream ('a & 'b) = {
   ty_id       = L.(`%Pervasives.tuple2 :: a.ty_id @ b.ty_id);
   val_default = (a.val_default, b.val_default);
@@ -55,7 +60,7 @@ let (let^) {| has_stream 'a |}  {| has_stream 'b |} (f:stream 'a) (g: stream 'a 
 
 let rec' {| has_stream 'a |} (f: stream 'a -> stream 'a): stream 'a = S.rec' f
 
-let check (name: string) (e: stream bool): stream bool =
+let check (name: string) (e: stream bool): stream unit =
   S.check e
 
 let check_that {| has_stream 'a |} (e: stream 'a) (p: stream 'a -> stream bool): stream 'a =

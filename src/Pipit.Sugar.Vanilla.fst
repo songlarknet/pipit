@@ -22,6 +22,7 @@ type stream (a: valtype)  = S.stream table a
 type bools = stream TBool
 type ints  = stream TInt
 type reals = stream TReal
+type units = stream TUnit
 
 let const (#a: valtype) (v: table.ty_sem a): stream a = S.const #table #a v
 
@@ -63,7 +64,7 @@ let letrec2 (#a #b #k: valtype)
   let^ b = recb a in
   kont a b
 
-let check (name: string) (e: bools): bools =
+let check (name: string) (e: bools): units =
   S.check #table e
 
 let check_that (#a: valtype) (e: stream a) (p: stream a -> bools): stream a =

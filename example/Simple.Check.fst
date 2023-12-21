@@ -27,7 +27,7 @@ let count_when (p: bools): ints =
    fby 0 count +^ (if_then_else p z1 z0))
 
 (* forall e. count_when false <= count_when e <= count_when true *)
-let count_when_prop_body (e: bools): bools =
+let count_when_prop_body (e: bools): units =
   let^ count_when_false = count_when ff in
   let^ count_when_e     = count_when e  in
   let^ count_when_true  = count_when tt in
@@ -35,7 +35,7 @@ let count_when_prop_body (e: bools): bools =
   check "count_when false <= count_when e"     (count_when_false <=^ count_when_e);^
   check "count_when e     <= count_when true"  (count_when_e     <=^ count_when_true)
 
-let count_when_prop: bools -> bools =
+let count_when_prop: bools -> units =
   let e = Check.exp_of_stream1 count_when_prop_body in
   assert (Check.system_induct_k1 e) by (T.norm_full ["Simple"]);
   Check.stream_of_checked1 e

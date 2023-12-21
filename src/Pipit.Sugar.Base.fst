@@ -244,7 +244,7 @@ let (let^) (#a #b: ('t).ty) (f: stream 't a) (g: stream 't a -> stream 't b) =
 [@@"opaque_to_smt"]
 let check
   (e: stream 't ('t).propty):
-    stream 't ('t).propty =
+    stream 't ('t).unitty =
   (fun s ->
     let (e, s) = e s in
     (XCheck PM.PSUnknown e, s))

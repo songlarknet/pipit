@@ -19,7 +19,7 @@ let rec estate_of_exp (#t: table) (#c: context t) (#a: t.ty) (e: exp t c a): Tot
   | XFby v e1 -> Some (t.ty_sem a) `type_join` estate_of_exp e1
   | XMu e1 -> estate_of_exp e1
   | XLet b e1 e2 -> estate_of_exp e1 `type_join` estate_of_exp e2
-  | XCheck name e1 -> estate_of_exp e1
+  | XCheck name e1 -> None
   | XContract status rely guar impl ->
     estate_of_exp impl
 
@@ -63,7 +63,7 @@ let rec esystem_of_exp
       | XBase _ -> esystem_let (fun i v -> (v, i)) (esystem_of_exp e1) (esystem_of_exp e2)
       | _ -> esystem_let_no_inline (fun i v -> (v, i)) (esystem_of_exp e1) (esystem_of_exp e2))
     | XCheck status e1 ->
-      esystem_of_exp e1
+      esystem_const ()
     | XContract status rely guar impl ->
       esystem_of_exp impl
 
