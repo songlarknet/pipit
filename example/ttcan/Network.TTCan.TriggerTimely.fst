@@ -12,19 +12,26 @@ module S     = Pipit.Sugar.Shallow
 
 module SugarBase = Pipit.Sugar.Base
 module SugarTac  = Pipit.Sugar.Shallow.Tactics
+module Check     = Pipit.Sugar.Check
+module T = Pipit.Tactics
 
 module UInt8 = FStar.UInt8
+// module UInt64 = FStar.UInt64
+
+module Ints = Network.TTCan.Prim.IntUnsafe
+
+// module U64S = Network.TTCan.Prim.U64
 
 type index = nat
 (* Tick-based logical time; one message per tick *)
-type time  = nat
+type time  = int
 (* Cycle index < 64 *)
 type cycle = UInt8.t
 
 (* Simple axiomatisation of read-only arrays. I don't think we can generate C code for this *)
 noeq
 type const_array (a: eqtype) = {
-  get: index -> a;
+  get: int -> a;
   size: index;
 }
 
@@ -41,6 +48,18 @@ type trigger = {
   // trigger_type: Tx | Rx | Tx_Ref | Watch | ...
   // message_id: message_id // for Tx and Rx
 }
+
+
+instance has_stream_uint8: S.has_stream UInt8.t = {
+  ty_id       = [`%UInt8.t];
+  val_default = 0uy;
+}
+
+instance has_stream_trigger: S.has_stream trigger = {
+  ty_id       = [`%trigger];
+  val_default = { time_mark = S.val_default; cycle_mask = S.val_default; cycle_offset = S.val_default; };
+}
+
 
 (* Check if a trigger is enabled on a specific cycle index *)
 let trigger_enabled (trigger: trigger) (cycle_index: cycle): bool =
@@ -84,32 +103,245 @@ let time_mark_reachable_req (triggers: const_array trigger): prop =
 (* Static trigger configuration, with proofs of the above properties *)
 noeq
 type config = {
-  triggers: const_array trigger;
-  time_mark_sorted_req:    time_mark_sorted_req triggers;
-  adequate_spacing_req:    adequate_spacing_req triggers;
-  time_mark_reachable_req: time_mark_reachable_req triggers;
+  triggers: tr: const_array trigger { tr.size > 0 };
+  time_mark_sorted_req:    squash (time_mark_sorted_req triggers);
+  adequate_spacing_req:    squash (adequate_spacing_req triggers);
+  time_mark_reachable_req: squash (time_mark_reachable_req triggers);
 }
 
 
-(* Find next enabled trigger *)
-let rec next (triggers: const_array trigger) (ix: index { ix < triggers.size }) (c: cycle)
-  : Tot (j: index { ix <= j /\ j < triggers.size }) (decreases (triggers.size - ix)) =
+(* Find next enabled trigger, or triggers.size if none enabled *)
+let rec next (triggers: const_array trigger) (ix: index { ix <= triggers.size }) (c: cycle)
+  : Tot (j: index { ix <= j /\ j <= triggers.size /\ (trigger_enabled (triggers.get j) c \/ j == triggers.size)}) (decreases (triggers.size - ix)) =
   if trigger_enabled (triggers.get ix) c
   then ix
   else if ix < triggers.size - 1
   then next triggers (ix + 1) c
-  else ix // reached end
+  else triggers.size // reached end
 
-let next_adequate_spacing (cfg: config) (i: index { i < cfg.triggers.size }) (c: cycle): prop =
-  let n = next cfg.triggers i c in
-  (cfg.triggers.get n).time_mark - (cfg.triggers.get i).time_mark >= (n - i)
+(* No enabled triggers remain *)
+let next_none (cfg: config) (ix: index { ix < cfg.triggers.size }) (c: cycle): prop =
+  next cfg.triggers ix c == cfg.triggers.size
 
-let lemma_next_adequate_spacing (cfg: config) (i: index { i < cfg.triggers.size }) (c: cycle):
-  Lemma (next_adequate_spacing cfg i c) =
-  let n = next cfg.triggers i c in
-  let the_forall: squash (forall (i j: index ) c. adequate_spacing cfg.triggers i j c) = cfg.adequate_spacing_req in
-  eliminate forall (i: index ) (j: index) c. adequate_spacing cfg.triggers i j c
-  with i n c;
-  // assert (adequate_spacing cfg.triggers i (next cfg.triggers i c) c);
-  admit ()
+let lemma_next_monotonic (triggers: const_array trigger) (ix: index { ix < triggers.size }) (c: cycle)
+  : Lemma (next triggers ix c <= next triggers (ix + 1) c)
+  = ()
 
+let trigger_index_invariant (cfg: config) (c: cycle) (now: int) (index: int): prop =
+  0 <= index /\ index <= cfg.triggers.size /\
+  (let n = next cfg.triggers index c in
+    n < cfg.triggers.size ==>
+    (index < cfg.triggers.size /\ (cfg.triggers.get n).time_mark - now >= (n - index)))
+
+// let lemma_trigger_index_invariant_reset (cfg: config) (c: cycle): squash (trigger_index_invariant cfg c 0 0) =
+//   ()
+
+// let lemma_trigger_index_invariant_inc_skip (cfg: config) (c: cycle) (now: int) (index: int)
+//   : Lemma
+//     (requires
+//       trigger_index_invariant cfg c now index /\
+//       index < cfg.triggers.size /\
+//       not (trigger_enabled (cfg.triggers.get index) c))
+//     (ensures
+//       trigger_index_invariant cfg c (now + 1) (index + 1)) =
+//   let now' = now + 1 in
+//   let index' = index + 1 in
+//   let n  = next cfg.triggers index  c in
+//   let n' = next cfg.triggers index' c in
+//   if n' < cfg.triggers.size
+//   then (
+//     // lemma_next_monotonic cfg.triggers index c;
+//     assert ((cfg.triggers.get n').time_mark - now' >= (n' - index'))
+//   ) else (
+//     assert true
+//   )
+
+// let lemma_trigger_index_invariant_inc_done (cfg: config) (c: cycle) (now: int) (index: int)
+//   : Lemma
+//     (requires
+//       trigger_index_invariant cfg c now index /\
+//       index < cfg.triggers.size /\
+//       trigger_enabled (cfg.triggers.get index) c /\
+//       (cfg.triggers.get index).time_mark <= now)
+//     (ensures
+//       trigger_index_invariant cfg c (now + 1) (index + 1)) =
+//   let now' = now + 1 in
+//   let index' = index + 1 in
+//   assert (next cfg.triggers index c == index);
+//   let n' = next cfg.triggers (index + 1) c in
+//   if n' < cfg.triggers.size
+//   then (
+//     assert (adequate_spacing cfg.triggers index n' c);
+//     assert (index < cfg.triggers.size);
+//     assert (n' < cfg.triggers.size);
+//     // assert ((cfg.triggers.get n').time_mark - (cfg.triggers.get index).time_mark >= (n' - index));
+
+//     assert ((cfg.triggers.get n').time_mark - now' >= (n' - index'))
+//   ) else (
+//     assert true
+//   )
+
+// let lemma_trigger_index_invariant_inc_implies (cfg: config) (c: cycle) (now: int) (index: int)
+//   : Lemma
+//     (ensures
+//       ( trigger_index_invariant cfg c now index /\
+//         index < cfg.triggers.size /\
+//         ((cfg.triggers.get index).time_mark <= now \/ not (trigger_enabled (cfg.triggers.get index) c))) ==>
+//       trigger_index_invariant cfg c (now + 1) (index + 1)) =
+//   introduce (
+//     trigger_index_invariant cfg c now index /\
+//     index < cfg.triggers.size - 1 /\
+//     (cfg.triggers.get index).time_mark <= now
+//   ) ==>
+//     trigger_index_invariant cfg c (now + 1) (index + 1)
+//   with prf.
+//     if trigger_enabled (cfg.triggers.get index) c
+//     then lemma_trigger_index_invariant_inc_done cfg c now index
+//     else lemma_trigger_index_invariant_inc_skip cfg c now index
+
+// let lemma_trigger_index_invariant_stay (cfg: config) (c: cycle) (now: int) (index: int)
+//   : Lemma
+//     (requires
+//       trigger_index_invariant cfg c now index /\
+//       trigger_enabled (cfg.triggers.get index) c /\
+//       (cfg.triggers.get index).time_mark > now)
+//     (ensures
+//       trigger_index_invariant cfg c (now + 1) index) =
+//   let now' = now + 1 in
+//   // let n = next cfg.triggers index c in
+//   assert (next cfg.triggers index c == index);
+//   assert ((cfg.triggers.get index).time_mark - now' >= (index - index))
+
+// let lemma_trigger_index_invariant_stay_implies (cfg: config) (c: cycle) (now: int) (index: int)
+//   : Lemma
+//     (ensures
+//       (
+//         trigger_index_invariant cfg c now index /\
+//         trigger_enabled (cfg.triggers.get index) c /\
+//         (cfg.triggers.get index).time_mark > now
+//       ) ==>
+//         trigger_index_invariant cfg c (now + 1) index) =
+//   introduce (
+//     trigger_index_invariant cfg c now index /\
+//     trigger_enabled (cfg.triggers.get index) c /\
+//     (cfg.triggers.get index).time_mark > now
+//   ) ==>
+//     trigger_index_invariant cfg c (now + 1) index
+//   with prf. lemma_trigger_index_invariant_stay cfg c now index
+
+let count_when_unchecked (max: index) (inc: S.stream bool): S.stream int =
+  let open S in
+  let open Ints in
+  rec' (fun count ->
+    check "" (const 0 <= count /\ count <= const max);^
+    let^ count' = (0 `fby` count) + (if_then_else inc (const 1) (const 0)) in
+    if_then_else (count' > const max) (const max) count')
+
+let count_when (max: index): S.stream bool -> S.stream int =
+  let e = Check.exp_of_stream1 (count_when_unchecked max) in
+  assert (Check.system_induct_k1 e) by (T.norm_full ["Network"]);
+  Check.stream_of_checked1 e
+
+let time_increasing (now: S.stream int): S.stream bool =
+  let open S in
+  let open Ints in
+  // now = const 0 \/ 
+  now = 0 `fby` (now + const 1)
+
+
+let trigger_enabled' (tr: S.stream trigger) (c: cycle): S.stream bool =
+  S.lift1 (fun t -> trigger_enabled t c) tr
+
+let get_time_mark (tr: S.stream trigger): S.stream time =
+  S.lift1 (fun t -> t.time_mark) tr
+
+let trigger_index (cfg: config) (index: S.stream int): S.stream trigger =
+  S.lift1 cfg.triggers.get index
+
+let trigger_fetch_ctr (c: cycle) =
+  let open S in
+  let open Ints in
+  Check.contract Pipit.Prim.Shallow.table [shallow int] (shallow trigger)
+    (Check.exp_of_stream1 time_increasing)
+    (Check.exp_of_stream2 (fun tr now -> trigger_enabled' tr c ==> get_time_mark tr >= now))
+
+let assume_time_increasing: S.stream int -> S.stream unit =
+  let e = Check.exp_of_stream1 (fun now -> S.check "" (time_increasing now)) in
+  assume (Check.system_induct_k1 e);
+  Check.stream_of_checked1 e
+
+// let pose_trigger_index_invariant_inc_implies (cfg: config) (c: cycle) (now: S.stream int) (index: S.stream int): S.stream unit =
+//   let lem_inc now index: prop = (
+//       trigger_index_invariant cfg c now index /\
+//       index < cfg.triggers.size /\
+//       ((cfg.triggers.get index).time_mark <= now \/ not (trigger_enabled (cfg.triggers.get index) c))
+//     ) ==>
+//       trigger_index_invariant cfg c (now + 1) (index + 1)
+//   in
+//   S.pose2 lem_inc (fun n i ->
+//     lemma_trigger_index_invariant_inc_implies cfg c n i;
+//     assert (lem_inc n i)) now index
+
+// let pose_trigger_index_invariant_stay_implies (cfg: config) (c: cycle) (now: S.stream int) (index: S.stream int): S.stream unit =
+//   let lem_stay (now: int) (index: int): prop = (
+//       trigger_index_invariant cfg c now index /\
+//       ((trigger_enabled (cfg.triggers.get index) c /\ (cfg.triggers.get index).time_mark > now) \/ next cfg.triggers index c = cfg.triggers.size)
+//     ) ==>
+//       trigger_index_invariant cfg c (now + 1) index in
+//   S.pose2 lem_stay (fun n i ->
+//     // lemma_trigger_index_invariant_stay_implies cfg c n i;
+//     assert (lem_stay n i)
+//   ) now index
+
+let trigger_fetch_unchecked (cfg: config) (c: cycle) (now: S.stream int): S.stream (trigger & int) =
+  let open S in
+  let open Ints in
+  assume_time_increasing now;^
+  rec' (fun trigger_ret ->
+    let trigger = fst trigger_ret in
+    let^ inc = false `fby` ((get_time_mark trigger <= now \/ ~ (trigger_enabled' trigger c))) in
+    let^ index = count_when cfg.triggers.size inc in
+    let^ trigger = trigger_index cfg index in
+
+    check2 (fun now index -> trigger_index_invariant cfg c now index) now index;^
+    // pose _ (lemma_trigger_index_invariant_reset cfg c);^
+    // pose_trigger_index_invariant_inc_implies cfg c now index;^
+    // pose_trigger_index_invariant_stay_implies cfg c now index;^
+    tup trigger index)
+
+let trigger_fetch (cfg: config) (c: cycle): S.stream int -> S.stream (trigger & int) =
+  // unpacking cfg and triggers reduces a lot of matches in the generated goals; maybe simplify_products tactic chould break apart records too
+  // match cfg with
+  // | { triggers; time_mark_sorted_req; adequate_spacing_req; time_mark_reachable_req; } ->
+  // match triggers with
+  // | { get; size } ->
+  //   let e = Check.exp_of_stream1 (trigger_fetch_unchecked { triggers = { get; size; }; time_mark_sorted_req; adequate_spacing_req; time_mark_reachable_req; } c) in
+    let e = Check.exp_of_stream1 (trigger_fetch_unchecked cfg c) in
+    let sys = Pipit.System.Exp.system_of_exp e in
+    assert (Pipit.System.Ind.base_case sys) by (T.pipit_simplify_products ["Network.TTCan"]);
+    assert (Pipit.System.Ind.step_case sys) by (T.pipit_simplify_products ["Network.TTCan"]);
+    // assert (Check.system_induct_k1 e) by (T.norm_full ["Network.TTCan"]; T.dump "trigger_fetch");
+    // assert (Check.system_induct_k1 e) by (T.norm_full ["Network.TTCan"]; T.pipit_simplify_products ["Network.TTCan.Prim"]; T.dump "trigger_fetch");
+    assert (Check.system_induct_k1 e);
+    Check.stream_of_checked1 e
+
+let trigger_fetch_spec_unchecked (cfg: config) (c: cycle) (now: S.stream int): S.stream (trigger & int) =
+  let trigger_max_index: index = cfg.triggers.size - 1 in
+  let open S in
+  let open Ints in
+  let^ trigger_ret = trigger_fetch cfg c now in
+  let^ trigger = fst trigger_ret in
+  let^ index = snd trigger_ret in
+  let^ new_trigger = index <> (-1) `fby` index in
+  check "" (
+    (new_trigger /\ trigger_enabled' trigger c /\ index < const cfg.triggers.size) ==>
+    get_time_mark trigger >= now);^
+  trigger_ret
+
+let trigger_fetch_spec (cfg: config) (c: cycle): S.stream int -> S.stream (trigger & int) =
+  let e = Check.exp_of_stream1 (trigger_fetch_unchecked cfg c) in
+  let sys = Pipit.System.Exp.system_of_exp e in
+  assert (Pipit.System.Ind.base_case sys) by (T.pipit_simplify_products ["Network.TTCan"]);
+  assert (Pipit.System.Ind.step_case sys) by (T.pipit_simplify_products ["Network.TTCan"]);
+  assert (Check.system_induct_k1 e);
+  Check.stream_of_checked1 e

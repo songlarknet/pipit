@@ -13,7 +13,8 @@ let norm_delta_options (namespaces: list string) = [delta_namespace ("Pipit" :: 
 
 (* Re-exports *)
 let norm_full (namespaces: list string) =
-  T.norm (norm_delta_options namespaces)
+  T.norm (norm_delta_options namespaces);
+  T.norm [delta_only [`%PipitRuntime.Prim.p'delay]]
 
 
 let dump s = T.dump s
@@ -135,7 +136,7 @@ let clear_all (): T.Tac unit =
   in
   ignore (T.repeat T.revert);
   let bs = T.repeat T.intro in
-  go bs
+  go (List.Tot.rev bs)
 
 (* Left-to-right, top-down; see FStar.Tactics.l_to_r, which is the bottom-up version. *)
 let top_down (lems: list T.term): T.Tac unit =

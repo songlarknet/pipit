@@ -172,3 +172,82 @@ let once (e: stream bool): stream bool =
     `Tuple.t ["x",  U64.t; "y", Clocked.t U64.t]`
     `x ^. "x"`
 *)
+
+
+
+module Check = Pipit.Sugar.Check
+module T = Pipit.Tactics
+
+(* Convert proposition to boolean. This is an unsafe axiom in general, but we
+  use it here in a very restricted context, so that it is only used to state checks
+  which are logically propositions anyway.
+  This is a bit of a shame, but it's not easy to embed propositions in the term
+  language itself as we want decidable equality on values and primitives so the
+  CSE transform can run. The extraction also requires a default value for
+  recursive streams.
+  Maybe we want to introduce a separate set of types for runtime vs
+  specification.
+  Although the helper functions below use this unsafe axiom, they are really
+  only a syntactic convenience for stating and instantiating propositions. *)
+private
+assume val unsafe_proposition_holds (p: prop): b: bool
+ // { p <==> b }
+
+assume val lemma_unsafe_proposition_holds (p: prop)
+  : Lemma (b2t (unsafe_proposition_holds p) <==> p)
+    [SMTPat (unsafe_proposition_holds p)]
+
+(* Check that a 1-argument proposition holds *)
+let check1 {| has_stream 'a |} (p: 'a -> prop) (a: stream 'a): stream unit =
+  let p' (a: 'a): bool = unsafe_proposition_holds (p a) in
+  check "check1" (S.liftP1 (p'prim1 None p') a)
+
+let check2 {| has_stream 'a |} {| has_stream 'b |} (p: 'a -> 'b -> prop) (a: stream 'a) (b: stream 'b): stream unit =
+  let p' a b: bool = unsafe_proposition_holds (p a b) in
+  check "check2" (S.liftP2 (p'prim2 None p') a b)
+
+let check3 {| has_stream 'a |} {| has_stream 'b |} {| has_stream 'c |} (p: 'a -> 'b -> 'c -> prop) (a: stream 'a) (b: stream 'b) (c: stream 'c): stream unit =
+  let p' a b c: bool = unsafe_proposition_holds (p a b c) in
+  check "check3" (S.liftP3 (p'prim3 None p') a b c)
+
+(* Use an existing proof *)
+let pose (p: prop) (prf: squash p): stream unit =
+  let e = Check.exp_of_stream0 (check1 (fun () -> p) (const ())) in
+  assert (Check.system_induct_k 0 e) by (T.norm_full []);
+  Check.stream_of_checked0 e
+
+(* Instantiate a forall proof with a stream *)
+let pose1_forall {| has_stream 'a |} (p: 'a -> prop) (prf: squash (forall (a: 'a). p a)): stream 'a -> stream unit =
+  let e = Check.exp_of_stream1 (check1 p) in
+  assert (Check.system_induct_k 0 e) by (T.norm_full []);
+  Check.stream_of_checked1 e
+
+let pose2_forall {| has_stream 'a |} {| has_stream 'b |} (p: 'a -> 'b -> prop) (prf: squash (forall (a: 'a) (b: 'b). p a b)): stream 'a -> stream 'b -> stream unit =
+  let e = Check.exp_of_stream2 (check2 p) in
+  assert (Check.system_induct_k 0 e) by (T.norm_full []);
+  Check.stream_of_checked2 e
+
+let pose3_forall {| has_stream 'a |} {| has_stream 'b |} {| has_stream 'c |} (p: 'a -> 'b -> 'c -> prop) (prf: squash (forall (a: 'a) (b: 'b) (c: 'c). p a b c)): stream 'a -> stream 'b -> stream 'c -> stream unit =
+  let e = Check.exp_of_stream3 (check3 p) in
+  assert (Check.system_induct_k 0 e) by (T.norm_full []);
+  Check.stream_of_checked3 e
+
+(* Call a prop with a stream *)
+let pose1 {| has_stream 'a |} (p: 'a -> prop) (prf: (a: 'a) -> squash (p a)): stream 'a -> stream unit =
+  let e = Check.exp_of_stream1 (check1 p) in
+  introduce forall (a: 'a). p a with prf a;
+  assert (Check.system_induct_k 0 e) by (T.norm_full []);
+  Check.stream_of_checked1 e
+
+let pose2 {| has_stream 'a |} {| has_stream 'b |} (p: 'a -> 'b -> prop) (prf: (a: 'a) -> (b: 'b) -> squash (p a b)): stream 'a -> stream 'b -> stream unit =
+  let e = Check.exp_of_stream2 (check2 p) in
+  introduce forall (a: 'a) (b: 'b). p a b with prf a b;
+  assert (Check.system_induct_k 0 e) by (T.norm_full []);
+  Check.stream_of_checked2 e
+
+let pose3 {| has_stream 'a |} {| has_stream 'b |} {| has_stream 'c |} (p: 'a -> 'b -> 'c -> prop) (prf: (a: 'a) -> (b: 'b) -> (c: 'c) -> squash (p a b c)): stream 'a -> stream 'b -> stream 'c -> stream unit =
+  let e = Check.exp_of_stream3 (check3 p) in
+  introduce forall (a: 'a) (b: 'b) (c: 'c). p a b c with prf a b c;
+  assert (Check.system_induct_k 0 e) by (T.norm_full []);
+  Check.stream_of_checked3 e
+
