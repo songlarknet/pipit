@@ -133,102 +133,6 @@ let trigger_index_invariant (cfg: config) (c: cycle) (now: int) (index: int): pr
     n < cfg.triggers.size ==>
     (index < cfg.triggers.size /\ (cfg.triggers.get n).time_mark - now >= (n - index)))
 
-// let lemma_trigger_index_invariant_reset (cfg: config) (c: cycle): squash (trigger_index_invariant cfg c 0 0) =
-//   ()
-
-// let lemma_trigger_index_invariant_inc_skip (cfg: config) (c: cycle) (now: int) (index: int)
-//   : Lemma
-//     (requires
-//       trigger_index_invariant cfg c now index /\
-//       index < cfg.triggers.size /\
-//       not (trigger_enabled (cfg.triggers.get index) c))
-//     (ensures
-//       trigger_index_invariant cfg c (now + 1) (index + 1)) =
-//   let now' = now + 1 in
-//   let index' = index + 1 in
-//   let n  = next cfg.triggers index  c in
-//   let n' = next cfg.triggers index' c in
-//   if n' < cfg.triggers.size
-//   then (
-//     // lemma_next_monotonic cfg.triggers index c;
-//     assert ((cfg.triggers.get n').time_mark - now' >= (n' - index'))
-//   ) else (
-//     assert true
-//   )
-
-// let lemma_trigger_index_invariant_inc_done (cfg: config) (c: cycle) (now: int) (index: int)
-//   : Lemma
-//     (requires
-//       trigger_index_invariant cfg c now index /\
-//       index < cfg.triggers.size /\
-//       trigger_enabled (cfg.triggers.get index) c /\
-//       (cfg.triggers.get index).time_mark <= now)
-//     (ensures
-//       trigger_index_invariant cfg c (now + 1) (index + 1)) =
-//   let now' = now + 1 in
-//   let index' = index + 1 in
-//   assert (next cfg.triggers index c == index);
-//   let n' = next cfg.triggers (index + 1) c in
-//   if n' < cfg.triggers.size
-//   then (
-//     assert (adequate_spacing cfg.triggers index n' c);
-//     assert (index < cfg.triggers.size);
-//     assert (n' < cfg.triggers.size);
-//     // assert ((cfg.triggers.get n').time_mark - (cfg.triggers.get index).time_mark >= (n' - index));
-
-//     assert ((cfg.triggers.get n').time_mark - now' >= (n' - index'))
-//   ) else (
-//     assert true
-//   )
-
-// let lemma_trigger_index_invariant_inc_implies (cfg: config) (c: cycle) (now: int) (index: int)
-//   : Lemma
-//     (ensures
-//       ( trigger_index_invariant cfg c now index /\
-//         index < cfg.triggers.size /\
-//         ((cfg.triggers.get index).time_mark <= now \/ not (trigger_enabled (cfg.triggers.get index) c))) ==>
-//       trigger_index_invariant cfg c (now + 1) (index + 1)) =
-//   introduce (
-//     trigger_index_invariant cfg c now index /\
-//     index < cfg.triggers.size - 1 /\
-//     (cfg.triggers.get index).time_mark <= now
-//   ) ==>
-//     trigger_index_invariant cfg c (now + 1) (index + 1)
-//   with prf.
-//     if trigger_enabled (cfg.triggers.get index) c
-//     then lemma_trigger_index_invariant_inc_done cfg c now index
-//     else lemma_trigger_index_invariant_inc_skip cfg c now index
-
-// let lemma_trigger_index_invariant_stay (cfg: config) (c: cycle) (now: int) (index: int)
-//   : Lemma
-//     (requires
-//       trigger_index_invariant cfg c now index /\
-//       trigger_enabled (cfg.triggers.get index) c /\
-//       (cfg.triggers.get index).time_mark > now)
-//     (ensures
-//       trigger_index_invariant cfg c (now + 1) index) =
-//   let now' = now + 1 in
-//   // let n = next cfg.triggers index c in
-//   assert (next cfg.triggers index c == index);
-//   assert ((cfg.triggers.get index).time_mark - now' >= (index - index))
-
-// let lemma_trigger_index_invariant_stay_implies (cfg: config) (c: cycle) (now: int) (index: int)
-//   : Lemma
-//     (ensures
-//       (
-//         trigger_index_invariant cfg c now index /\
-//         trigger_enabled (cfg.triggers.get index) c /\
-//         (cfg.triggers.get index).time_mark > now
-//       ) ==>
-//         trigger_index_invariant cfg c (now + 1) index) =
-//   introduce (
-//     trigger_index_invariant cfg c now index /\
-//     trigger_enabled (cfg.triggers.get index) c /\
-//     (cfg.triggers.get index).time_mark > now
-//   ) ==>
-//     trigger_index_invariant cfg c (now + 1) index
-//   with prf. lemma_trigger_index_invariant_stay cfg c now index
-
 let count_when_unchecked (max: index) (inc: S.stream bool): S.stream int =
   let open S in
   let open Ints in
@@ -270,29 +174,6 @@ let assume_time_increasing: S.stream int -> S.stream unit =
   assume (Check.system_induct_k1 e);
   Check.stream_of_checked1 e
 
-// let pose_trigger_index_invariant_inc_implies (cfg: config) (c: cycle) (now: S.stream int) (index: S.stream int): S.stream unit =
-//   let lem_inc now index: prop = (
-//       trigger_index_invariant cfg c now index /\
-//       index < cfg.triggers.size /\
-//       ((cfg.triggers.get index).time_mark <= now \/ not (trigger_enabled (cfg.triggers.get index) c))
-//     ) ==>
-//       trigger_index_invariant cfg c (now + 1) (index + 1)
-//   in
-//   S.pose2 lem_inc (fun n i ->
-//     lemma_trigger_index_invariant_inc_implies cfg c n i;
-//     assert (lem_inc n i)) now index
-
-// let pose_trigger_index_invariant_stay_implies (cfg: config) (c: cycle) (now: S.stream int) (index: S.stream int): S.stream unit =
-//   let lem_stay (now: int) (index: int): prop = (
-//       trigger_index_invariant cfg c now index /\
-//       ((trigger_enabled (cfg.triggers.get index) c /\ (cfg.triggers.get index).time_mark > now) \/ next cfg.triggers index c = cfg.triggers.size)
-//     ) ==>
-//       trigger_index_invariant cfg c (now + 1) index in
-//   S.pose2 lem_stay (fun n i ->
-//     // lemma_trigger_index_invariant_stay_implies cfg c n i;
-//     assert (lem_stay n i)
-//   ) now index
-
 let trigger_fetch_unchecked (cfg: config) (c: cycle) (now: S.stream int): S.stream (trigger & int) =
   let open S in
   let open Ints in
@@ -304,9 +185,6 @@ let trigger_fetch_unchecked (cfg: config) (c: cycle) (now: S.stream int): S.stre
     let^ trigger = trigger_index cfg index in
 
     check2 (fun now index -> trigger_index_invariant cfg c now index) now index;^
-    // pose _ (lemma_trigger_index_invariant_reset cfg c);^
-    // pose_trigger_index_invariant_inc_implies cfg c now index;^
-    // pose_trigger_index_invariant_stay_implies cfg c now index;^
     tup trigger index)
 
 let trigger_fetch (cfg: config) (c: cycle): S.stream int -> S.stream (trigger & int) =
@@ -320,8 +198,6 @@ let trigger_fetch (cfg: config) (c: cycle): S.stream int -> S.stream (trigger & 
     let sys = Pipit.System.Exp.system_of_exp e in
     assert (Pipit.System.Ind.base_case sys) by (T.pipit_simplify_products ["Network.TTCan"]);
     assert (Pipit.System.Ind.step_case sys) by (T.pipit_simplify_products ["Network.TTCan"]);
-    // assert (Check.system_induct_k1 e) by (T.norm_full ["Network.TTCan"]; T.dump "trigger_fetch");
-    // assert (Check.system_induct_k1 e) by (T.norm_full ["Network.TTCan"]; T.pipit_simplify_products ["Network.TTCan.Prim"]; T.dump "trigger_fetch");
     assert (Check.system_induct_k1 e);
     Check.stream_of_checked1 e
 

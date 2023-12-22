@@ -43,37 +43,6 @@ let p'prim3
   (prim_sem: 'a -> 'b -> 'c -> 'r): Shallow.prim =
   Shallow.mkPrim prim_id (p'ftfun 'a (p'ftfun 'b (p'ftfun 'c (p'ftval 'r)))) prim_sem
 
-
-
-// let p'funty1 (a r: eqtype) {| has_stream a |} {| has_stream r |}: Table.funty Shallow.shallow_type =
-//   shallow a `Table.FTFun` Table.FTVal (shallow r)
-// let p'funty2 (a b r: eqtype) {| has_stream a |} {| has_stream b |} {| has_stream r |}: Table.funty Shallow.shallow_type =
-//   shallow a `Table.FTFun` (shallow b `Table.FTFun` Table.FTVal (shallow r))
-// let p'funty3 (a b c r: eqtype) {| has_stream a |} {| has_stream b |} {| has_stream c |} {| has_stream r |}: Table.funty Shallow.shallow_type =
-//   shallow a `Table.FTFun` (shallow b `Table.FTFun` (shallow c `Table.FTFun` Table.FTVal (shallow r)))
-
-
-// let liftP1
-//   {| has_stream 'a |} {| has_stream 'r |}:
-//   (S.prim Shallow.table (p'ftfun 'a (p'ftval 'r))) ->
-//     stream 'a ->
-//     stream 'r =
-//   S.liftP1
-
-// let liftP2
-//   {| has_stream 'a |} {| has_stream 'b |} {| has_stream 'r |}:
-//   (S.prim Shallow.table (p'ftfun 'a (p'ftfun 'b (p'ftval 'r)))) ->
-//     stream 'a -> stream 'b ->
-//     stream 'r =
-//   S.liftP2
-
-// let liftP3
-//   {| has_stream 'a |} {| has_stream 'b |} {| has_stream 'c |} {| has_stream 'r |}:
-//   (S.prim Shallow.table (p'ftfun 'a (p'ftfun 'b (p'ftfun 'c (p'ftval 'r))))) ->
-//     stream 'a -> stream 'b -> stream 'c ->
-//     stream 'r =
-//   S.liftP3
-
 (* Helpers for inline anonymous primitives.
   In the future, when we implement CSE, it will be useful to have unique
   identifiers for each primitive. But, for now, it's convenient to declare
