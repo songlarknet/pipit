@@ -4,12 +4,12 @@ module Pipit.Context.Row
 module List = FStar.List.Tot
 module C = Pipit.Context.Base
 
-let rec row (l: C.context eqtype): eqtype =
+let rec row (l: C.context Type): Type =
   match l with
   | [] -> unit
   | t :: ts -> t * row ts
 
-let rec index (l: C.context eqtype) (r: row l) (i: C.index_lookup l): C.get_index l i =
+let rec index (l: C.context Type) (r: row l) (i: C.index_lookup l): C.get_index l i =
   match l with
   | t :: ts ->
     let r': t * row (List.tl l) = r in
@@ -39,9 +39,9 @@ let rec append (r: row 'c) (r': row 'd): row (C.append 'c 'd) =
     let (rt, rts) = rr in
     (rt, append rts r')
 
-let cons (#a: eqtype) (v: a) (r: row 'c): row (a :: 'c) = (v, r)
+let cons (#a: Type) (v: a) (r: row 'c): row (a :: 'c) = (v, r)
 
-let rec lift1 (#a: eqtype) (r: row 'c) (i: C.index_insert 'c) (v: a): row (C.lift1 'c i a) =
+let rec lift1 (#a: Type) (r: row 'c) (i: C.index_insert 'c) (v: a): row (C.lift1 'c i a) =
   if i = 0 then (v, r)
   else
     match 'c with
@@ -55,12 +55,12 @@ let rec zip2_append (rs: list (row 'c)) (rs': list (row 'd) { List.length rs == 
   | [], [] -> []
   | r :: rs, r' :: rs' -> (append r r') :: zip2_append rs rs'
 
-let rec zip2_cons (#a: eqtype) (rs: list a) (rs': list (row 'd) { List.length rs == List.length rs' }): (ret: list (row (a :: 'd)) { List.length ret == List.length rs }) =
+let rec zip2_cons (#a: Type) (rs: list a) (rs': list (row 'd) { List.length rs == List.length rs' }): (ret: list (row (a :: 'd)) { List.length ret == List.length rs }) =
   match rs, rs' with
   | [], [] -> []
   | r :: rs, r' :: rs' -> (cons r r') :: zip2_cons rs rs'
 
-let rec zip2_lift1 (#a: eqtype) (rs: list (row 'c)) (i: C.index_insert 'c) (vs: list a { List.length rs == List.length vs }): (ret: list (row (C.lift1 'c i a)) { List.length ret == List.length rs }) =
+let rec zip2_lift1 (#a: Type) (rs: list (row 'c)) (i: C.index_insert 'c) (vs: list a { List.length rs == List.length vs }): (ret: list (row (C.lift1 'c i a)) { List.length ret == List.length rs }) =
   match rs, vs with
   | [], [] -> []
   | r :: rs, v :: vs -> lift1 r i v :: zip2_lift1 rs i vs

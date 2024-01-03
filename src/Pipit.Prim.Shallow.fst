@@ -32,8 +32,9 @@ type ident = list string
 noeq
 type shallow_type: Type u#1 = {
   ty_id:       ident;
-  ty_sem:      eqtype;
+  ty_sem:      Type u#0;
   val_default: ty_sem;
+  val_eq:      eq_dec_partial ty_sem;
 }
 
 let funty_sem (t: funty shallow_type): Type0 =
@@ -81,12 +82,14 @@ let bool: shallow_type = {
   ty_id       = [`%Prims.bool];
   ty_sem      = bool;
   val_default = false;
+  val_eq      = (fun a b -> a = b);
 }
 
 let unit: shallow_type = {
   ty_id       = [`%Prims.unit];
   ty_sem      = unit;
   val_default = ();
+  val_eq      = (fun a b -> a = b);
 }
 
 let table: table = {
@@ -98,6 +101,7 @@ let table: table = {
    prim_ty     = (fun (p: prim) -> p.prim_ty);
    prim_sem    = (fun p -> PR.p'delay p.prim_sem);
    prim_eq     = prim_eq;
+   val_eq      = (fun t a b -> t.val_eq a b);
 
    val_default = (fun t -> t.val_default);
 

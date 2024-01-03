@@ -32,6 +32,7 @@ let s32r' (#b: bounds) (x: int { b.min <= x /\ x <= b.max }): t b =
 instance has_stream_S32R (b: bounds): Sugar.has_stream (t b) = {
   ty_id = [`%t; string_of_int b.min; string_of_int b.max];
   val_default = s32r' b.min;
+  val_eq      = (fun a b -> a = b);
 }
 
 

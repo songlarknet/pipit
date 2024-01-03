@@ -69,6 +69,7 @@ type modes_result = {
 instance has_stream_driver_input: S.has_stream driver_input = {
   ty_id       = [`%driver_input];
   val_default = { local_time = S.val_default; mode_cmd = S.val_default; tx_status = S.val_default; bus_status = S.val_default; rx_ref = S.val_default; rx_app = S.val_default; } <: driver_input;
+  val_eq      = (fun a b -> a = b);
 }
 
 %splice[get_local_time] (SugarTac.lift_prim "get_local_time" (`(fun (d: driver_input) -> d.local_time)))
@@ -81,13 +82,15 @@ instance has_stream_driver_input: S.has_stream driver_input = {
 instance has_stream_controller_result: S.has_stream controller_result = {
   ty_id       = [`%controller_result];
   val_default = { error = S.val_default; driver_enable_acks = S.val_default; tx_ref = S.val_default; tx_app = S.val_default; tx_delay = S.val_default; } <: controller_result;
+  val_eq      = (fun _ _ -> false);
 }
 
 %splice[controller_result_new] (SugarTac.lift_prim "controller_result_new" (`(fun (error: error_severity) (driver_enable_acks: bool) (tx_ref: Clocked.t ref_message) (tx_app: Clocked.t app_message_index) (tx_delay: ntu) -> { error; driver_enable_acks; tx_ref; tx_app; tx_delay; } <: controller_result)))
 
 instance has_stream_modes_result: S.has_stream modes_result = {
   ty_id       = [`%modes_result];
-  val_default = { mode = S.val_default; ref_ck = S.val_default; cycle_index = S.val_default; cycle_time = S.val_default; ref_trigger_offset = S.val_default; sync_state = S.val_default; error_CAN_Bus_Off = S.val_default; error = S.val_default; } <: modes_result
+  val_default = { mode = S.val_default; ref_ck = S.val_default; cycle_index = S.val_default; cycle_time = S.val_default; ref_trigger_offset = S.val_default; sync_state = S.val_default; error_CAN_Bus_Off = S.val_default; error = S.val_default; } <: modes_result;
+  val_eq      = (fun a b -> a = b);
 }
 %splice[modes_result_new] (SugarTac.lift_prim "modes_result_new" (`(fun (mode: mode) (ref_ck: bool) (cycle_index: cycle_index) (cycle_time: ntu) (ref_trigger_offset: ref_offset) (sync_state: sync_mode) (error_CAN_Bus_Off: bool) (error: error_severity) -> { mode; ref_ck; cycle_index; cycle_time; ref_trigger_offset; sync_state; error_CAN_Bus_Off; error; } <: modes_result)))
 

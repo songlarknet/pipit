@@ -18,13 +18,13 @@ type funty (valty: Type) =
  | FTVal: t: valty -> funty valty
  | FTFun: t: valty -> rest: funty valty -> funty valty
 
-let rec funty_sem (#ty: Type) (ty_sem: ty -> eqtype) (ft: funty ty) =
+let rec funty_sem (#ty: Type) (ty_sem: ty -> Type) (ft: funty ty) =
   match ft with
   | FTVal t -> ty_sem t
   | FTFun t r -> (ty_sem t -> funty_sem ty_sem r)
 
 let lemma_funty_sem_FTFun (#ty: Type)
-  (ty_sem: ty -> eqtype)
+  (ty_sem: ty -> Type)
   (a: ty) (b: funty ty):
   Lemma (funty_sem ty_sem (FTFun a b) == (ty_sem a -> funty_sem ty_sem b)) =
   assert_norm (funty_sem ty_sem (FTFun a b) == (ty_sem a -> funty_sem ty_sem b))
@@ -41,13 +41,15 @@ type eq_dec_partial (t: Type) =
 noeq
 type table: Type = {
   ty:          Type;
-  ty_sem:      ty -> eqtype;
+  ty_sem:      ty -> Type;
   var_eq:      var_eq_dec ty;
 
   prim:        Type;
   prim_ty:     prim -> funty ty;
   prim_sem:    p: prim -> funty_sem ty_sem (prim_ty p);
   prim_eq:     eq_dec_partial prim;
+
+  val_eq:      (t: ty) -> eq_dec_partial (ty_sem t);
   // val_eq_dec: t: typ -> a: typ_sem t -> b: typ_sem t -> eq: bool { eq <==> a == b }
 
   (* Default or bottom: some interpretations of recursive expressions need an
@@ -58,8 +60,8 @@ type table: Type = {
 
   // We can't directly embed props because it requires a bigger universe, so
   // instead we describe how to interpret a particular value type as a prop.
-  propty:      propty: ty { ty_sem propty === bool };
-  unitty:      unitty: ty { ty_sem unitty === unit };
+  propty:      propty: ty { ty_sem propty == bool };
+  unitty:      unitty: ty { ty_sem unitty == unit };
 }
 
 (* Helpers for table-parameterised contexts *)
@@ -69,7 +71,7 @@ module CR = Pipit.Context.Row
 module List = FStar.List.Tot
 
 let context (t: table) = C.context t.ty
-let context_sem (c: context 't): C.context eqtype = List.map ('t).ty_sem c
+let context_sem (c: context 't): C.context Type = List.map ('t).ty_sem c
 
 let row (c: context 't) = CR.row (context_sem c)
 

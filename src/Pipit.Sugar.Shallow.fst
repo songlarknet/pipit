@@ -18,10 +18,10 @@ module T = FStar.Tactics.V2
 include Pipit.Sugar.Shallow.Base
 
 
-let p'ftval (a: eqtype) {| has_stream a |}: Table.funty Shallow.shallow_type =
+let p'ftval (a: Type) {| has_stream a |}: Table.funty Shallow.shallow_type =
   Table.FTVal (shallow a)
 
-let p'ftfun (a: eqtype) (r: Table.funty Shallow.shallow_type) {| has_stream a |}: Table.funty Shallow.shallow_type =
+let p'ftfun (a: Type) (r: Table.funty Shallow.shallow_type) {| has_stream a |}: Table.funty Shallow.shallow_type =
   shallow a `Table.FTFun` r
 
 
@@ -100,24 +100,24 @@ let (=) (#a: eqtype) {| has_stream a |}: stream a -> stream a -> stream bool =
 let (<>) (#a: eqtype) {| has_stream a |}: stream a -> stream a -> stream bool =
   S.liftP2 (p'prim2 #a #a (Some [`%(<>)]) (fun x y -> x <> y))
 
-let tup (#a #b: eqtype) {| has_stream a |} {| has_stream b |}: stream a -> stream b -> stream (a & b) #_ =
+let tup (#a #b: Type) {| has_stream a |} {| has_stream b |}: stream a -> stream b -> stream (a & b) #_ =
   lift2 (fun x y -> (x, y))
 
 // why does this not work with named prim?
 // let tup2 (#a #b: eqtype) {| has_stream a |} {| has_stream b |}: stream a -> stream b -> stream (a & b) #_ =
   // S.liftP2 (p'prim2 #a #b #(a&b) (Some [`%Mktuple2]) (fun x y -> (x, y)))
 
-let fst (#a #b: eqtype) {| has_stream a |} {| has_stream b |}: stream (a & b) #_ -> stream a =
+let fst (#a #b: Type) {| has_stream a |} {| has_stream b |}: stream (a & b) #_ -> stream a =
   lift1 (fun (xy: (a & b)) -> fst xy)
 
-let snd (#a #b: eqtype) {| has_stream a |} {| has_stream b |}: stream (a & b) #_ -> stream b =
+let snd (#a #b: Type) {| has_stream a |} {| has_stream b |}: stream (a & b) #_ -> stream b =
   lift1 (fun (xy: (a & b)) -> snd xy)
 
 (* if-then-else *)
-let select (#a: eqtype) {| has_stream a |} : stream bool -> stream a -> stream a -> stream a =
+let select (#a: Type) {| has_stream a |} : stream bool -> stream a -> stream a -> stream a =
   S.liftP3 (p'prim3 #bool #a #a (Some [`%PR.p'select]) PR.p'select)
 
-let if_then_else (#a: eqtype) {| has_stream a |} = select #a
+let if_then_else (#a: Type) {| has_stream a |} = select #a
 
 let sofar (e: stream bool): stream bool =
   rec' (fun r -> e /\ fby true r)

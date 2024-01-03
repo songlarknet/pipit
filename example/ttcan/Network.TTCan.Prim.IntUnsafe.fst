@@ -8,6 +8,7 @@ module SugarTac  = Pipit.Sugar.Shallow.Tactics
 instance has_stream_int: Sugar.has_stream int = {
   ty_id = [`%int];
   val_default = 0;
+  val_eq      = (fun a b -> a = b);
 }
 
 %splice[] (SugarTac.lift_prim "op_Plus" (`op_Addition))

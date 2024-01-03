@@ -16,6 +16,7 @@ type t (a: eqtype) = {
 instance has_stream_t (a: eqtype) {| Sugar.has_stream a |}: Sugar.has_stream (t a) = {
   ty_id = `%t :: (Sugar.ty_id #a);
   val_default = { value = Sugar.val_default; clock = Sugar.val_default; };
+  val_eq      = (fun a b -> a = b);
 }
 
 let some' (#a: eqtype) (value: a): t a = { value; clock = true; }

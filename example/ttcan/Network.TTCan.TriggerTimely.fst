@@ -4,7 +4,9 @@
      Tx_Ref_Triggers by [-127,127];
   2. we use arbitrary-sized integer arithmetic for indices and times, which
      reduces some syntactic noise;
-  3. we use a simple tick-based time instead of microseconds
+  3. we use a simple tick-based time instead of microseconds;
+  4. no reset functionality to go back to start of trigger array, and the
+     current cycle offset is a constant, rather than incremented at each reset.
 *)
 module Network.TTCan.TriggerTimely
 
@@ -53,11 +55,13 @@ type trigger = {
 instance has_stream_uint8: S.has_stream UInt8.t = {
   ty_id       = [`%UInt8.t];
   val_default = 0uy;
+  val_eq      = (fun a b -> a = b);
 }
 
 instance has_stream_trigger: S.has_stream trigger = {
   ty_id       = [`%trigger];
   val_default = { time_mark = S.val_default; cycle_mask = S.val_default; cycle_offset = S.val_default; };
+  val_eq      = (fun a b -> a = b);
 }
 
 
@@ -119,10 +123,6 @@ let rec next (triggers: const_array trigger) (ix: index { ix <= triggers.size })
   then next triggers (ix + 1) c
   else triggers.size // reached end
 
-(* No enabled triggers remain *)
-let next_none (cfg: config) (ix: index { ix < cfg.triggers.size }) (c: cycle): prop =
-  next cfg.triggers ix c == cfg.triggers.size
-
 let lemma_next_monotonic (triggers: const_array trigger) (ix: index { ix < triggers.size }) (c: cycle)
   : Lemma (next triggers ix c <= next triggers (ix + 1) c)
   = ()
@@ -131,7 +131,7 @@ let trigger_index_invariant (cfg: config) (c: cycle) (now: int) (index: int): pr
   0 <= index /\ index <= cfg.triggers.size /\
   (let n = next cfg.triggers index c in
     n < cfg.triggers.size ==>
-    (index < cfg.triggers.size /\ (cfg.triggers.get n).time_mark - now >= (n - index)))
+    ((cfg.triggers.get n).time_mark - now >= (n - index)))
 
 let count_when_unchecked (max: index) (inc: S.stream bool): S.stream int =
   let open S in

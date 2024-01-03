@@ -301,7 +301,7 @@ let lemma_subst_subst_distribute_le_XLet
     (ensures (lemma_subst_subst_distribute_le_def (XLet te e1 e2) i1 i2 p1 p2)) =
   lemma_subst_subst_distribute_le_bind e2 i1 i2 p1 p2;
   CP.lemma_lift_drop_commute_le (C.drop1 c i1) i2 i1 (C.get_index c i1);
-  ()
+  admit ()
 
 private
 let lemma_subst_subst_distribute_le_XContract

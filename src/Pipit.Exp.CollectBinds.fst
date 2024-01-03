@@ -27,7 +27,7 @@ let expr_base_eq (#t: table) (#ctx: context t) (#ty: t.ty) (e1 e2: exp_base t ct
   match e1 with
   | XVal i ->
     (match e2 with
-    | XVal j -> i = j
+    | XVal j -> t.val_eq ty i j
     | _ -> false)
   | XBVar i ->
     (match e2 with
@@ -53,7 +53,7 @@ let rec expr_eq (#t: table) (#ctx: context t) (#ty: t.ty) (e1 e2: exp t ctx ty)
     | _ -> false)
   | XFby i i' ->
     (match e2 with
-    | XFby j j' -> i = j && expr_eq i' j'
+    | XFby j j' -> t.val_eq ty i j && expr_eq i' j'
     | _ -> false)
   | XMu i ->
     (match e2 with

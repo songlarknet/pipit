@@ -84,6 +84,7 @@ type fetch_result = {
 instance has_stream_prefetch_result: S.has_stream prefetch_result = {
   ty_id       = [`%prefetch_result];
   val_default = { enabled = S.val_default; index = S.val_default; expiry = S.val_default; trigger = S.val_default; };
+  val_eq      = (fun _ _ -> false);
 }
 
 %splice[prefetch_result_new] (SugarTac.lift_prim "prefetch_result_new" (`(fun (index: trigger_index) enabled expiry trigger -> { index; enabled; expiry; trigger })))
@@ -95,6 +96,7 @@ instance has_stream_prefetch_result: S.has_stream prefetch_result = {
 instance has_stream_fetch_result: S.has_stream fetch_result = {
   ty_id       = [`%fetch_result];
   val_default = { current = S.val_default; is_new = S.val_default;  is_started = S.val_default; is_expired = S.val_default; tx_count = S.val_default; };
+  val_eq      = (fun _ _ -> false);
 }
 
 

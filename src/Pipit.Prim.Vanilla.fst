@@ -157,6 +157,8 @@ let table: table = {
    prim_sem    = prim_sem;
    prim_eq     = (fun a b -> a = b);
 
+   val_eq      = (fun t a b -> a = b);
+
    val_default = val_default;
 
    propty      = TBool;

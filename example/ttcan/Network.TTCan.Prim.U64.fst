@@ -13,6 +13,7 @@ let t = REPR.t
 instance has_stream_U64: Sugar.has_stream t = {
   ty_id = [`%REPR.t];
   val_default = 0uL;
+  val_eq      = (fun a b -> a = b);
 }
 
 let valid' (i: t): bool = UInt.fits (REPR.v i) REPR.n

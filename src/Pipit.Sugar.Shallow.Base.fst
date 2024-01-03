@@ -13,36 +13,41 @@ module PR  = PipitRuntime.Prim
 module S = Pipit.Sugar.Base
 module L = FStar.List.Tot
 
-class has_stream (a: eqtype) = {
+class has_stream (a: Type) = {
   ty_id:       Shallow.ident;
   val_default: a;
+  val_eq:      Table.eq_dec_partial a;
 }
 
-let shallow (a: eqtype) {| strm: has_stream a |} : Shallow.shallow_type = {
+let shallow (a: Type) {| strm: has_stream a |} : Shallow.shallow_type = {
   ty_id       = strm.ty_id;
   ty_sem      = a;
   val_default = strm.val_default;
+  val_eq      = strm.val_eq;
 }
 
 instance has_stream_bool: has_stream bool = {
   ty_id       = [`%Prims.bool];
   val_default = false;
+  val_eq      = (fun a b -> a = b);
 }
 
 instance has_stream_unit: has_stream unit = {
   ty_id       = [`%Prims.unit];
   val_default = ();
+  val_eq      = (fun a b -> a = b);
 }
 
 instance has_stream_tup2 {| a: has_stream 'a |} {| b: has_stream 'b |}: has_stream ('a & 'b) = {
   ty_id       = L.(`%Pervasives.tuple2 :: a.ty_id @ b.ty_id);
   val_default = (a.val_default, b.val_default);
+  val_eq      = (fun (a1,b1) (a2,b2) -> a.val_eq a1 a2 && b.val_eq b1 b2);
 }
 
 [@@S.stream_ctor_attr]
-type stream (a: eqtype) {| has_stream a |} = S.stream Shallow.table (shallow a)
+type stream (a: Type) {| has_stream a |} = S.stream Shallow.table (shallow a)
 [@@S.stream_ctor_attr]
-let s_explicit (a: eqtype) (strm: has_stream a) = stream a
+let s_explicit (a: Type) (strm: has_stream a) = stream a
 
 let const {| has_stream 'a |} (v: 'a): stream 'a = S.const v
 
@@ -74,7 +79,7 @@ let fby {| has_stream 'a |} (v: 'a) (e: stream 'a): stream 'a = S.fby v e
 let pre {| has_stream 'a |} (e: stream 'a): stream 'a = S.pre e
 
 private
-let p'select (a: eqtype) {| has_stream a |}: Shallow.prim =
+let p'select (a: Type) {| has_stream a |}: Shallow.prim =
   Shallow.mkPrim (Some [`%PR.p'select]) (shallow bool `Table.FTFun` (shallow a `Table.FTFun` (shallow a `Table.FTFun` (Table.FTVal (shallow a))))) PR.p'select
 
 (* x -> y in Lustre means "x" at the first step, and then "y" at subsequent steps.
