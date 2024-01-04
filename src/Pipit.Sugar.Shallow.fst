@@ -160,11 +160,11 @@ module T = Pipit.Tactics
   only a syntactic convenience for stating and instantiating propositions. *)
 private
 assume val unsafe_proposition_holds (p: prop): b: bool
- // { p <==> b }
+ { p <==> b2t b }
 
-assume val lemma_unsafe_proposition_holds (p: prop)
-  : Lemma (b2t (unsafe_proposition_holds p) <==> p)
-    [SMTPat (unsafe_proposition_holds p)]
+assume val lemma_unsafe_proposition_holds (b: bool)
+  : Lemma (unsafe_proposition_holds (b2t b) == b)
+    [SMTPat (unsafe_proposition_holds (b2t b))]
 
 (* Check that a 1-argument proposition holds *)
 let check1 {| has_stream 'a |} (p: 'a -> prop) (a: stream 'a): stream unit =
