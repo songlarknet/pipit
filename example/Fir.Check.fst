@@ -21,20 +21,20 @@ let rec fir (coeffs: list R.real) (input: reals): reals =
 
 let fir2 (input: reals): reals = fir [0.7R; 0.3R] input
 
-let bibo2_body (n: pos) (signal: reals): bools =
+let bibo2_body (n: pos) (signal: reals): units =
   check "bibo" (sofar (abs signal <=^ const n) => (abs (fir2 signal) <=^ const n))
 
-let bibo2 n: reals -> bools =
+let bibo2 n: reals -> units =
   let e = Check.exp_of_stream1 (bibo2_body n) in
   assert (Check.system_induct_k1 e) by (T.norm_full ["Fir.Check"]);
   Check.stream_of_checked1 e
 
 let fir3 (input: reals): reals = fir [0.7R; 0.2R; 0.1R] input
 
-let bibo3_body (n: pos) (signal: reals): bools =
+let bibo3_body (n: pos) (signal: reals): units =
   check "bibo" (sofar (abs signal <=^ const n) => (abs (fir3 signal) <=^ const n))
 
-let bibo3 n: reals -> bools =
+let bibo3 n: reals -> units =
   let e = Check.exp_of_stream1 (bibo3_body n) in
   assert (Check.system_induct_k 2 e) by (T.norm_full ["Fir.Check"]);
   Check.stream_of_checked1 e

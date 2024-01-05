@@ -136,7 +136,7 @@ type bigstep (#t: table u#i u#j) (#c: context t): (#a: t.ty) -> list (row c) -> 
           eprop:   exp t c             t.propty   ->
           v:       t.ty_sem t.propty              ->
           bigstep streams                eprop  v ->
-          bigstep streams (XCheck status eprop) v
+          bigstep streams (XCheck status eprop) ()
 
 and bigstep_apps (#t: table) (#c: context t): (#a: funty t.ty) -> list (row c) -> exp_apps t c a -> funty_sem t.ty_sem a -> Type =
 

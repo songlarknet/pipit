@@ -59,8 +59,7 @@ type table: Type = {
   // We can't directly embed props because it requires a bigger universe, so
   // instead we describe how to interpret a particular value type as a prop.
   propty:      propty: ty { ty_sem propty === bool };
-
-  // TODO: unit types?
+  unitty:      unitty: ty { ty_sem unitty === unit };
 }
 
 (* Helpers for table-parameterised contexts *)

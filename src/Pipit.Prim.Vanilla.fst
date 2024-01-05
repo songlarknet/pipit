@@ -17,10 +17,11 @@ type valtype =
  | TInt:  valtype
  | TReal: valtype
  | TPair: valtype -> valtype -> valtype
+ | TUnit: valtype
 
 let is_arithtype (t: valtype) = match t with
- | TInt  | TReal     -> true
- | TBool | TPair _ _ -> false
+ | TInt  | TReal             -> true
+ | TBool | TPair _ _ | TUnit -> false
 
 let arithtype = t: valtype { is_arithtype t }
 
@@ -29,6 +30,7 @@ let rec ty_sem (t: valtype): eqtype = match t with
  | TInt  -> int
  | TReal -> R.real
  | TPair a b -> ty_sem a & ty_sem b
+ | TUnit     -> unit
 
 
 type prim_bool =
@@ -143,6 +145,7 @@ let rec val_default (t: valtype): ty_sem t = match t with
  | TInt      -> 0
  | TReal     -> R.zero
  | TPair a b -> (val_default a, val_default b)
+ | TUnit     -> ()
 
 let table: table = {
    ty          = valtype;
@@ -157,4 +160,5 @@ let table: table = {
    val_default = val_default;
 
    propty      = TBool;
+   unitty      = TUnit;
 }

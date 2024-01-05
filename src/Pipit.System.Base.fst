@@ -132,13 +132,13 @@ let system_check (#input: Type) (#oracle #state: option Type)
   (name: string)
   (status: PM.prop_status)
   (t1: system input oracle state bool):
-       system input oracle state bool =
+       system input oracle state unit =
   { init = t1.init;
     step = (fun i o s ->
       let s1 = t1.step i o s in
       {
         s = s1.s;
-        v = s1.v;
+        v = ();
         chck = s1.chck `checks_join` checks_of_prop status (s1.v == true);
       });
   }

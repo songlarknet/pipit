@@ -83,6 +83,12 @@ let bool: shallow_type = {
   val_default = false;
 }
 
+let unit: shallow_type = {
+  ty_id       = [`%Prims.unit];
+  ty_sem      = unit;
+  val_default = ();
+}
+
 let table: table = {
    ty          = shallow_type;
    ty_sem      = (fun t -> t.ty_sem);
@@ -96,4 +102,5 @@ let table: table = {
    val_default = (fun t -> t.val_default);
 
    propty      = bool;
+   unitty      = unit;
 }

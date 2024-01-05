@@ -99,7 +99,7 @@ type exp (t: table u#i u#j) (c: context t): t.ty -> Type u#(max i j) =
 
 
   // check "" e
-  | XCheck : PM.prop_status -> exp t c t.propty -> exp t c t.propty
+  | XCheck : PM.prop_status -> exp t c t.propty -> exp t c t.unitty
 and
  exp_apps (t: table u#i u#j) (c: context t): funty t.ty -> Type =
   // primitives
