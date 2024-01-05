@@ -6,7 +6,8 @@
      reduces some syntactic noise;
   3. we use a simple tick-based time instead of microseconds;
   4. no reset trigger;
-  5. cycle offset is assumed constant (rather than taking a new value every reset)
+  5. cycle offset is assumed to be constant, rather than taking a new value
+     every reset.
 *)
 module Network.TTCan.TriggerTimely
 #push-options "--print_bound_var_types --print_full_names"
@@ -16,6 +17,7 @@ module S     = Pipit.Sugar.Shallow
 module SugarBase = Pipit.Sugar.Base
 module SugarTac  = Pipit.Sugar.Shallow.Tactics
 module Check     = Pipit.Sugar.Check
+module Contract  = Pipit.Sugar.Contract
 module T = Pipit.Tactics
 
 module Ints = Network.TTCan.Prim.IntUnsafe
@@ -164,7 +166,6 @@ let count_when (max: nat): S.stream bool -> S.stream int =
 let time_increasing (now: S.stream int): S.stream bool =
   let open S in
   let open Ints in
-  // now = const 0 \/ 
   now = 0 `fby` (now + const 1)
 
 
@@ -175,57 +176,29 @@ let trigger_time_mark (cfg: config) (index: S.stream index): S.stream time =
   S.lift1 (fun index -> cfg.triggers.time_mark index) index
 
 
-let trigger_fetch_unchecked (cfg: config) (c: cycle) (now: S.stream time): S.stream (index & bool) #_ =
+let trigger_index_unchecked (cfg: config) (c: cycle) (now: S.stream time): S.stream index =
   let open S in
   let open Ints in
-  rec' (fun index_intr ->
-    let^ index = fst index_intr in
+  rec' (fun index ->
     let^ inc = false `fby` ((trigger_time_mark cfg index <= now \/ ~ (trigger_enabled cfg index c))) in
     let^ index = count_when cfg.triggers.size inc in
-    let^ interrupt = inc /\ index < const cfg.triggers.size /\ trigger_enabled cfg index c in
 
     pose1_forall (fun i -> lemma_adequate_spacing_next_inc_def cfg c i) () index;^
-    check "" (sofar (time_increasing now) ==> (lift2 (fun now index -> trigger_index_invariant cfg c now index)) now index);^
-    // pose_trigger_index_invariant_zero cfg c;^
-    // pose_trigger_index_invariant_stay cfg c now index;^
-    // pose_trigger_index_invariant_step cfg c now index;^
-    tup index interrupt)
+    check "" ((lift2 (fun now index -> trigger_index_invariant cfg c now index)) now index);^
+    // We should really be able to put a `time_increasing` precondition on here:
+    // but we run into problems proving the contract below, because the state inside `sofar`
+    // is a different one to the one in the contract. CSE would help here
+    // check "" (sofar (time_increasing now) ==> (lift2 (fun now index -> trigger_index_invariant cfg c now index)) now index);^
+    index)
 
 
-let trigger_fetch (cfg: config) (c: cycle): S.stream time -> S.stream (index & bool) #_ =
-  let e = Check.exp_of_stream1 (trigger_fetch_unchecked cfg c) in
-  let sys = Pipit.System.Exp.system_of_exp e in
-  // assert (Pipit.System.Ind.base_case sys) by (T.clear_all (); T.pipit_simplify_products ["Network.TTCan"]; T.dump "base");
-  // assert (Pipit.System.Ind.step_case sys) by (T.clear_all (); T.pipit_simplify_products ["Network.TTCan"]; T.dump "step");
-  assert (Check.system_induct_k1 e) by (T.clear_all (); T.pipit_simplify_products ["Network.TTCan"]; T.dump "check");
-  Check.stream_of_checked1 e
-
-
-// let trigger_fetch_ctr (c: cycle) =
-//   let open S in
-//   let open Ints in
-//   Check.contract Pipit.Prim.Shallow.table [shallow time] (shallow index)
-//     (Check.exp_of_stream1 time_increasing)
-//     (Check.exp_of_stream2 (fun index now -> trigger_enabled index c ==> trigger_time_mark index >= now))
-
-
-// let trigger_fetch_spec_unchecked (cfg: config) (c: cycle) (now: S.stream int): S.stream (trigger & int) =
-//   let trigger_max_index: index = cfg.triggers.size - 1 in
-//   let open S in
-//   let open Ints in
-//   let^ trigger_ret = trigger_fetch cfg c now in
-//   let^ trigger = fst trigger_ret in
-//   let^ index = snd trigger_ret in
-//   let^ new_trigger = index <> (-1) `fby` index in
-//   check "" (
-//     (new_trigger /\ trigger_enabled' trigger c /\ index < const cfg.triggers.size) ==>
-//     get_time_mark trigger >= now);^
-//   trigger_ret
-
-// let trigger_fetch_spec (cfg: config) (c: cycle): S.stream int -> S.stream (trigger & int) =
-//   let e = Check.exp_of_stream1 (trigger_fetch_unchecked cfg c) in
-//   let sys = Pipit.System.Exp.system_of_exp e in
-//   assert (Pipit.System.Ind.base_case sys) by (T.pipit_simplify_products ["Network.TTCan"]);
-//   assert (Pipit.System.Ind.step_case sys) by (T.pipit_simplify_products ["Network.TTCan"]);
-//   assert (Check.system_induct_k1 e);
-//   Check.stream_of_checked1 e
+let trigger_fetch (cfg: config) (c: cycle): S.stream int -> S.stream index =
+  let open S in
+  let open Ints in
+  let c = Contract.contract_of_stream1 {
+    rely = (fun now -> time_increasing now);
+    guar = (fun index now -> (index < const cfg.triggers.size /\ trigger_enabled cfg index c) ==> trigger_time_mark cfg index >= now);
+    body = (fun now -> trigger_index_unchecked cfg c now);
+  } in
+  assert (Contract.system_induct_k1 c) by (T.pipit_simplify_products ["Network"]; T.dump "contr");
+  Contract.stream_of_contract1 c
