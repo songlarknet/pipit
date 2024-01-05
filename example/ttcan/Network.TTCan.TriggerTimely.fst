@@ -10,7 +10,6 @@
      every reset.
 *)
 module Network.TTCan.TriggerTimely
-#push-options "--print_bound_var_types --print_full_names"
 
 module S     = Pipit.Sugar.Shallow
 
@@ -93,6 +92,17 @@ let rec next (triggers: trigger_array) (ix: int) (c: cycle)
     | None -> None
   )
 
+let lemma_adequate_spacing_next_inc_def (cfg: config) (c: cycle) (index: index) =
+  match next cfg.triggers (index + 1) c with
+  | None -> True
+  | Some n ->
+    0 <= index ==>
+    adequate_spacing cfg.triggers index n c
+
+let lemma_adequate_spacing_next_inc (cfg: config) (c: cycle)
+  : Lemma (forall (index: index). lemma_adequate_spacing_next_inc_def cfg c index)
+  = ()
+
 let trigger_index_invariant (cfg: config) (c: cycle) (now: time) (index: index): bool =
   match next cfg.triggers index c with
   | None -> true
@@ -111,17 +121,6 @@ let trigger_index_invariant_stay (cfg: config) (c: cycle) (now: int) (index: int
       (trigger_index_invariant cfg c (now + 1) index)) =
   ()
 
-let lemma_adequate_spacing_next_inc_def (cfg: config) (c: cycle) (index: index) =
-  match next cfg.triggers (index + 1) c with
-  | None -> True
-  | Some n ->
-    0 <= index ==>
-    adequate_spacing cfg.triggers index n c
-
-let lemma_adequate_spacing_next_inc (cfg: config) (c: cycle)
-  : Lemma (forall (index: index). lemma_adequate_spacing_next_inc_def cfg c index)
-  = ()
-
 let trigger_index_invariant_step (cfg: config) (c: cycle) (now: int) (index: int)
   : Lemma (
       (0 <= index /\ trigger_index_invariant cfg c now index)
@@ -131,24 +130,6 @@ let trigger_index_invariant_step (cfg: config) (c: cycle) (now: int) (index: int
   | None -> ()
   | Some n' -> lemma_adequate_spacing_next_inc cfg c
 
-let pose_trigger_index_invariant_zero (cfg: config) (c: cycle): S.stream unit =
-  S.pose (trigger_index_invariant cfg c 0 0)
-    ()
-
-let pose_trigger_index_invariant_stay (cfg: config) (c: cycle) (now: S.stream int) (index: S.stream int): S.stream unit =
-  S.pose2 (fun now index ->
-      (trigger_index_invariant cfg c now index /\
-      cfg.triggers.enabled index c /\
-      cfg.triggers.time_mark index > now)
-    ==>
-      (trigger_index_invariant cfg c (now + 1) index))
-    (fun now index -> trigger_index_invariant_stay cfg c now index)
-    now index
-
-let pose_trigger_index_invariant_step (cfg: config) (c: cycle) (now: S.stream int) (index: S.stream int): S.stream unit =
-  S.pose2
-    (fun now index -> (0 <= index /\ trigger_index_invariant cfg c now index) ==> trigger_index_invariant cfg c (now + 1) (index + 1))
-    (fun now index -> trigger_index_invariant_step cfg c now index) now index
 
 let count_when_unchecked (max: nat) (inc: S.stream bool): S.stream int =
   let open S in
@@ -168,13 +149,11 @@ let time_increasing (now: S.stream int): S.stream bool =
   let open Ints in
   now = 0 `fby` (now + const 1)
 
-
 let trigger_enabled (cfg: config) (index: S.stream index) (c: cycle): S.stream bool =
   S.lift1 (fun index -> cfg.triggers.enabled index c) index
 
 let trigger_time_mark (cfg: config) (index: S.stream index): S.stream time =
   S.lift1 (fun index -> cfg.triggers.time_mark index) index
-
 
 let trigger_index_unchecked (cfg: config) (c: cycle) (now: S.stream time): S.stream index =
   let open S in
@@ -190,7 +169,6 @@ let trigger_index_unchecked (cfg: config) (c: cycle) (now: S.stream time): S.str
     // is a different one to the one in the contract. CSE would help here
     // check "" (sofar (time_increasing now) ==> (lift2 (fun now index -> trigger_index_invariant cfg c now index)) now index);^
     index)
-
 
 let trigger_fetch (cfg: config) (c: cycle): S.stream int -> S.stream index =
   let open S in
