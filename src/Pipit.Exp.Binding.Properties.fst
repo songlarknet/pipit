@@ -271,7 +271,7 @@ let lemma_subst_subst_distribute_le_bind
   CP.lemma_drop_drop_commute c i1 i2;
   CP.lemma_drop_get_index_lt c (i2 + 1) i1;
 
-  // ASSUME why flaky?
+  // FLAKY-ASSUME why did this regress?
   assume (
       (subst1' (subst1' e (i1 + 1) (_lift_of_drop i1 p1 te)) (i2 + 1) (_lift_of_drop2 i1 i2 p2 te)) ==
       (subst1' (subst1' e (i2 + 2) (lift1 (lift1' p2 i1 (C.get_index c i1)) te)) (i1 + 1) (lift1 (subst1' p1 i2 p2) te)))
