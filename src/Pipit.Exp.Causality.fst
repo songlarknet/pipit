@@ -84,11 +84,6 @@ and causal_apps (#t: table) (#c: context t) (#a: funty t.ty) (e: exp_apps t c a)
   | XPrim _ -> true
   | XApp e1 e2 -> causal_apps e1 && causal e2
 
-#push-options "--fuel 1 --ifuel 1"
-
-#push-options "--split_queries always"
-
-
 (* used by lemma_direct_dependency_not_subst', lemma_direct_dependency_not_subst' needs i' < i case *)
 let rec lemma_direct_dependency_lift_ge (#tbl: table) (#c: context tbl) (#a: tbl.ty) (e: exp tbl c a) (i: C.index_lookup c) (i': C.index { i >= i' /\ i' <= List.Tot.length c }) (t: tbl.ty):
     Lemma (ensures direct_dependency e i == direct_dependency (lift1' e i' t) (i + 1)) (decreases e) =
@@ -156,8 +151,6 @@ and lemma_direct_dependency_not_subst_apps
     lemma_direct_dependency_not_subst_apps i i' ea p;
     lemma_direct_dependency_not_subst i i' e p
 
-#push-options "--fuel 1 --ifuel 1"
-
 (* used by lemma_bigstep_substitute_elim_XMu, indirectly by transition system proof *)
 let lemma_bigstep_substitute_elim_base
   (#t: table)
@@ -172,30 +165,24 @@ let lemma_bigstep_substitute_elim_base
   (hBSse: bigsteps rows e vs)
   (hBSe': bigstep rows (subst1_base' e' i e) v'):
     Tot (bigstep_base (CP.row_zip2_lift1_dropped i rows vs) e' v') =
-  // let latest = List.Tot.hd rows in
   let rows' = CP.row_zip2_lift1_dropped i rows vs in
   let latest' = List.Tot.hd rows' in
   match e' with
-  | XVal v ->
-    // ASSUME needs lemma
-    assume (v == v');
-    BSVal _ v
-  | XVar x ->
-    (match hBSe' with
-    | BSBase _ _ _ _ -> false_elim ())
+  | XVal v -> BSVal _ v
+  | XVar x -> false_elim ()
   | XBVar i' ->
     if i = i'
     then
       (match hBSse with
-       | BSsS r e_ _ _ v hBSsep hBSe ->
-         bigstep_deterministic hBSe hBSe';
-         BSVar latest' (List.Tot.tl rows') i)
+        | BSsS r e_ _ _ v hBSsep hBSe ->
+          bigstep_deterministic hBSe hBSe';
+          BSVar latest' (List.Tot.tl rows') i)
     else
       (match hBSe' with
-       | BSBase _ _ _ (BSVar latest prefix ix) ->
-         // ASSUME needs lemma
-         assume (CR.index (context_sem c) latest' i' == v');
+       | BSBase _ _ _ (BSVar _latest _prefix ix_drop) ->
          BSVar latest' (List.Tot.tl rows') i')
+
+#push-options "--split_queries always"
 
 let rec lemma_bigstep_substitute_elim
   (#t: table)
@@ -215,8 +202,11 @@ let rec lemma_bigstep_substitute_elim
   let latest' = List.Tot.hd rows' in
   match e' with
   | XBase e' ->
-    BSBase (lemma_bigstep_substitute_elim_base i rows e vs e' v' hBSse hBSe')
-  | XApps ea -> lemma_bigstep_substitute_elim_apps i rows e vs ea v' hBSse hBSe'
+    BSBase _ _ _ (lemma_bigstep_substitute_elim_base i rows e vs e' v' hBSse hBSe')
+  | XApps ea ->
+    (match hBSe' with
+    | BSApps _ _ _ hBSea' -> 
+      BSApps _ _ _ (lemma_bigstep_substitute_elim_apps i rows e vs ea v' hBSse hBSea'))
   | XFby v1 e2 ->
     (match hBSe' with
     | BSFby1 _ _ _ -> BSFby1 _ v1 e2
@@ -254,11 +244,14 @@ let rec lemma_bigstep_substitute_elim
       BSLet _ e1 e2 _ hBSX)
   | XCheck p e1 ->
     (match hBSe' with
-    | BSCheck _ _ _ _ hBS1 ->
-      let hBS1' = lemma_bigstep_substitute_elim i rows e vs e1 v' hBSse hBS1 in
+    | BSCheck _ _ _ v'' hBS1 ->
+      let hBS1' = lemma_bigstep_substitute_elim i rows e vs e1 v'' hBSse hBS1 in
       BSCheck _ p e1 _ hBS1')
-  | XContract _ _ _ _ ->
-    admit ()
+  | XContract ps r g e1 ->
+    (match hBSe' with
+    | BSContract _ _ _ _ _ v'' hBS1 ->
+      let hBS1' = lemma_bigstep_substitute_elim i rows e vs e1 v'' hBSse hBS1 in
+      BSContract _ ps r g _ v'' hBS1')
 and lemma_bigstep_substitute_elim_apps
   (#t: table)
   (#c: context t)
@@ -272,17 +265,18 @@ and lemma_bigstep_substitute_elim_apps
   (hBSse: bigsteps rows e vs)
   (hBSe': bigstep_apps rows (subst1_apps' e' i e) v'):
     Tot (bigstep_apps (CP.row_zip2_lift1_dropped i rows vs) e' v') (decreases hBSe') =
-    admit ()
-  // | XPrim p -> BSPrim _ p
-  // | XApp e1 e2 ->
-  //   (match hBSe' with
-  //   | BSApp _ _ _ v1 v2 hBS1 hBS2 ->
-  //     assert_norm (subst1' (XApp e1 e2) i e == XApp (subst1' e1 i e) (subst1' e2 i e));
-  //     let hBS1' = lemma_bigstep_substitute_elim i rows e vs e1 v1 hBSse hBS1 in
-  //     let hBS2' = lemma_bigstep_substitute_elim i rows e vs e2 v2 hBSse hBS2 in
-  //     BSApp _ _ _ v1 v2 hBS1' hBS2')
+    // admit ()
+  match e' with
+  | XPrim p -> BSPrim _ p
+  | XApp e1 e2 ->
+    (match hBSe' with
+    | BSApp _ _ _ v1 v2 hBS1 hBS2 ->
+      // assert_norm (subst1_apps' (XApp e1 e2) i e == XApp (subst1_apps' e1 i e) (subst1' e2 i e));
+      let hBS1' = lemma_bigstep_substitute_elim_apps i rows e vs e1 v1 hBSse hBS1 in
+      let hBS2' = lemma_bigstep_substitute_elim i rows e vs e2 v2 hBSse hBS2 in
+      BSApp _ _ _ v1 v2 hBS1' hBS2')
 
-
+(*
 (* used by lemma_bigstep_substitute_intros_no_dep, indirectly by lemma_bigstep_total *)
 let rec lemma_bigstep_substitute_intros
   (#t: table)

@@ -120,10 +120,6 @@ type bigstep (#t: table u#i u#j) (#c: context t): (#a: t.ty) -> list (row c) -> 
           guar: exp t (valty :: c) t.propty   ->
           impl: exp t c            valty      ->
           v: t.ty_sem valty                   ->
-          vr: bool                            ->
-          vg: bool                            ->
-          bigstep streams rely vr               ->
-          bigstep streams (subst1 guar impl) vg ->
           bigstep streams impl v                ->
           bigstep streams (XContract status rely guar impl) v
 
@@ -233,10 +229,8 @@ let rec bigstep_proof_equivalence
     let BSLet _ _ _ _ bs2 = hBS2 in
     bigstep_proof_equivalence bs1 bs2
 
-  | BSContract _ _ _ _ _ _ _ _ bsr1 bsg1 bsi1 ->
-    let BSContract _ _ _ _ _ _ _ _ bsr2 bsg2 bsi2 = hBS2 in
-    bigstep_proof_equivalence bsr1 bsr2;
-    bigstep_proof_equivalence bsg1 bsg2;
+  | BSContract _ _ _ _ _ _ bsi1 ->
+    let BSContract _ _ _ _ _ _ bsi2 = hBS2 in
     bigstep_proof_equivalence bsi1 bsi2
 
   | BSCheck _ _ _ _ bs1 ->
