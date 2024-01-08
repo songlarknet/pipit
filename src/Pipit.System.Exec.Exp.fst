@@ -11,6 +11,8 @@ module PM = Pipit.Prop.Metadata
 open Pipit.System.Base
 open Pipit.System.Exec
 
+module SX = Pipit.System.Exp
+
 noextract inline_for_extraction
 let rec estate_of_exp (#t: table) (#c: context t) (#a: t.ty) (e: exp t c a): Tot (option Type) (decreases e) =
   match e with
@@ -50,7 +52,7 @@ let rec esystem_of_exp
     match e with
     | XBase e1 -> esystem_of_exp_base e1
     | XApps e1 ->
-      let t: esystem (unit & row c) (estate_of_exp_apps e1) (t.ty_sem a) = esystem_of_exp_apps e1 (fun r i -> r) in
+      let t: esystem (unit & row c) (estate_of_exp_apps e1) (t.ty_sem a) = esystem_of_exp_apps e1 SX.system_of_exp_apps_const in
       esystem_with_input (fun s -> ((), s)) t
     | XFby v e1 ->
       esystem_pre v (esystem_of_exp e1)
@@ -79,7 +81,7 @@ esystem_of_exp_apps
       let arg = XApp?.arg e in
       let ret = XApp?.ret e in
       lemma_funty_sem_FTFun t.ty_sem arg ret;
-      let t1: esystem ((t.ty_sem arg & inp) & row c) _ res = esystem_of_exp_apps e1 (fun r i -> f (r (fst i)) (snd i)) in
+      let t1: esystem ((t.ty_sem arg & inp) & row c) _ res = esystem_of_exp_apps e1 (SX.system_of_exp_apps_distr f) in
       let t2: esystem (row c) _ (t.ty_sem arg) = esystem_of_exp e2 in
       let t2': esystem (inp & row c) _ (t.ty_sem arg) = esystem_with_input snd t2 in
       esystem_let (fun i v -> ((v, fst i), snd i)) t2' t1
