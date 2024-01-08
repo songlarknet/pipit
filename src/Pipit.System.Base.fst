@@ -98,6 +98,15 @@ let checks_join (c1 c2: checks): checks = {
   obligations = prop_join c1.obligations c2.obligations;
 }
 
+let system_step0
+  (#input #result: Type)
+  (#oracle #state: option Type)
+  (t: system input oracle state result)
+  (i: input)
+  (o: option_type_sem oracle)
+  : step_result state result =
+  t.step i o t.init
+
 // let rec system_steps
 //   (#input #oracle #result: Type)
 //   (#state: option Type)

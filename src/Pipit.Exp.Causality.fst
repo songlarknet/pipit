@@ -77,7 +77,7 @@ let rec causal (#t: table) (#c: context t) (#a: t.ty) (e: exp t c a): Tot bool (
   | XLet b e1 e2 -> causal e1 && causal e2
   | XCheck _ e1 -> causal e1
   | XContract _ rely guar impl ->
-    causal impl
+    causal rely && causal guar && causal impl
 
 and causal_apps (#t: table) (#c: context t) (#a: funty t.ty) (e: exp_apps t c a): Tot bool (decreases e) =
   match e with
