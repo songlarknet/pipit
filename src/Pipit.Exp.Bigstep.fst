@@ -120,10 +120,6 @@ type bigstep (#t: table u#i u#j) (#c: context t): (#a: t.ty) -> list (row c) -> 
           guar: exp t (valty :: c) t.propty   ->
           impl: exp t c            valty      ->
           v: t.ty_sem valty                   ->
-          vr: bool                            ->
-          vg: bool                            ->
-          bigstep streams rely vr               ->
-          bigstep streams (subst1 guar impl) vg ->
           bigstep streams impl v                ->
           bigstep streams (XContract status rely guar impl) v
 
@@ -233,10 +229,8 @@ let rec bigstep_proof_equivalence
     let BSLet _ _ _ _ bs2 = hBS2 in
     bigstep_proof_equivalence bs1 bs2
 
-  | BSContract _ _ _ _ _ _ _ _ bsr1 bsg1 bsi1 ->
-    let BSContract _ _ _ _ _ _ _ _ bsr2 bsg2 bsi2 = hBS2 in
-    bigstep_proof_equivalence bsr1 bsr2;
-    bigstep_proof_equivalence bsg1 bsg2;
+  | BSContract _ _ _ _ _ _ bsi1 ->
+    let BSContract _ _ _ _ _ _ bsi2 = hBS2 in
     bigstep_proof_equivalence bsi1 bsi2
 
   | BSCheck _ _ _ _ bs1 ->
@@ -290,3 +284,19 @@ let bigstep_deterministic
     Lemma (ensures (v1 == v2)) (decreases hBS1) =
   bigstep_proof_equivalence hBS1 hBS2
 
+
+let bigstep_deterministic_squash
+  (#t: table)
+  (#c: context t)
+  (streams: list (row c))
+  (#a: t.ty)
+  (e: exp t c a)
+  (v1 v2: t.ty_sem a):
+    Lemma
+      (requires (bigstep streams e v1 /\ bigstep streams e v2))
+      (ensures (v1 == v2)) =
+  FStar.Squash.bind_squash #(bigstep streams e v1) ()
+    (fun (a: bigstep streams e v1) ->
+  FStar.Squash.bind_squash #(bigstep streams e v2) #(v1 == v2) ()
+    (fun (b: bigstep streams e v2) ->
+      bigstep_deterministic a b))

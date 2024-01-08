@@ -112,9 +112,10 @@ let rec check (#t: table u#i u#j) (#c: context t) (#a: t.ty) (#streams: list (ro
     check mode hBS'
   | BSLet _ _ _ _ hBS' ->
     check mode hBS'
-  | BSContract _ status rely guar impl _ _ _ hBSr' hBSg' hBSi' ->
-    check mode hBSr' /\
-    check mode hBSg' /\
+  | BSContract _ status rely guar impl _ hBSi' ->
+    // TODO: change to inductive definition so we can check rely and guar, without needing them to be evaluated in bigstep.
+    // check mode hBSr' /\
+    // check mode hBSg' /\
     check mode hBSi' /\
     (PM.prop_status_contains mode status ==>
       bigstep_always streams rely) /\
