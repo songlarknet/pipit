@@ -1,215 +1,290 @@
 (* Translation to transition system proof *)
 module Pipit.System.Exp.Properties
-(*SHELVED: use Pipit.Norm.System
+
 open Pipit.Prim.Table
+open Pipit.Exp.Base
+
+module Table = Pipit.Prim.Table
+
 module C  = Pipit.Context.Base
 module CR = Pipit.Context.Row
 
-open Pipit.System.Base
-open Pipit.System.Exp
-open Pipit.System.Det
+module SB = Pipit.System.Base
+module SX = Pipit.System.Exp
 
-open Pipit.Exp
+module X  = Pipit.Exp
+module XB = Pipit.Exp.Bigstep
+module XC = Pipit.Exp.Causality
+
+module List = FStar.List.Tot
+
+module T    = FStar.Tactics
 
 #push-options "--split_queries always"
-#push-options "--fuel 1 --ifuel 1"
 
 (*
    The invariant describes the transition system's state after it has been fed with all of `rows` as inputs.
 *)
 let rec system_of_exp_invariant
-  (#t: table) (#c: context t)
+  (#t: table) (#c: context t) (#a: t.ty)
   (rows: list (row c) { Cons? rows })
-  (e: exp t c 'a { causal e })
-  (s: state_of_exp e):
+  (e: exp t c a)
+  (s: SB.option_type_sem (SX.state_of_exp e)):
     Tot prop (decreases e) =
   match e with
-  | XVal _ -> True
-  | XPrim _ -> True
-  | XVar _ -> false_elim ()
-  | XBVar _ -> True
-  | XApp e1 e2 ->
-    assert_norm (causal (XApp e1 e2) == (causal e1 && causal e2));
-    assert_norm (state_of_exp (XApp e1 e2) == (state_of_exp e1 & state_of_exp e2));
-    let s: state_of_exp e1 & state_of_exp e2 = s in
-    let (s1, s2) = s in
-    system_of_exp_invariant rows e1 s1 /\
-    system_of_exp_invariant rows e2 s2
+  | XBase _ -> True
+  | XApps e1 -> system_of_exp_apps_invariant rows e1 s
 
   | XFby v1 e2 ->
-    let s: state_of_exp e2 & 'a = s in
-    let (s1, v_buf) = s in
-    let v = lemma_bigstep_total_v rows e2 in
-    v_buf == v /\ system_of_exp_invariant rows e2 s1
-
-  | XThen e1 e2 ->
-    let s: system_then_state (state_of_exp e1) (state_of_exp e2) = s in
-    (s.init == false /\
-        system_of_exp_invariant rows e1 s.s1 /\
-        system_of_exp_invariant rows e2 s.s2)
+    let s: SB.option_type_sem (SB.type_join (Some (t.ty_sem a)) (SX.state_of_exp e2)) = s in
+    XB.bigstep rows e2 (SB.type_join_fst s) /\ system_of_exp_invariant rows e2 (SB.type_join_snd s)
 
   | XMu e1 ->
-    let s: state_of_exp e1 = coerce_eq () s in
-    let (| vs, hBSmus |) = lemma_bigsteps_total rows e in
-    let rows' = CR.zip2_cons vs rows in
-    system_of_exp_invariant rows' e1 s
+    let s: SB.option_type_sem (SX.state_of_exp e1) = coerce_eq () s in
+    // let (| vs, hBSmus |) = XC.lemma_bigsteps_total rows e in
+    exists (vs: list (t.ty_sem a) { List.length vs == List.length rows }).
+      let rows' = CR.zip2_cons vs rows in
+      XB.bigsteps rows' e1 vs /\ system_of_exp_invariant rows' e1 s
 
   | XLet b e1 e2 ->
-    let s: state_of_exp e1 & state_of_exp e2 = s in
-    let (s1, s2) = s in
-    let (| vlefts, hBSlefts |) = lemma_bigsteps_total rows e1 in
-    let rows' = CR.zip2_cons vlefts rows in
-    system_of_exp_invariant rows e1 s1 /\
-      system_of_exp_invariant rows' e2 s2
+    let s: SB.option_type_sem (SB.type_join (SX.state_of_exp e1) (SX.state_of_exp e2)) = s in
+    // let (| vlefts, hBSlefts |) = XC.lemma_bigsteps_total rows e1 in
+    exists (vlefts: list (t.ty_sem b) { List.length vlefts == List.length rows }).
+      let rows' = CR.zip2_cons vlefts rows in
+      system_of_exp_invariant rows e1 (SB.type_join_fst s) /\
+      system_of_exp_invariant rows' e2 (SB.type_join_snd s)
 
-  | XCheck _ e1 e2 ->
-    let s: (t.ty_sem t.propty & state_of_exp e1) & state_of_exp e2 = s in
-    let ((xp, s1), s2) = s in
-    xp == lemma_bigstep_total_v rows e1 /\
-      system_of_exp_invariant rows e1 s1 /\
-      system_of_exp_invariant rows e2 s2
+  | XCheck _ e1 ->
+    let s: SB.option_type_sem (SX.state_of_exp e1) = s in
+    system_of_exp_invariant rows e1 s
 
-let rec dstep0_ok
-    (#t: table) (#c: context t)
+  | XContract _ er eg eb ->
+    // we do not prove anything about contracts yet.
+    // when we want to prove that checks are preserved, we'll need to
+    // include the rely and guarantee invariants here
+    True
+
+and system_of_exp_apps_invariant
+  (#t: table) (#c: context t) (#a: funty t.ty)
+  (rows: list (row c) { Cons? rows })
+  (e: exp_apps t c a)
+  (s: SB.option_type_sem (SX.state_of_exp_apps e)):
+    Tot prop (decreases e) =
+  match e with
+  | XPrim _ -> True
+  | XApp e1 e2 ->
+    assert_norm (SX.state_of_exp_apps (XApp e1 e2) == SB.type_join(SX.state_of_exp e2) (SX.state_of_exp_apps e1));
+    let s: SB.option_type_sem (SB.type_join (SX.state_of_exp e2) (SX.state_of_exp_apps e1)) = s in
+    system_of_exp_apps_invariant rows e1 (SB.type_join_snd s) /\
+    system_of_exp_invariant rows e2 (SB.type_join_fst s)
+
+
+
+let step0
+    (#t: table) (#c: context t) (#a: t.ty)
     (row: row c)
-    (e: exp t c 'a { causal e })
-    (v: 'a)
-    (hBS: bigstep [row] e v):
+    (e: exp t c a { XC.causal e })
+    (orcl: SB.option_type_sem (SX.oracle_of_exp e)) =
+  let t = SX.system_of_exp e in
+  t.step row orcl t.init
+
+// #push-options "--fuel 1 --ifuel 1"
+let rec step0_ok
+    (#t: table) (#c: context t) (#a: t.ty)
+    (row: row c)
+    (e: exp t c a { XC.causal e })
+    (v: t.ty_sem a)
+    (hBS: XB.bigstep [row] e v)
+    (orcl: SB.option_type_sem (SX.oracle_of_exp e)):
       Lemma (ensures (
-        let t = dsystem_of_exp e in
-        let (s', v') = t.step row t.init in
-        v == v' /\ system_of_exp_invariant [row] e s'))
-          (decreases e) =
+        let stp = step0 row e orcl in
+        stp.v == v /\
+        system_of_exp_invariant [row] e stp.s))
+        (decreases e) =
     match e with
-    | XVal _ -> ()
-    | XPrim _ -> ()
-    | XBVar _ -> ()
-    | XVar _ -> false_elim ()
-    | XApp e1 e2 ->
-      assert_norm (causal (XApp e1 e2) == (causal e1 && causal e2));
-      assert_norm (state_of_exp (XApp e1 e2) == (state_of_exp e1 & state_of_exp e2));
-      let t1 = dsystem_of_exp e1 in
-      let t2 = dsystem_of_exp e2 in
-      let t  = dsystem_ap2 t1 t2 in
-      assert_norm (dsystem_of_exp (XApp e1 e2) == t);
-      let BSApp _ _ _ v1 v2 hBS1 hBS2 = hBS in
-      dstep0_ok row e1 v1 hBS1;
-      dstep0_ok row e2 v2 hBS2;
-      let (s', v') = t.step row t.init in
-      assert_norm (system_of_exp_invariant [row] (XApp e1 e2) s')
+    // | XBase _ -> ()
+    // | XApps e1 -> (match hBS with
+    //   | XB.BSApps _ _ _ hBSa ->
+    //     let t: SB.system (unit & Table.row c) (SX.oracle_of_exp_apps e1) (SX.state_of_exp_apps e1) (t.ty_sem a) = SX.system_of_exp_apps e1 (fun r i -> r) in
+    //     let t' = SB.system_with_input (fun s -> ((), s)) t in
+
+    //     let stp1 = t'.step row orcl t'.init in
+    //     let stp = step0 row (XApps e1) orcl in
+
+    //     assert (stp1 == stp)
+    //       by (T.norm [delta; nbe; zeta; iota; primops];
+    //         T.dump "K");
+
+    //     dstep0_apps_ok row e1 v hBSa orcl (fun r i -> r) ();
+    //     ())
+
     | XFby v1 e2 ->
+      (match hBS with
+      | BSFby1 ->
+        )
       let (| v2, hBS2 |) = lemma_bigstep_total [row] e2 in
       dstep0_ok row e2 v2 hBS2
-    | XThen e1 e2 ->
-      assert_norm (List.Tot.length [row] == 1);
-      let BSThen1 _ _ _ _ hBS1 = hBS in
-      let (| v2, hBS2 |) = lemma_bigstep_total [row] e2 in
-      let t1 = dsystem_of_exp e1 in
-      let t2 = dsystem_of_exp e2 in
-      let t = dsystem_then t1 t2 in
-      assert_norm (dsystem_of_exp (XThen e1 e2) == t);
-      dstep0_ok row e1 v hBS1;
-      dstep0_ok row e2 v2 hBS2;
-      let (s', v') = t.step row t.init in
-      assert (system_of_exp_invariant [row] e1 s'.s1);
-      assert (system_of_exp_invariant [row] e2 s'.s2);
-      assert (s'.init == false);
-      ()
+      admit ()
 
     | XMu e1 ->
-      let bottom = t.val_default (XMu?.valty e) in
-      let t1 = dsystem_of_exp e1 in
-      let t' = dsystem_mu_causal bottom (fun i v -> (v, i)) t1 in
+      // let bottom = t.val_default (XMu?.valty e) in
+      // let t1 = dsystem_of_exp e1 in
+      // let t' = dsystem_mu_causal bottom (fun i v -> (v, i)) t1 in
 
-      let (s_scrap, v0) = t1.step (bottom, row) t1.init in
-      let (s1', v') = t1.step (v0, row) t1.init in
+      // let (s_scrap, v0) = t1.step (bottom, row) t1.init in
+      // let (s1', v') = t1.step (v0, row) t1.init in
 
-      let hBSs0: bigsteps [] (XMu e1) [] = BSs0 (XMu e1) in
-      let (|v0x, hBSX |) = lemma_bigstep_total [CR.cons bottom row] e1 in
-      let hBSMu: bigstep [row] (XMu e1) v0x = lemma_bigstep_substitute_intros_XMu [] e1 [] row v0x bottom hBSs0 hBSX in
-      let hBSMus: bigsteps [row] (XMu e1) [v0x] = BSsS _ _ _ _ _ hBSs0 hBSMu in
+      // let hBSs0: bigsteps [] (XMu e1) [] = BSs0 (XMu e1) in
+      // let (|v0x, hBSX |) = lemma_bigstep_total [CR.cons bottom row] e1 in
+      // let hBSMu: bigstep [row] (XMu e1) v0x = lemma_bigstep_substitute_intros_XMu [] e1 [] row v0x bottom hBSs0 hBSX in
+      // let hBSMus: bigsteps [row] (XMu e1) [v0x] = BSsS _ _ _ _ _ hBSs0 hBSMu in
 
-      dstep0_ok (CR.cons bottom row) e1 v0x hBSX;
-      assert (v0 == v0x);
-      let hBSX': bigstep [CR.cons v0x row] e1 v0x = lemma_bigstep_substitute_elim_XMu [row] e1 [v0x] hBSMus
-        in
+      // dstep0_ok (CR.cons bottom row) e1 v0x hBSX;
+      // assert (v0 == v0x);
+      // let hBSX': bigstep [CR.cons v0x row] e1 v0x = lemma_bigstep_substitute_elim_XMu [row] e1 [v0x] hBSMus
+      //   in
 
-      dstep0_ok (CR.cons v0x row) e1 v0x hBSX';
-      assert (v' == v0x);
-      bigstep_deterministic hBSMu hBS;
-      assert (v == v0x);
+      // dstep0_ok (CR.cons v0x row) e1 v0x hBSX';
+      // assert (v' == v0x);
+      // bigstep_deterministic hBSMu hBS;
+      // assert (v == v0x);
 
-      assert (t'.step row t'.init == (s1', v'));
+      // assert (t'.step row t'.init == (s1', v'));
 
-      assert (system_of_exp_invariant [CR.cons v0x row] e1 s1');
-      let s1'': state_of_exp (XMu e1) = coerce_eq () s1' in
-      let (| v''', hBSMu''' |) = lemma_bigstep_total [row] e in
-      bigstep_deterministic hBSMu''' hBSMu;
-      // assert (v''' == v);
-      // assert ([CR.cons v0x row] == CR.zip2_cons [v'''] [row]);
-      assert (system_of_exp_invariant [row] (XMu e1) s1'');
-      ()
+      // assert (system_of_exp_invariant [CR.cons v0x row] e1 s1');
+      // let s1'': state_of_exp (XMu e1) = coerce_eq () s1' in
+      // let (| v''', hBSMu''' |) = lemma_bigstep_total [row] e in
+      // bigstep_deterministic hBSMu''' hBSMu;
+      // // assert (v''' == v);
+      // // assert ([CR.cons v0x row] == CR.zip2_cons [v'''] [row]);
+      // assert (system_of_exp_invariant [row] (XMu e1) s1'');
+      admit ()
 
     | XLet b e1 e2 ->
-      let t1 = dsystem_of_exp e1 in
-      let t2 = dsystem_of_exp e2 in
-      let t = dsystem_let (fun i v -> (v, i)) t1 t2 in
+      // let t1 = dsystem_of_exp e1 in
+      // let t2 = dsystem_of_exp e2 in
+      // let t = dsystem_let (fun i v -> (v, i)) t1 t2 in
 
-      let (s1', v1) = t1.step row t1.init in
-      let (s2', v2) = t2.step (v1, row) t2.init in
-      let s' = (s1', s2') in
+      // let (s1', v1) = t1.step row t1.init in
+      // let (s2', v2) = t2.step (v1, row) t2.init in
+      // let s' = (s1', s2') in
 
-      let (|v1', hBS1 |) = lemma_bigstep_total [row] e1 in
-      dstep0_ok row e1 v1' hBS1;
-      assert (v1 == v1');
+      // let (|v1', hBS1 |) = lemma_bigstep_total [row] e1 in
+      // dstep0_ok row e1 v1' hBS1;
+      // assert (v1 == v1');
 
-      let v1s = [v1] in
-      assert_norm (List.Tot.length [row] == 1);
-      assert_norm (List.Tot.length v1s == 1);
-      let rows' = CR.zip2_cons v1s [row] in
-      assert_norm (rows' == [CR.cons v1 row]);
-      let hBS1s: bigsteps [row] e1 v1s = BSsS _ _ _ _ _ (BSs0 e1) hBS1 in
-      let hBS2: bigstep rows' e2 v = lemma_bigstep_substitute_elim_XLet [row] e1 v1s hBS1s e2 v hBS in
+      // let v1s = [v1] in
+      // assert_norm (List.Tot.length [row] == 1);
+      // assert_norm (List.Tot.length v1s == 1);
+      // let rows' = CR.zip2_cons v1s [row] in
+      // assert_norm (rows' == [CR.cons v1 row]);
+      // let hBS1s: bigsteps [row] e1 v1s = BSsS _ _ _ _ _ (BSs0 e1) hBS1 in
+      // let hBS2: bigstep rows' e2 v = lemma_bigstep_substitute_elim_XLet [row] e1 v1s hBS1s e2 v hBS in
 
-      let (| vlefts, hBSlefts |) = lemma_bigsteps_total [row] e1 in
-      (match hBSlefts with
-       | BSsS _ _ _ _ _ hBSlefts' hBSleft ->
-        match hBSlefts' with
-        | BSs0 _ ->
-        bigstep_deterministic hBSleft hBS1;
-        assert (vlefts == v1s)
-      );
+      // let (| vlefts, hBSlefts |) = lemma_bigsteps_total [row] e1 in
+      // (match hBSlefts with
+      //  | BSsS _ _ _ _ _ hBSlefts' hBSleft ->
+      //   match hBSlefts' with
+      //   | BSs0 _ ->
+      //   bigstep_deterministic hBSleft hBS1;
+      //   assert (vlefts == v1s)
+      // );
 
-      dstep0_ok (CR.cons v1 row) e2 v hBS2;
-      assert (v2 == v);
-      assert (t.step row t.init == (s', v));
-      assert (system_of_exp_invariant [row] e1 s1');
-      assert (system_of_exp_invariant rows' e2 s2');
-      assert (system_of_exp_invariant [row] (XLet b e1 e2) s');
-      ()
+      // dstep0_ok (CR.cons v1 row) e2 v hBS2;
+      // assert (v2 == v);
+      // assert (t.step row t.init == (s', v));
+      // assert (system_of_exp_invariant [row] e1 s1');
+      // assert (system_of_exp_invariant rows' e2 s2');
+      // assert (system_of_exp_invariant [row] (XLet b e1 e2) s');
+      admit ()
 
 
-    | XCheck _ e1 e2 ->
-      assert_norm (List.Tot.length [row] == 1);
+    | XCheck _ e1 ->
+      // assert_norm (List.Tot.length [row] == 1);
 
-      let t1 = dsystem_of_exp e1 in
-      let t2 = dsystem_of_exp e2 in
-      let (s1', v1) = t1.step row t1.init in
-      let (s2', v2) = t2.step row t2.init in
+      // let t1 = dsystem_of_exp e1 in
+      // let t2 = dsystem_of_exp e2 in
+      // let (s1', v1) = t1.step row t1.init in
+      // let (s2', v2) = t2.step row t2.init in
 
-      let BSCheck _ _ _ _ _ hBS2 = hBS in
-      let (| v1', hBS1 |) = lemma_bigstep_total [row] e1 in
-      // let t = dsystem_then t1 t2 in
-      // assert_norm (dsystem_of_exp (XThen e1 e2) == t);
-      dstep0_ok row e1 v1' hBS1;
-      dstep0_ok row e2 v hBS2;
+      // let BSCheck _ _ _ _ _ hBS2 = hBS in
+      // let (| v1', hBS1 |) = lemma_bigstep_total [row] e1 in
+      // // let t = dsystem_then t1 t2 in
+      // // assert_norm (dsystem_of_exp (XThen e1 e2) == t);
+      // dstep0_ok row e1 v1' hBS1;
+      // dstep0_ok row e2 v hBS2;
 
-      assert (v1 == v1');
-      assert (v2 == v);
-      assert (system_of_exp_invariant [row] e1 s1');
-      assert (system_of_exp_invariant [row] e2 s2');
-      ()
+      // assert (v1 == v1');
+      // assert (v2 == v);
+      // assert (system_of_exp_invariant [row] e1 s1');
+      // assert (system_of_exp_invariant [row] e2 s2');
+      admit ()
+    // | XContract _ er eg eb ->
+    //   admit ()
 
+  | _ -> admit ()
+
+and dstep0_apps_ok
+    (#t: table) (#c: context t) (#a: funty t.ty) (#res #inp: Type0)
+    (row: row c)
+    (e: exp_apps t c a { XC.causal_apps e })
+    (v: funty_sem t.ty_sem a)
+    (hBS: XB.bigstep_apps [row] e v)
+    (orcl: SB.option_type_sem (SX.oracle_of_exp_apps e))
+    (f: funty_sem t.ty_sem a -> inp -> res)
+    (inp0: inp)
+    : Lemma (ensures (
+        let t = SX.system_of_exp_apps e f in
+        let stp = t.step (inp0, row) orcl t.init in
+        stp.v == f v inp0 /\
+        system_of_exp_apps_invariant [row] e stp.s))
+        (decreases e) =
+  match e with
+  | XPrim _ -> ()
+  | XApp e1 e2 ->
+    // let orcl: SB.option_type_sem (SB.type_join (SX.oracle_of_exp e2) (SX.oracle_of_exp_apps e1)) = orcl in
+
+    // let f' = (fun r i -> f (r (fst i)) (snd i)) in
+
+    // let t1 = SX.system_of_exp_apps e1 f' in
+    // let t2 = SX.system_of_exp e2 in
+
+    // let t: SB.system (inp & Pipit.Prim.Table.row c) (SX.oracle_of_exp_apps e) (SX.state_of_exp_apps e) res =
+    //   (SX.system_of_exp_apps (XApp e1 e2) f) in
+
+    // let t'  =
+    //   SB.system_let (fun i v -> ((v, fst i), snd i)) (SB.system_with_input (snd #inp) t2) t1 in
+
+    // assert (t == t') by (
+    //   FStar.Tactics.norm [delta_only [`%SX.system_of_exp_apps]; zeta; primops; iota; nbe ];
+    //   FStar.Tactics.trefl ());
+
+    // let XB.BSApp _ _ _ v1 v2 hBS1 hBS2 = hBS in
+    // dstep0_ok      row e2 v2 hBS2 (SB.type_join_fst orcl);
+    // dstep0_apps_ok row e1 v1 hBS1 (SB.type_join_snd orcl) f' (v2, inp0);
+
+    // let stp = t.step (inp0, row) orcl t.init in
+    // let stp2 = t2.step row (SB.type_join_fst orcl) t2.init in
+    // let stp1 = t1.step ((stp2.v, inp0), row) (SB.type_join_snd orcl) t1.init in
+
+    // assert (stp2.v == v2);
+    // assert (stp1.v == f (v1 v2) inp0);
+
+    // assert (system_of_exp_apps_invariant [row] e1 stp1.s);
+    // assert (system_of_exp_invariant [row] e2 stp2.s);
+
+    // let s': SB.option_type_sem (SB.type_join (SX.state_of_exp e2) (SX.state_of_exp_apps e1)) = stp.s in
+
+    // assert (stp1.s == SB.type_join_snd s');
+    // assert (stp2.s == SB.type_join_fst s');
+
+    // let s': SB.option_type_sem (SB.type_join (SX.state_of_exp e2) (SX.state_of_exp_apps e1)) = stp.s in
+    // assert (stp.v == f v inp0);
+    // assert (system_of_exp_apps_invariant [row] e stp.s);
+    // ()
+    admit ()
+
+(*
 let rec dstepn_ok
     (#t: table) (#c: context t)
     (rows: list (row c) { Cons? rows })

@@ -64,7 +64,15 @@ let system_of_exp_base
     match e with
     | XVal v -> system_const v
     | XBVar x -> system_project (fun i -> CR.index (context_sem c) i x)
-    // XXX:TODO: treat as oracle
+    (** XXX:TODO: treat this as an oracle
+      * ASSUME: invent an arbitrary value for free variables. This should be
+      * changed to use an explicit oracle variable, or maybe invent a (ghost?)
+      * variable of type
+      * > free_var: (t: Type) -> time -> var -> t
+      *
+      * This assumption doesn't affect the soundness of the proof-of-translation
+      * as the proof only applies to expressions without free variables.
+      **)
     | XVar x -> admit () // false_elim ()
 
 let rec system_of_exp

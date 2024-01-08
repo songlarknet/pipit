@@ -3,11 +3,8 @@
 
 High-priority proofs related to translation correctness
 
-### Pipit.Exp.Causality (base)
+### Pipit.Exp.Causality (base) ✅
 prove lemma-bigstep-total
-
-### Pipit.System.Exp (trans)
-no translation for free vars: just treat them as oracles
 
 ### Pipit.System.Exp.Properties (trans)
 translation is an abstraction (big)
@@ -38,3 +35,8 @@ compounds preserve check
 
 ### Pipit.Exp.Binding.Property (base)
 FLAKY
+
+### Pipit.System.Exp (trans)
+no translation for free vars: just treat them as oracles.
+This doesn't affect the current proof, as it only applies to causal expressions which don't have free variables.
+
