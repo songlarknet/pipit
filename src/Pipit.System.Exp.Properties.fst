@@ -44,16 +44,14 @@ let rec system_of_exp_invariant
   | XMu e1 ->
     let s: SB.option_type_sem (SX.state_of_exp e1) = coerce_eq () s in
     exists (vs: list (t.ty_sem a) { List.length vs == List.length rows }).
-      let rows' = CR.zip2_cons vs rows in
-      XB.bigsteps rows' e1 vs /\ system_of_exp_invariant rows' e1 s
+      XB.bigsteps rows (XMu e1) vs /\ system_of_exp_invariant (CR.zip2_cons vs rows) e1 s
 
   | XLet b e1 e2 ->
     let s: SB.option_type_sem (SB.type_join (SX.state_of_exp e1) (SX.state_of_exp e2)) = s in
     exists (vlefts: list (t.ty_sem b) { List.length vlefts == List.length rows }).
-      let rows' = CR.zip2_cons vlefts rows in
       XB.bigsteps rows e1 vlefts /\
       system_of_exp_invariant rows e1 (SB.type_join_fst s) /\
-      system_of_exp_invariant rows' e2 (SB.type_join_snd s)
+      system_of_exp_invariant (CR.zip2_cons vlefts rows) e2 (SB.type_join_snd s)
 
   | XCheck _ e1 ->
     let s: SB.option_type_sem (SX.state_of_exp e1) = s in
@@ -81,6 +79,22 @@ and system_of_exp_apps_invariant
     system_of_exp_apps_invariant rows e1 (SB.type_join_snd s) /\
     system_of_exp_invariant rows e2 (SB.type_join_fst s)
 
+
+let lemma_system_of_exp_apps_init_XApp
+    (#t: table) (#c: context t) (#arg: t.ty) (#resfun: funty t.ty) (#res #inp: Type0)
+    (e1: exp_apps t c (FTFun arg resfun) { XC.causal_apps e1 })
+    (e2: exp t c arg { XC.causal e2 })
+    (f: funty_sem t.ty_sem resfun -> inp -> res)
+    : Lemma (ensures
+        (SX.system_of_exp_apps (XApp e1 e2) f).init ==
+        SB.type_join_tup (SX.system_of_exp e2).init (SX.system_of_exp_apps e1 (SX.system_of_exp_apps_distr f)).init)
+     =
+  assert ((SX.system_of_exp_apps (XApp e1 e2) f).init ==
+        SB.type_join_tup (SX.system_of_exp e2).init (SX.system_of_exp_apps e1 (SX.system_of_exp_apps_distr f)).init)
+        by
+    (FStar.Tactics.norm [delta_only [`%SX.system_of_exp_apps]; zeta; primops; iota; nbe ];
+    FStar.Tactics.trefl ());
+  ()
 
 // let step_invariant
 //     (#t: table) (#c: context t) (#a: t.ty)
@@ -111,12 +125,13 @@ let rec step_invariant_init
     : Lemma (ensures
         system_of_exp_invariant [] e (SX.system_of_exp e).init)
       (decreases e) =
-    let t = SX.system_of_exp e in
+    let tx = SX.system_of_exp e in
+    let rows: list (row c) = [] in
     match e with
     | XBase _ -> ()
 
     | XApps e1 ->
-      step_invariant_apps_init e1 (fun r () -> r);
+      step_apps_invariant_init e1 (fun r () -> r);
       let t' = SB.system_with_input (fun r -> ((), r)) (SX.system_of_exp_apps e1 (fun r () -> r)) in
       assert (SX.system_of_exp (XApps e1) == t')
         by (tac_simp_refl ());
@@ -127,16 +142,26 @@ let rec step_invariant_init
 
     | XMu e1 ->
       step_invariant_init e1;
-      let t' = SB.system_mu (fun i v -> (v, i)) (SX.system_of_exp e1) in
-      assert (SX.system_of_exp (XMu e1) == t')
-        by (tac_simp_refl ());
-        
+      introduce exists (vs: list (t.ty_sem a) { List.length vs == List.length rows }).
+        XB.bigsteps rows (XMu e1) vs
+      with []
+      and (
+        let bs0: XB.bigsteps rows (XMu e1) [] = XB.BSs0 (XMu e1) in
+        ()
+      );
       ()
 
     | XLet b e1 e2 ->
       step_invariant_init e1;
       step_invariant_init e2;
-      admit ()
+      introduce exists (vs: list (t.ty_sem b) { List.length vs == List.length rows }).
+        XB.bigsteps rows e1 vs
+      with []
+      and (
+        let bs0: XB.bigsteps rows e1 [] = XB.BSs0 e1 in
+        ()
+      );
+      ()
 
     | XCheck _ e1 ->
       step_invariant_init e1
@@ -144,10 +169,16 @@ let rec step_invariant_init
     | XContract ps er eg eb ->
       step_invariant_init er;
       step_invariant_init eg;
-      admit ()
+      introduce exists (vs: list (t.ty_sem a) { List.length vs == List.length rows }).
+        XB.bigsteps rows eb vs
+      with []
+      and (
+        let bs0: XB.bigsteps rows eb [] = XB.BSs0 eb in
+        ()
+      );
+      ()
 
-
-and step_invariant_apps_init
+and step_apps_invariant_init
     (#t: table) (#c: context t) (#a: funty t.ty) (#res #inp: Type0)
     (e: exp_apps t c a { XC.causal_apps e })
     (f: funty_sem t.ty_sem a -> inp -> res)
@@ -157,11 +188,130 @@ and step_invariant_apps_init
   match e with
   | XPrim _ -> ()
   | XApp e1 e2 ->
-    // let XB.BSApp _ _ _ v1 v2 hBS1 hBS2 = hBS in
-    // let f' = (fun r i -> f (r (fst i)) (snd i)) in
+    let f' = SX.system_of_exp_apps_distr f in
+    step_apps_invariant_init e1 f';
+    step_invariant_init e2;
+    lemma_system_of_exp_apps_init_XApp e1 e2 f;
+    ()
 
-    // let orcl2 = step0_ok      row1 e2 v2 hBS2 in
-    // let orcl1 = step0_apps_ok row1 e1 v1 hBS1 f' (v2, inp0) in
+
+let rec step_invariant_step
+    (#t: table) (#c: context t) (#a: t.ty)
+    (rows: list (row c))
+    (row1: row c)
+    (e: exp t c a { XC.causal e })
+    (v: t.ty_sem a)
+    (hBS: XB.bigstep (row1 :: rows) e v)
+    (s: SB.option_type_sem (SX.state_of_exp e) { system_of_exp_invariant rows e s })
+    : Tot (orcl: SB.option_type_sem (SX.oracle_of_exp e) {
+        let stp = (SX.system_of_exp e).step row1 orcl s in
+        stp.v == v /\ system_of_exp_invariant (row1 :: rows) e stp.s
+      })
+      (decreases e) =
+    match e with
+    // | XBase _ -> ()
+
+    // | XApps e1 ->
+    //   let XB.BSApps _ _ _ hBSa = hBS in
+    //   let orcl = step_apps_invariant_step rows row1 e1 v hBSa SX.system_of_exp_apps_const () s in
+    //   orcl
+
+    // | XFby v1 e2 ->
+    //   let (| v2, hBS2 |) = XC.lemma_bigstep_total (row1 :: rows) e2 in
+    //   let s: SB.option_type_sem (SB.type_join (Some (t.ty_sem a)) (SX.state_of_exp e2)) = s in
+    //   let orcl = step_invariant_step rows row1 e2 v2 hBS2 (SB.type_join_snd s) in
+    //   (match hBS with
+    //   | XB.BSFby1 _ _ _ ->
+    //     orcl
+    //   | XB.BSFbyS _ _ _ _ _ hBS' ->
+    //     XB.bigstep_deterministic_squash rows e2 v (SB.type_join_fst s);
+    //     orcl)
+
+    | XMu e1 ->
+      let (|vs, hBSMus|) = XC.lemma_bigsteps_total rows (XMu e1) in
+      let rows' = CR.zip2_cons vs rows in
+      let row1' = CR.cons v row1 in
+      let s: SB.option_type_sem (SX.state_of_exp e1) = s in
+      assert (system_of_exp_invariant rows' e1 s);
+
+      let hBSMus': XB.bigsteps (row1 :: rows) e (v :: vs) = XB.BSsS _ _ _ _ _ hBSMus hBS in
+      let hBS1: XB.bigstep (row1' :: rows') e1 v = XC.lemma_bigstep_substitute_elim_XMu (row1 :: rows) e1 (v :: vs) hBSMus' in
+
+      let orcl1 = step_invariant_step rows' row1' e1 v hBS1 s in
+      let orcl  = SB.type_join_tup #(Some (t.ty_sem a)) #(SX.oracle_of_exp e1) v orcl1 in
+
+      // let stp = SB.system_step0 (SX.system_of_exp e) row1 orcl in
+    //   assert (stp.v == v);
+      // let hBSe1s': XB.bigsteps rows' e1 vs = XB.BSsS _ _ _ row1' _ (XB.BSs0 e1) hBS1 in
+      // assert (system_of_exp_invariant [row1] e stp.s);
+      orcl
+
+    // | XLet b e1 e2 ->
+    //   let (| v1, hBS1 |) = XC.lemma_bigstep_total [row1] e1 in
+    //   let hBS1s = XB.BSsS _ _ _ _ _ (XB.BSs0 e1) hBS1 in
+
+    //   let vlefts = [v1] in
+    //   let row1'  = CR.cons v1 row1 in
+    //   let rows'  = CR.zip2_cons vlefts [row1] in
+
+    //   let hBS2 = XC.lemma_bigstep_substitute_elim_XLet [row1] e1 vlefts hBS1s e2 v hBS in
+
+    //   let orcl1 = step_invariant_step rows row1  e1 v1 hBS1 s in
+    //   let orcl2 = step_invariant_step rows row1' e2 v  hBS2 s in
+    //   let orcl  = SB.type_join_tup orcl1 orcl2 in
+    //   orcl
+
+    // | XCheck _ e1 ->
+    //   (match hBS with
+    //   | XB.BSCheck _ _ _ v1 hBS1 ->
+    //     step_invariant_step rows row1 e1 v1 hBS1 s)
+
+    // | XContract ps er eg eb ->
+    //   let vs = [v] in
+    //   let rows' = CR.zip2_cons vs [row1] in
+    //   let row1' = CR.cons v row1 in
+    //   let (| vr, hBSr |) = XC.lemma_bigstep_total [row1]  er in
+    //   let (| vg, hBSg |) = XC.lemma_bigstep_total rows' eg in
+    //   let hBSbs: XB.bigsteps [row1] eb [v] =
+    //     match hBS with
+    //     | XB.BSContract _ _ _ _ _ _ hBSb ->
+    //       XB.BSsS _ _ _ _ _ (XB.BSs0 eb) hBSb in
+
+    //   let or = step_invariant_step rows row1  er vr hBSr (SB.type_join_fst #(SX.oracle_of_exp er) #(SX.oracle_of_exp eg) s) in
+    //   let og = step_invariant_step rows row1' eg vg hBSg (SB.type_join_snd #(SX.oracle_of_exp er) #(SX.oracle_of_exp eg) s) in
+    //   let orcl = SB.type_join_tup #(Some (t.ty_sem a)) v (SB.type_join_tup #(SX.oracle_of_exp er) #(SX.oracle_of_exp eg) or og) in
+
+    //   let stp = SB.system_step0 (SX.system_of_exp e) row1 orcl in
+    //   assert (stp.v == v);
+    //   assert (system_of_exp_invariant [row1] e stp.s);
+    //   orcl
+
+  | _ -> admit ()
+and step_apps_invariant_step
+    (#t: table) (#c: context t) (#a: funty t.ty) (#res #inp: Type0)
+    (rows: list (row c))
+    (row1: row c)
+    (e: exp_apps t c a { XC.causal_apps e })
+    (v: funty_sem t.ty_sem a)
+    (hBS: XB.bigstep_apps (row1 :: rows) e v)
+    (f: funty_sem t.ty_sem a -> inp -> res)
+    (inp0: inp)
+    (s: SB.option_type_sem (SX.state_of_exp_apps e))
+    : Tot (orcl: SB.option_type_sem (SX.oracle_of_exp_apps e) {
+        let stp = (SX.system_of_exp_apps e f).step (inp0, row1) orcl s in
+        stp.v == f v inp0 /\
+        system_of_exp_apps_invariant (row1 :: rows) e stp.s
+      })
+      (decreases e) =
+  match e with
+  | XPrim _ -> admit ()
+  | XApp e1 e2 ->
+    admit ()
+    // let XB.BSApp _ _ _ v1 v2 hBS1 hBS2 = hBS in
+    // let f' = (SX.system_of_exp_apps_distr f) in
+
+    // let orcl2 = step_invariant_step      rows row1 e2 v2 hBS2 s in
+    // let orcl1 = step_apps_invariant_step rows row1 e1 v1 hBS1 f' (v2, inp0) s in
 
     // let orcl = SB.type_join_tup orcl2 orcl1 in
 
@@ -197,11 +347,8 @@ and step_invariant_apps_init
     // assert (stp.v == f v inp0);
     // assert (system_of_exp_apps_invariant [row1] e stp.s);
     // orcl
-    admit ()
 
-
-
-
+(*
 // #push-options "--fuel 1 --ifuel 1"
 let rec step0_ok
     (#t: table) (#c: context t) (#a: t.ty)
@@ -762,4 +909,5 @@ let dstep_eval_complete
 //   match outer with
 //   | 0 -> assert (system_stepn' (system_of_exp e vars) (C.Table?._0 streams) vs None)
 //   | _ -> system_eval_complete e streams vs hBS
+*)
 *)

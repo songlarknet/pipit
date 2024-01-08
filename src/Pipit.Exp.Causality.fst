@@ -659,3 +659,12 @@ let lemma_bigstep_total_v
     t.ty_sem a =
   let (| v, _ |) = lemma_bigstep_total rows e in
   v
+
+let lemma_bigsteps_total_vs
+  (#t: table)
+  (#c: context t)
+  (#a: t.ty)
+  (rows: list (row c) { Cons? rows }) (e: exp t c a { causal e }):
+    vs: list (t.ty_sem a) { List.Tot.length vs == List.Tot.length rows } =
+  let (| vs, _ |) = lemma_bigsteps_total rows e in
+  vs

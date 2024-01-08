@@ -75,6 +75,17 @@ let system_of_exp_base
       **)
     | XVar x -> admit () // false_elim ()
 
+let system_of_exp_apps_distr
+    (#t: table) (#arg: t.ty) (#resfun: funty t.ty) (#res #inp: Type0)
+    (f: funty_sem t.ty_sem resfun -> inp -> res)
+    (r: funty_sem t.ty_sem (FTFun arg resfun))
+    (i: t.ty_sem arg & inp)
+  : res =
+  f (r (fst i)) (snd i)
+
+let system_of_exp_apps_const (#r #i: Type0)
+  (vr: r) (vi: i): r = vr
+
 let rec system_of_exp
   (#t: table) (#c: context t) (#a: t.ty)
   (e: exp t c a):
@@ -82,7 +93,7 @@ let rec system_of_exp
     match e with
     | XBase e1 -> system_of_exp_base e1
     | XApps e1 ->
-      let t: system (unit & row c) (oracle_of_exp_apps e1) (state_of_exp_apps e1) (t.ty_sem a) = system_of_exp_apps e1 (fun r i -> r) in
+      let t: system (unit & row c) (oracle_of_exp_apps e1) (state_of_exp_apps e1) (t.ty_sem a) = system_of_exp_apps e1 system_of_exp_apps_const in
       system_with_input (fun s -> ((), s)) t
     | XFby v e1 ->
       system_pre v (system_of_exp e1)
@@ -109,7 +120,7 @@ and system_of_exp_apps
       let arg = XApp?.arg e in
       let ret = XApp?.ret e in
       lemma_funty_sem_FTFun t.ty_sem arg ret;
-      let t1: system ((t.ty_sem arg & inp) & row c) _ _ res = system_of_exp_apps e1 (fun r i -> f (r (fst i)) (snd i)) in
+      let t1: system ((t.ty_sem arg & inp) & row c) _ _ res = system_of_exp_apps e1 (system_of_exp_apps_distr f) in
       let t2: system (row c) _ _ (t.ty_sem arg) = system_of_exp e2 in
       let t2': system (inp & row c) _ _ (t.ty_sem arg) = system_with_input snd t2 in
       system_let (fun i v -> ((v, fst i), snd i)) t2' t1
