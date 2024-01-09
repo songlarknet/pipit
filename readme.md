@@ -36,7 +36,8 @@ This fork currently has some minor improvements to avoid duplication of work dur
 Before setting up a local development environment, make sure you have [opam](https://opam.ocaml.org/) and Python 2.7 installed.
 If you are running a modern Linux distribution, such as the latest release of Ubuntu (23.04), you may need to [install Python 2.7 manually (see below)](#modern-linux-no-python-27).
 
-The makefile target `make dev-init` will initialise a local development environment.
+~~The makefile target `make dev-init` will initialise a local development environment.~~
+(The makefile target doesn't work if you don't already have fstar installed. Instead run the following:)
 This target runs the following commands:
 ``` sh
 # Make sure the opam index is up-to-date

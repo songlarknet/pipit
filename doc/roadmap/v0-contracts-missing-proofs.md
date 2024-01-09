@@ -6,7 +6,7 @@ High-priority proofs related to translation correctness
 ### Pipit.Exp.Causality (base) ✅
 prove lemma-bigstep-total
 
-### Pipit.System.Exp.Properties (trans)
+### Pipit.System.Exp.Properties (trans) ✅
 translation is an abstraction (big)
 
 ### Pipit.Prim.Table (base, easy)
