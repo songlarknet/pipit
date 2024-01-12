@@ -90,8 +90,7 @@ let rem_underspec' (#b: bounds { b.min == 0 }) (x y: t b): t b  =
     { repr = 0l }
 
 
-#push-options "--split_queries always"
-// #push-options "--fuel 1 --ifuel 1"
+#push-options "--split_queries always --fuel 1 --ifuel 0"
 
 
 (* Bit-shifting power-of-two; pow2 and Int.pow2_n are not extractable to C. *)

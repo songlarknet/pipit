@@ -1,4 +1,4 @@
-(* XXX: broken: extraction causes stack overflow *)
+(* Extract TTCAN implementation to C code *)
 module Network.TTCan.Extract
 
 module Types   = Network.TTCan.Types
@@ -12,6 +12,8 @@ module XL      = Pipit.Exec.LowStar
 
 module Tac     = FStar.Tactics
 
+// Declare configuration as const so C compiler can inline concrete configuration.
+[@@CPrologue "const"]
 assume val cfg: Types.config
 
 noextract
