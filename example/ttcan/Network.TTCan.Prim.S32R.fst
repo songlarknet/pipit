@@ -64,6 +64,11 @@ let u64_to_s32r' (#b: bounds) (x: U64.t { b.min <= U64.v x /\ U64.v x <= b.max }
   assert (v r == U64.v x);
   r
 
+let u8_to_s32r' (#b: bounds) (x: U8.t { b.min <= U8.v x /\ U8.v x <= b.max }): t b =
+  let r = { repr = Cast.uint8_to_int32 x } in
+  assert (v r == U8.v x);
+  r
+
 // TODO implement remaining saturated operations...
 
 let clamp' (#b: bounds) (x: REPR.t): t b =

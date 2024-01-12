@@ -13,7 +13,7 @@ module BV = FStar.BV
 let index_mask (i: BV64.index_t): BV64.t =
   BV64.one `BV64.shift_left` i
 
-let index (bv: BV64.t) (i: BV64.index_t): bool =
+let index_read (bv: BV64.t) (i: BV64.index_t): bool =
   (bv `BV64.logand` index_mask i) `BV64.ne` BV64.zero
 
 let set (bv: BV64.t) (i: BV64.index_t): BV64.t =

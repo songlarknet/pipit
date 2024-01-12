@@ -73,7 +73,7 @@ verify-retry: FSTAR_PROOF_OPT=--retry 2
 verify-retry: verify
 
 .PHONY: extract
-extract: extract-pump extract-simple
+extract: extract-pump extract-simple extract-ttcan
 
 .PHONY: extract-pump
 extract-pump: EXTRACT_MODULE=Pump.Extract
@@ -87,7 +87,6 @@ extract-simple: EXTRACT_FILE=example/Simple.Extract.fst
 extract-simple: EXTRACT_NAME=simple
 extract-simple: extract-mk
 
-# don't build by default yet, wait until stable
 .PHONY: extract-ttcan
 extract-ttcan: EXTRACT_MODULE=Network.TTCan.Extract
 extract-ttcan: EXTRACT_FILE=example/ttcan/Network.TTCan.Extract.fst

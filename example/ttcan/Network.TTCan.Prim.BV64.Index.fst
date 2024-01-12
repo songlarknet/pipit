@@ -16,7 +16,7 @@ type index_t = S32R.t { min = 0; max = BV64.n - 1 }
 let zero: U64.t = BV64.zero
 
 let index' (bv: t) (ix: index_t): bool =
-  BV64I.index bv (S32R.s32r_to_u8' ix)
+  BV64I.index_read bv (S32R.s32r_to_u8' ix)
 
 let set' (bv: t) (ix: index_t): t =
   BV64I.set bv (S32R.s32r_to_u8' ix)
