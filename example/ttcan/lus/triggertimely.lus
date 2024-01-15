@@ -1,0 +1,185 @@
+type cycle = int;
+type time = int;
+
+type Trigger = struct {
+  time_mark: time;
+  cycle:     cycle;
+  -- ignore cycle repeat factor
+};
+
+const TRIGGERS_COUNT: int = 32;
+type index = subrange [0, TRIGGERS_COUNT-1] of int;
+
+-- const triggers: Trigger ^ TRIGGERS_COUNT;
+
+function enabled(
+  triggers: Trigger ^ TRIGGERS_COUNT;
+  i: index; c: cycle)
+returns (en: bool)
+let
+  en = (triggers[i].cycle = c);
+tel
+
+function imported req_sorted(
+  triggers: Trigger ^ TRIGGERS_COUNT;
+) returns (
+  ok: bool
+)
+(*@contract
+  guarantee ok = forall (i: index) (i < TRIGGERS_COUNT - 1 => (triggers[i]).time_mark <= (triggers[i + 1]).time_mark);
+*)
+
+function imported req_spacing(
+  triggers: Trigger ^ TRIGGERS_COUNT;
+  c: cycle;
+) returns (
+  ok: bool;
+)
+(*@contract
+  guarantee ok = forall (i: index) (forall (j: index) ((i <= j and (triggers[i].cycle = c) and (triggers[j].cycle = c)) => (triggers[j].time_mark - triggers[i].time_mark) >= (j - i)));
+*)
+
+function imported req_reachable(
+  triggers: Trigger ^ TRIGGERS_COUNT;
+  c: cycle;
+) returns (
+  ok: bool
+)
+(*@contract
+  guarantee ok = forall (i: index) (i <= triggers[i].time_mark);
+*)
+
+(** Find next enabled trigger **)
+function next(
+  triggers: Trigger ^ TRIGGERS_COUNT;
+  start_index: index;
+  c: cycle;
+) returns (
+  next: int;
+)
+var indices: int ^ TRIGGERS_COUNT;
+let
+  -- Loop from 0 to N,
+  -- In the F* definition, next(i) calls next(i+1) if current is not enabled;
+  -- here, we need to reverse iterator direction because indices[i] can only
+  -- depend on indices[<i]
+  indices[i] =
+    if enabled(triggers, TRIGGERS_COUNT - 1 - i, c) then (TRIGGERS_COUNT - 1 - i)
+    else if i = 0
+    then TRIGGERS_COUNT
+    else indices[i - 1];
+
+  next = indices[TRIGGERS_COUNT - 1 - start_index];
+  --%PROPERTY 0 <= next and next <= TRIGGERS_COUNT;
+  -- XXX: `forall (i: index)` doesn't restrict i to <TRIGGERS_COUNT
+  --%PROPERTY forall (i: int) (0 <= i => i < TRIGGERS_COUNT => indices[i] < TRIGGERS_COUNT => triggers[indices[i]].cycle = c);
+  --%PROPERTY next < TRIGGERS_COUNT => triggers[next].cycle = c; -- enabled(triggers, next, c);
+tel
+
+function def_adequate_spacing_next_inc(
+  triggers: Trigger ^ TRIGGERS_COUNT;
+  i: index;
+  c: cycle;
+) returns (
+  ok: bool
+)
+var nxt: int;
+let
+  nxt = next(triggers, i + 1, c);
+  ok =
+    i < TRIGGERS_COUNT - 1  =>
+    nxt < TRIGGERS_COUNT    =>
+    triggers[i].cycle = c   =>
+    triggers[nxt].cycle = c =>
+    triggers[i].time_mark <= triggers[nxt].time_mark;
+tel
+
+function lemma_adequate_spacing_next_inc(
+  triggers: Trigger ^ TRIGGERS_COUNT;
+  i: index;
+  c: cycle;
+) returns (
+)
+(*@contract
+  assume req_sorted(triggers);
+  assume req_spacing(triggers, c);
+  assume req_reachable(triggers, c);
+  guarantee def_adequate_spacing_next_inc(triggers, i, c);
+*)
+let
+tel
+(*
+with
+  const TRIGGERS_COUNT: int = 256;:
+  lemma_adequate_spacing_next_inc:
+    timeout
+    without refinement: 3 abstract systems
+    unknown: [ 'guarantee[l107c3]': guarantee (lemma_adequate_spacing_next_inc),
+               'def_adequate_spacing_next_inc[l107c13].((0 <= i) and (i <= 255))': assumption of def_adequate_spacing_next_inc ]
+    valid:   [  ]
+
+  OCAMLRUNPARAM=b kind2 --compositional true --modular true triggertimely.lus  745.39s user 24.80s system 326% cpu 3:55.62 total
+
+with 64:
+  OCAMLRUNPARAM=b kind2 --compositional true --modular true triggertimely.lus  240.79s user 6.36s system 371% cpu 1:06.61 total
+
+*)
+
+function trigger_index_invariant(
+  triggers: Trigger ^ TRIGGERS_COUNT;
+  i: int;
+  c: cycle;
+  now: time;
+) returns (
+  ok: bool
+)
+var nxt: int;
+let
+  nxt = next(triggers, i, c);
+  ok =
+    i < TRIGGERS_COUNT - 1  =>
+    nxt < TRIGGERS_COUNT    =>
+    (triggers[nxt].time_mark - now) >= (nxt - i);
+tel
+
+node count_when(
+  const max: int;
+  inc: bool;
+) returns (
+  count: int;
+)
+var countx: int;
+let
+  countx = (0 -> pre count) + (if inc then 1 else 0);
+  count =
+    if countx > max
+    then max
+    else countx;
+  --%PROPERTY max > 0 => 0 <= count and count <= max;
+tel
+
+node trigger_fetch(
+  const triggers: Trigger ^ TRIGGERS_COUNT;
+  const c: cycle;
+  time: time;
+) returns (
+  index: int;
+)
+(*@contract
+  assume time = (0 -> pre (time + 1));
+  assume req_sorted(triggers);
+  assume req_spacing(triggers, c);
+  assume req_reachable(triggers, c);
+  guarantee
+    index < TRIGGERS_COUNT =>
+    triggers[index].cycle = c =>
+    triggers[index].time_mark >= time;
+*)
+var
+  inc: bool;
+let
+  inc = false -> pre ((triggers[index].time_mark <= time) or not (triggers[index].cycle = c));
+  index = count_when(TRIGGERS_COUNT, inc);
+  () = lemma_adequate_spacing_next_inc(triggers, index, c);
+  --%PROPERTY trigger_index_invariant(triggers, index, c, time);
+tel
