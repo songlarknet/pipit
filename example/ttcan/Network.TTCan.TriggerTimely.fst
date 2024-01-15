@@ -178,5 +178,5 @@ let trigger_fetch (cfg: config) (c: cycle): S.stream int -> S.stream index =
     guar = (fun index now -> (index < const cfg.triggers.size /\ trigger_enabled cfg index c) ==> trigger_time_mark cfg index >= now);
     body = (fun now -> trigger_index_unchecked cfg c now);
   } in
-  assert (Contract.system_induct_k1 c) by (T.pipit_simplify_products ["Network"]; T.dump "contr");
+  assert (Contract.system_induct_k1 c) by (T.pipit_simplify_products ["Network"]);
   Contract.stream_of_contract1 c
