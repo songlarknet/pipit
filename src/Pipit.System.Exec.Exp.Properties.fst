@@ -99,7 +99,7 @@ let rec step_invariant_init
       // let t' = SB.system_with_input (fun r -> ((), r)) (EX.esystem_of_exp_apps e1 (fun r () -> r)) in
       // assert (EX.esystem_of_exp (XApps e1) == t')
         // by (tac_simp_refl ());
-      admit () // ASSUME
+      admit () // TODO:ADMIT
 
     | XFby v1 e2 ->
       step_invariant_init e2

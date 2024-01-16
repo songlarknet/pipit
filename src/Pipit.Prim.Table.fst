@@ -73,33 +73,41 @@ let context_sem (c: context 't): C.context eqtype = List.map ('t).ty_sem c
 
 let row (c: context 't) = CR.row (context_sem c)
 
-let lemma_row_index_context_sem
+(* context_sem lemmas: these should probably be moved to Pipit.Context.Properties *)
+let rec lemma_row_index_context_sem
   (#t: table) (c: context t) (x: C.index_lookup c):
   Lemma (t.ty_sem (C.get_index c x) == C.get_index (context_sem c) x)
     [SMTPat (t.ty_sem (C.get_index c x))]
     =
-  admit ()
+  match c with
+  | _::c' ->
+    if x > 0 then
+      lemma_row_index_context_sem c' (x - 1)
 
-let lemma_drop_context_sem
+let rec lemma_drop_context_sem
   (#t: table) (c: context t) (x: C.index_lookup c):
   Lemma (context_sem (C.drop1 c x) == C.drop1 (context_sem c) x)
     [SMTPat (context_sem (C.drop1 c x))]
     =
-  admit ()
+  match c with
+  | _ :: c' ->
+    if x > 0 then
+      lemma_drop_context_sem c' (x - 1)
 
 let lemma_append_context_sem
   (#t: table) (c c': context t):
   Lemma (context_sem (C.append c c') == C.append (context_sem c) (context_sem c'))
     [SMTPat (context_sem (C.append c c'));
      SMTPat (C.append (context_sem c) (context_sem c'))]
-    =
-  admit ()
+    = List.map_append t.ty_sem c c'
 
-// TODO:ADMIT easy proofs: some of these should go in Context.Properties or elsewhere
-assume val lemma_context_sem_length (t: table) (c: context t):
+let lemma_context_sem_length (t: table) (c: context t):
   Lemma (List.Tot.length (context_sem c) == List.Tot.length c)
     [SMTPat (List.Tot.length (context_sem c))]
+    =
+  List.map_lemma t.ty_sem c
 
-assume val lemma_rev_length (c: C.context 'a):
+let lemma_rev_length (c: C.context 'a):
   Lemma (List.Tot.length (List.Tot.rev c) == List.Tot.length c)
     [SMTPat (List.Tot.length (List.Tot.rev c))]
+    = List.rev_length c
