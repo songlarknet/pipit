@@ -92,9 +92,6 @@ instance has_stream_modes_result: S.has_stream modes_result = {
 %splice[modes_result_new] (SugarTac.lift_prim "modes_result_new" (`(fun (mode: mode) (ref_ck: bool) (cycle_index: cycle_index) (cycle_time: ntu) (ref_trigger_offset: ref_offset) (sync_state: sync_mode) (error_CAN_Bus_Off: bool) (error: error_severity) -> { mode; ref_ck; cycle_index; cycle_time; ref_trigger_offset; sync_state; error_CAN_Bus_Off; error; } <: modes_result)))
 
 
-
-// #set-options "--split_queries always"
-
 let modes
   (cfg: config)
   (input:         S.stream driver_input)
@@ -332,21 +329,3 @@ let controller
   let^ rx_msc_upd = trigger_rx (get_rx_app input) fetch in
   let^ tx = trigger_tx (get_tx_status input) (get_bus_status input) fetch sync_state error in
   controller' cfg ref_ck mode cycle_time fetch sync_state error_CAN_Bus_Off error tx_ref (fst tx) (snd tx) rx_msc_upd
-(*
-
-
-
--- (*ERRORS:*)
---   (*^9.3.2 Scheduling_Error_1 (S1) is set if within one matrix cycle the difference between the highest MSC and the lowest MSC of all messages of exclusive time windows of a FSE is larger than 2, or if one of the MSCs of an exclusive receive message object has reached 7.
---     If within one matrix cycle none of these conditions is valid, the bit is reset.
---   *)
---   faultbits_scheduling_error_1_set = latch(trigger = ..., reset = new_basic_cycle)
---   faultbits_scheduling_error_1 = latch(trigger = faultbits_scheduling_error_1_set, reset = new_basic_cycle and not faultbits_scheduling_error_1_set);
---   (*^9.3.4 Scheduling_Error_2 (S2) is set if for one transmit message object the MSC has reached 7. It is reset when no transmit object has an MSC of seven. *)
---   faultbits_scheduling_error_2 = ...;
---   (*^9.3.9 Watch_Trigger_Reached (S3): *)
---   (*^ The S3 error conditions shall remain active until the application updates the configuration. *)
-  -- TODO: NOT SUPPORTED YET: Init_Watch_Trigger: requires a different failure mode, doesn't go to S3 as acks must be kept enabled
---   (* Errors not treated: Config_Error (^9.3.8) is statically checked; Application_Watchdog (^9.3.6) is not supported *)
-
-*)

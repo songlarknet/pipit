@@ -40,12 +40,6 @@ type latch_args = { set: S.stream bool; reset: S.stream bool }
 let latch (args: latch_args): S.stream bool =
   let open S in
   rec' (fun latch ->
-    // if_then_else is ugly. maybe a syntax like this would be ok...
-    // selects [
-    //     When args.set,   const true;
-    //     When args.reset, const false;
-    //     Otherwise,       false `fby` latch
-    //   ]
     if_then_else args.set (const true)
       (if_then_else args.reset (const false) (false `fby` latch)))
 

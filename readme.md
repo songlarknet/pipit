@@ -16,8 +16,8 @@ The Pipit library is in the `src` subdirectory and has four main pieces:
 * transition systems, which are used for reasoning about programs (`Pipit.System` and submodules); and
 * executable systems, which are used for compiling to C code (`Pipit.System.Exec` and submodules).
 
-Programs written in the core language are translated to a transition system for verification; this translation is verified (it preserves semantics).
-The translation to executable systems preserves types, but is not yet verified to preserve semantics.
+Programs written in the core language are translated to a transition system for verification; this translation is verified (it is an abstraction).
+The translation to executable systems is verified (it is an equivalence).
 The details of the formalisation and proofs are available in the [implementation notes](src/readme.md).
 
 There are examples available in the `example` subdirectory ([readme](example/readme.md)).
@@ -36,8 +36,7 @@ This fork currently has some minor improvements to avoid duplication of work dur
 Before setting up a local development environment, make sure you have [opam](https://opam.ocaml.org/) and Python 2.7 installed.
 If you are running a modern Linux distribution, such as the latest release of Ubuntu (23.04), you may need to [install Python 2.7 manually (see below)](#modern-linux-no-python-27).
 
-~~The makefile target `make dev-init` will initialise a local development environment.~~
-(The makefile target doesn't work if you don't already have fstar installed. Instead run the following:)
+The makefile target `make dev-init` will initialise a local development environment.
 This target runs the following commands:
 ``` sh
 # Make sure the opam index is up-to-date
@@ -75,8 +74,8 @@ The `--no-depexts` flag is important: it tells opam not to care that the `python
 cd $PIPIT
 opam update
 opam switch create . 4.14.1
-opam pin add fstar --dev-repo --no-action
-opam pin add karamel --dev-repo --yes --no-depexts
+opam pin add fstar git+https://github.com/songlarknet/FStar#pipit --no-action
+opam pin add karamel git+https://github.com/songlarknet/karamel#pipit --yes
 ```
 
 ### IDE configuration
@@ -88,29 +87,12 @@ When using an IDE (Emacs, VSCode), you probably need to specify the exact versio
 
 There are a few VSCode extensions that provide different levels of F\* support; you should use [fstar-vscode-assistant](https://marketplace.visualstudio.com/items?itemName=FStarLang.fstar-vscode-assistant).
 
-If you are using a local `opam` switch, as described above, you may will to tell VSCode the path of your F\* installation.
-Copy `template.fst.config.json` to `.fst.config.json`.
-
-#### Emacs
-
-To set up Emacs to use the local `opam` switch, I modified the global fstar options in Emacs.
-I modified my `~/.doom.d/config.el` to include:
-
-``` emacs-lisp
-(setq-default
-  fstar-executable "/Users/amos/proj/songlark/pipit/_opam/bin/fstar.exe"
-  fstar-smt-executable "/Users/amos/proj/songlark/pipit/_opam/bin/z3"
-  fstar-subp-prover-args
-  '("--include" "/Users/amos/proj/songlark/pipit/src"
-    "--include" "/Users/amos/proj/songlark/pipit/example"
-    "--cache_dir" "/Users/amos/proj/songlark/pipit/build/cache"))
-```
-
-(Is it easy to set project-local options in Emacs? It would be convenient if the Emacs fstar-mode read `.fst.config.json` too.)
+If you are using a local `opam` switch as described above, you may want to tell VSCode the path of your F\* installation:
+copy `template.fst.config.json` to `.fst.config.json`.
 
 ## Build instructions
 
-Use `make verify` to check the proofs.
-Use `make extract` to extract C code for the Pump example; the extracted C code is written to `build/extract`.
+Use `make verify -j8` to check the proofs.
+Use `make extract -j8` to extract C code for the Pump example; the extracted C code is written to `build/extract`.
 The embedded system that actually runs the Pump example is in the [app-pipit-pump repository](https://github.com/songlarknet/app-pipit-pump); it uses the Zephyr RTOS.
 

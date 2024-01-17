@@ -1,4 +1,6 @@
-(* Working with sets of bindings *)
+(* Working with sets of bindings: the definitions here can be used to perform
+  common sub-expression elimination, but they are not currently used (or
+  verified). *)
 module Pipit.Exp.CollectBinds
 
 open Pipit.Prim.Table

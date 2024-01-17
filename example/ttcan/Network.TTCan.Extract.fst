@@ -12,21 +12,30 @@ module XL      = Pipit.Exec.LowStar
 
 module Tac     = FStar.Tactics
 
-// Declare configuration as const so C compiler can inline concrete configuration.
+(* The configuration defines the actual triggers array; we assume it is
+  implemented in C. We declare the configuration as const so the C compiler
+  can inline the concrete configuration.
+*)
 [@@CPrologue "const"]
 assume val cfg: Types.config
 
+(* The Pipit normalise tactics take a set of modules to inline. We tell it to
+  inline everything in Network.TTCan: *)
 noextract
 let tac_opt = ["Network.TTCan"]
 
-
+(* Translate the mode controller from stream function to Pipit Core; the
+  postprocess partially-evaluates the translation. Mark as noextract as we
+  do not want the expression in the generated C code. *)
 [@@(Tac.postprocess_with (XL.tac_normalize_pure tac_opt))]
 noextract
 let modes_expr = SugarBase.exp_of_stream3 (Ctrl.modes cfg)
 
+(* Define the state type for mode controller *)
 [@@(Tac.postprocess_with (XL.tac_normalize_pure tac_opt))]
 type modes_state = XX.state_of_exp modes_expr
 
+(* Translate the Pipit Core to an executable system *)
 [@@(Tac.postprocess_with (XL.tac_normalize_pure tac_opt))]
 noextract
 inline_for_extraction
@@ -34,10 +43,9 @@ let modes_system: XX.esystem (Ctrl.driver_input & (Types.error_severity & (Clock
   assert_norm (XX.extractable modes_expr);
   XX.exec_of_exp modes_expr
 
-
+(* Finally, generate the reset and step functions for the mode controller *)
 [@@(Tac.postprocess_with (XL.tac_extract tac_opt))]
 let modes_reset = XL.mk_reset modes_system
-
 [@@(Tac.postprocess_with (XL.tac_extract tac_opt))]
 let modes_step
   (input:         Ctrl.driver_input)
@@ -45,7 +53,10 @@ let modes_step
   (pre_tx_ref:    Clocked.t Types.ref_message)
   = XL.mk_step modes_system (input, (pre_error, (pre_tx_ref, ())))
 
-
+(* We perform the same steps for the trigger_fetch controller and for the
+  top-level controller. We intend to automate this process and remove the
+  boilerplate in the future.
+*)
 
 [@@(Tac.postprocess_with (XL.tac_normalize_pure tac_opt))]
 noextract

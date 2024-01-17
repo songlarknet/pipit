@@ -27,6 +27,9 @@ type time  = int
 (* Cycle index < 64 *)
 type cycle = int
 
+(* Abstract functional representation of triggers array. In the implementation,
+  this is backed by functions that read from a const array. Here, we just
+  reason about it abstractly. *)
 noeq
 type trigger_array = {
   size:      nat;
@@ -108,29 +111,6 @@ let trigger_index_invariant (cfg: config) (c: cycle) (now: time) (index: index):
   | None -> true
   | Some n -> (cfg.triggers.time_mark n - now) >= (n - index)
 
-let trigger_index_invariant_base (cfg: config) (c: cycle)
-  : Lemma (trigger_index_invariant cfg c 0 0) =
-  ()
-
-let trigger_index_invariant_stay (cfg: config) (c: cycle) (now: int) (index: int)
-  : Lemma (
-      (trigger_index_invariant cfg c now index /\
-      cfg.triggers.enabled index c /\
-      cfg.triggers.time_mark index > now)
-    ==>
-      (trigger_index_invariant cfg c (now + 1) index)) =
-  ()
-
-let trigger_index_invariant_step (cfg: config) (c: cycle) (now: int) (index: int)
-  : Lemma (
-      (0 <= index /\ trigger_index_invariant cfg c now index)
-    ==>
-      trigger_index_invariant cfg c (now + 1) (index + 1)) =
-  match next cfg.triggers (index + 1) c with
-  | None -> ()
-  | Some n' -> lemma_adequate_spacing_next_inc cfg c
-
-
 let count_when_unchecked (max: nat) (inc: S.stream bool): S.stream int =
   let open S in
   let open Ints in
@@ -141,7 +121,7 @@ let count_when_unchecked (max: nat) (inc: S.stream bool): S.stream int =
 
 let count_when (max: nat): S.stream bool -> S.stream int =
   let e = Check.exp_of_stream1 (count_when_unchecked max) in
-  assert (Check.system_induct_k1 e) by (T.norm_full ["Network"]);
+  assert (Check.system_induct_k1 e) by (T.pipit_simplify ["Network"]);
   Check.stream_of_checked1 e
 
 let time_increasing (now: S.stream int): S.stream bool =
@@ -149,6 +129,7 @@ let time_increasing (now: S.stream int): S.stream bool =
   let open Ints in
   now = 0 `fby` (now + const 1)
 
+(* Lift array accessors to streaming primitives *)
 let trigger_enabled (cfg: config) (index: S.stream index) (c: cycle): S.stream bool =
   S.lift1 (fun index -> cfg.triggers.enabled index c) index
 
@@ -166,7 +147,7 @@ let trigger_index_unchecked (cfg: config) (c: cycle) (now: S.stream time): S.str
     check "" ((lift2 (fun now index -> trigger_index_invariant cfg c now index)) now index);^
     // We should really be able to put a `time_increasing` precondition on here:
     // but we run into problems proving the contract below, because the state inside `sofar`
-    // is a different one to the one in the contract. CSE would help here
+    // is a different one to the one in the contract. Common subexpression elimination would help here:
     // check "" (sofar (time_increasing now) ==> (lift2 (fun now index -> trigger_index_invariant cfg c now index)) now index);^
     index)
 
