@@ -1,6 +1,10 @@
 # Pipit
 
-Pipit is an embedded language for implementing and verifying *reactive systems*, such as the anti-lock braking system in a car, or the  [system that fills the water reservoir of your coffee machine](https://youtu.be/6IybbQFPOl8).
+This is the supplementary material for our paper submission.
+It is based on an anonymised version of our git repository.
+We intend to submit a Docker image for the artefact submission deadline next week (Jan 23); if you run into any issues running this, consider trying the Docker image.
+
+Pipit is an embedded language for implementing and verifying *reactive systems*, such as the anti-lock braking system in a car, or the  [system that fills the water reservoir of your coffee machine (REDACTED)](REDACTED).
 Pipit is a research project and is in the early stages of development.
 
 Pipit is implemented in  [F\*](https://www.fstar-lang.org/).
@@ -28,7 +32,7 @@ Pipit requires F\* and Karamel for generating C code.
 Pipit uses [opam](https://opam.ocaml.org/), the OCaml package manager.
 
 Pipit requires a recent development version of F\*.
-We maintain a fork with the right version at [https://github.com/songlarknet/FStar/tree/pipit](songlarknet/FStar).
+We maintain a fork with the right version at [REDACTED](REDACTED).
 This fork currently has some minor improvements to avoid duplication of work during code-generation, which we expect to be integrated upstream in the near future.
 
 ### Dependency installation
@@ -46,10 +50,10 @@ opam update
 opam switch create . 4.14.1
 
 # Tell opam to use the development version of F* but don't install it yet
-opam pin add fstar git+https://github.com/songlarknet/FStar#pipit --no-action
+opam pin add fstar submodules/FStar --no-action
 
 # Tell opam where to find the local repo for Karamel and install it and F*
-opam pin add karamel git+https://github.com/songlarknet/karamel#pipit --yes
+opam pin add karamel submodules/karamel --yes
 ```
 #### Modern Linux (no Python 2.7)
 
@@ -74,8 +78,8 @@ The `--no-depexts` flag is important: it tells opam not to care that the `python
 cd $PIPIT
 opam update
 opam switch create . 4.14.1
-opam pin add fstar git+https://github.com/songlarknet/FStar#pipit --no-action
-opam pin add karamel git+https://github.com/songlarknet/karamel#pipit --yes
+opam pin add fstar submodules/FStar--no-action
+opam pin add karamel submodules/FStar --yes
 ```
 
 ### IDE configuration
@@ -94,5 +98,5 @@ copy `template.fst.config.json` to `.fst.config.json`.
 
 Use `make verify -j8` to check the proofs.
 Use `make extract -j8` to extract C code for the Pump example; the extracted C code is written to `build/extract`.
-The embedded system that actually runs the Pump example is in the [app-pipit-pump repository](https://github.com/songlarknet/app-pipit-pump); it uses the Zephyr RTOS.
+The embedded system that actually runs the Pump example is in the [REDACTED repository](REDACTED); it uses the Zephyr RTOS.
 
