@@ -45,7 +45,6 @@ let rec system_of_exp_invariant
     | _ :: _ -> XB.bigstep rows e2 (SB.type_join_fst s)) /\ system_of_exp_invariant rows e2 (SB.type_join_snd s)
 
   | XMu e1 ->
-    // let s: SB.option_type_sem (EX.estate_of_exp e1) = coerce_eq () s in
     system_of_exp_invariant (CR.zip2_cons (XC.lemma_bigsteps_total_vs rows e) rows) e1 s
 
   | XLet b e1 e2 ->
@@ -77,10 +76,6 @@ and system_of_exp_apps_invariant
 
 
 
-let tac_simp_refl () =
-  T.norm [delta; nbe; primops; iota; zeta];
-  T.trefl ()
-
 let rec step_invariant_init
     (#t: table) (#c: context t) (#a: t.ty)
     (e: exp t c a { XC.causal e })
@@ -96,7 +91,8 @@ let rec step_invariant_init
       step_apps_invariant_init e1 (fun r () -> r);
       let t' = E.esystem_with_input (fun r -> ((), r)) (EX.esystem_of_exp_apps e1 (fun r () -> r)) in
       assert (EX.esystem_of_exp (XApps e1) == t')
-        by (tac_simp_refl ());
+        by (T.norm [delta; nbe; primops; iota; zeta];
+            T.trefl ());
       ()
 
     | XFby v1 e2 ->
@@ -242,4 +238,42 @@ and step_apps_invariant_step
     step_invariant_step      rows row1 e2 v2 hBS2 (SB.type_join_fst s);
     step_apps_invariant_step rows row1 e1 v1 hBS1 f' (v2, inp0) (SB.type_join_snd s)
 
-// TODO: state high-level lemma: for any inputs, iterated steps results in the same as bigstep
+let rec system_invariant_many
+    (#t: table) (#c: context t) (#a: t.ty)
+    (inputs: list (row c))
+    (e: exp t c a { XC.causal e })
+    : Tot (
+        state:   SB.option_type_sem (EX.estate_of_exp e) { system_of_exp_invariant inputs e state } &
+        results: list (t.ty_sem a) { List.length results == List.length inputs } &
+        XB.bigsteps inputs e results &
+        squash (
+          E.esystem_steps (EX.esystem_of_exp e) inputs == (state, results)
+        )) =
+    let t = EX.esystem_of_exp e in
+    let (s',v) = E.esystem_steps (EX.esystem_of_exp e) inputs in
+    match inputs with
+    | [] ->
+      step_invariant_init e;
+      (| t.init, [], XB.BSs0 e, () |)
+    | i :: inputs' ->
+      let (| s, results, hBSs, prf |) = system_invariant_many inputs' e in
+      let (| r, hBS |) = XC.lemma_bigstep_total (i :: inputs') e in
+      step_invariant_step inputs' i e r hBS s;
+      assert (E.esystem_steps (EX.esystem_of_exp e)       inputs'  == (s ,      results));
+      assert (E.esystem_steps (EX.esystem_of_exp e)       inputs   == (s', r :: results));
+      let hBSs': XB.bigsteps (i :: inputs') e (r :: results) = XB.BSsS _ e _ _ _ hBSs hBS in
+      (| s', r :: results, hBSs', () |)
+
+
+(* Section 5, Theorem 5, execution-equivalence *)
+let esystem_execution_equivalence
+    (#t: table) (#c: context t) (#a: t.ty)
+    (inputs: list (row c))
+    (e: exp t c a { XC.causal e })
+    : Lemma (ensures
+        snd (E.esystem_steps (EX.esystem_of_exp e) inputs) == XC.lemma_bigsteps_total_vs inputs e
+      ) =
+  let (| _vs, hBSs |) = XC.lemma_bigsteps_total inputs e in
+  let (| s, results', hBSs', prf |) = system_invariant_many inputs e in
+  XB.bigsteps_proof_equivalence hBSs hBSs';
+  ()

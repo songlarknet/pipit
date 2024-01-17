@@ -1,8 +1,17 @@
-(* Transition systems *)
+(* Abstract transition systems and combinators
+  This file defines the abstract transition systems used for verifying
+  properties of programs, as well as some helpers that are shared with
+  executable transition systems (Pipit.System.Exec).
+*)
 module Pipit.System.Base
 
 module PM = Pipit.Prop.Metadata
+module List = FStar.List.Tot
 
+(* Join two optional types together.
+  We represent state and oracle heaps as optional types because many expressions
+  do not have state or oracle, and joining them as pairs results in a lot of
+  noise. *)
 let type_join (t1 t2: option Type): option Type =
   match t1, t2 with
   | Some o1, Some o2 -> Some (o1 & o2)
@@ -43,7 +52,8 @@ let option_prop_sem (t: option prop): prop =
   | Some t -> t
   | None   -> True
 
-
+(* Assumptions and obligations that a transition system must make; these
+  are called the transition rely and guarantee in the paper. *)
 noeq type checks = {
   assumptions: option prop;
   obligations: option prop;
@@ -56,10 +66,6 @@ type step_result (state: option Type) (result: Type) = {
   chck: checks;
 }
 
-(* Step functions are relations so that we can express contracts, which are underspecified.
-   The recursive dependency for recursive binders XMu is easier to express as a
-   relation too. The result type is `prop`, rather than a computational boolean,
-   because composing the relations requires existential quantifiers. *)
 noeq
 type system (input: Type) (oracle: option Type) (state: option Type) (result: Type) = {
   init: option_type_sem state;
@@ -73,6 +79,7 @@ type system (input: Type) (oracle: option Type) (state: option Type) (result: Ty
     step_result state result;
 }
 
+(*** Helpers for defining assumptions and obligations ***)
 let checks_none: checks = {
   assumptions = None;
   obligations = None;
@@ -98,40 +105,24 @@ let checks_join (c1 c2: checks): checks = {
   obligations = prop_join c1.obligations c2.obligations;
 }
 
-let system_step0
+(*** Semantics ***)
+
+(* Semantics of executing a transition system *)
+let rec system_steps
   (#input #result: Type)
   (#oracle #state: option Type)
   (t: system input oracle state result)
-  (i: input)
-  (o: option_type_sem oracle)
-  : step_result state result =
-  t.step i o t.init
+  (inputs: list input)
+  (oracles: list (option_type_sem oracle) { List.length oracles == List.length inputs }):
+    (option_type_sem state & r: list result { List.length r == List.length inputs }) =
+  match inputs, oracles with
+  | [], [] -> (t.init, [])
+  | i :: inputs', o :: oracles' ->
+    let (s, rs) = system_steps t inputs' oracles' in
+    let stp = t.step i o s in
+    (stp.s, stp.v :: rs)
 
-// let rec system_steps
-//   (#input #oracle #result: Type)
-//   (#state: option Type)
-//   (t: system input oracle state result)
-//   (inputs: list (input & oracle & option_type_sem state & result))
-//   (s': option_type_sem state): prop =
-//   match inputs with
-//   | [] -> t.init == s'
-//   | ((i, o, s, r) :: inputs') ->
-//     system_steps t inputs' s /\
-//     t.step i s s' r
-
-
-// let rec system_stepn
-//   (#input #state #result: Type)
-//   (t: system input state result)
-//   (inputs: list (input & result))
-//   (s': state): prop =
-//   match inputs with
-//   | [] -> t.init s'
-//   | ((row, r) :: inputs') ->
-//     exists (s0: state).
-//     system_stepn t inputs' s0 /\
-//     t.step row s0 s' r
-
+(*** Combinators ***)
 let system_const (#input #result: Type) (v: result): system input None None result =
   { init = ();
     step = (fun i o s -> { s = (); v = v; chck = checks_none; });
