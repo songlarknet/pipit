@@ -157,7 +157,9 @@ module T = Pipit.Tactics
   Maybe we want to introduce a separate set of types for runtime vs
   specification.
   Although the helper functions below use this unsafe axiom, they are really
-  only a syntactic convenience for stating and instantiating propositions. *)
+  only a syntactic convenience for stating and instantiating propositions.
+
+  AXIOM:ADMIT: restricted interface for embedding propositions *)
 private
 assume val unsafe_proposition_holds (p: prop): b: bool
  { p <==> b2t b }

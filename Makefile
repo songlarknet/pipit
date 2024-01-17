@@ -53,7 +53,7 @@ $(BUILD)/deps.mk.rsp:
 $(BUILD)/deps.mk: $(BUILD)/deps.mk.rsp $(FSTAR_SRCS)
 	@echo "* Updating dependencies"
 	@true $(shell rm -f $@.rsp) $(foreach f,$(FSTAR_SRCS),$(shell echo $(f) >> $@.rsp))
-	$(Q)$(FSTAR_EXE) $(FSTAR_DEP_OPT) --dep full @$@.rsp > $@.tmp
+	$(Q)$(FSTAR_EXE) $(FSTAR_DEP_OPT) --dep full @$@.rsp > $@.tmp || echo "*** No F*: not building dependencies *** "
 	@mv $@.tmp $@
 
 include $(BUILD)/deps.mk
@@ -73,7 +73,7 @@ verify-retry: FSTAR_PROOF_OPT=--retry 2
 verify-retry: verify
 
 .PHONY: extract
-extract: extract-pump extract-simple
+extract: extract-pump extract-simple extract-ttcan
 
 .PHONY: extract-pump
 extract-pump: EXTRACT_MODULE=Pump.Extract
@@ -87,7 +87,6 @@ extract-simple: EXTRACT_FILE=example/Simple.Extract.fst
 extract-simple: EXTRACT_NAME=simple
 extract-simple: extract-mk
 
-# don't build by default yet, wait until stable
 .PHONY: extract-ttcan
 extract-ttcan: EXTRACT_MODULE=Network.TTCan.Extract
 extract-ttcan: EXTRACT_FILE=example/ttcan/Network.TTCan.Extract.fst
@@ -114,6 +113,7 @@ clean:
 dev-init:
 	@echo "* Setting up development environment"
 	@echo "* Checking for Python 2.7"
+# XXX this is unnecessary for MacOS
 	@python2.7 -c 'print "Python 2.7 OK"' || (echo 'Cannot find Python 2.7. FStar and Z3 need Python 2.7. See https://github.com/songlarknet/pipit#modern-linux-no-python-27'; exit 1)
 	@echo "* Updating opam index"
 	@opam update

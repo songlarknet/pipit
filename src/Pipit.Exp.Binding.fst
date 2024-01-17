@@ -69,9 +69,11 @@ and lift1_apps' (#a: funty ('t).ty) (#c: context 't) (e: exp_apps 't c a) (n: C.
   | XPrim p -> XPrim p
   | XApp f e -> XApp (lift1_apps' f n t) (lift1' e n t)
 
+unfold
 let lift1_bind' (#a #b: ('t).ty) (#c: context 't) (e: exp_bind 't b c a) (n: C.index_insert c) (t: ('t).ty): Tot (exp_bind 't b (C.lift1 c n t) a) =
   lift1' e (n + 1) t
 
+unfold
 let lift1 (#a: ('t).ty) (#c: context 't) (e: exp 't c a) (t: ('t).ty): exp 't (t :: c) a =
   lift1' e 0 t
 
@@ -102,8 +104,10 @@ and subst1_apps' (#a: funty ('t).ty) (#c: context 't) (e: exp_apps 't c a) (i: C
   | XPrim p -> XPrim p
   | XApp f e -> XApp (subst1_apps' f i payload) (subst1' e i payload)
 
+unfold
 let subst1_bind' (#a #b: ('t).ty) (#c: context 't) (e: exp_bind 't b c a) (i: C.index { C.has_index c i }) (payload: exp 't (C.drop1 c i) (C.get_index c i)): Tot (exp_bind 't b (C.drop1 c i) a) =
   subst1' e (i + 1) (lift1 payload b)
 
+unfold
 let subst1 (#a: ('t).ty) (#c: context 't { C.has_index c 0 }) (e: exp 't c a) (payload: exp 't (C.drop1 c 0) (C.get_index c 0)): Tot (exp 't (List.Tot.tl c) a) (decreases e) =
   subst1' e 0 payload

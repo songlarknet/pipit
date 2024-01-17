@@ -1,8 +1,16 @@
-(* Executable transition systems *)
+(* Executable transition systems.
+  The abstract transition systems in Pipit.System have some extra parts such
+  as the oracle/free context and the proof obligations and assumptions. We
+  don't need them for executable systems, so this is a bare-bones
+  transition system that is simpler for generating code.
+*)
 module Pipit.System.Exec
 
 open Pipit.System.Base
 
+module List = FStar.List.Tot
+
+(*** Systems ***)
 noeq
 type esystem (input: Type) (state: option Type) (result: Type) = {
   init: option_type_sem state;
@@ -16,6 +24,23 @@ type esystem (input: Type) (state: option Type) (result: Type) = {
     (option_type_sem state & result);
 }
 
+(*** Semantics ***)
+
+(* Semantics of executing a transition system *)
+let rec esystem_steps
+  (#input #result: Type)
+  (#state: option Type)
+  (t: esystem input state result)
+  (inputs: list input):
+    (option_type_sem state & r: list result { List.length r == List.length inputs }) =
+  match inputs with
+  | [] -> (t.init, [])
+  | i :: inputs' ->
+    let (s, rs) = esystem_steps t inputs' in
+    let (s', v) = t.step i s in
+    (s', v :: rs)
+
+(*** Combinators ***)
 noextract inline_for_extraction
 let esystem_const (#input #result: Type) (v: result): esystem input None result =
   { init = ();
@@ -100,8 +125,6 @@ noextract inline_for_extraction
 let esystem_unit_state (#input #result: Type)
     (t: esystem input None result):
         esystem input (Some unit) result =
-  // assert (option_type_sem None == unit);
-  // t
   { init = ();
     step = (fun i (s: option_type_sem (Some unit)) ->
       let (_, v) = t.step i () in

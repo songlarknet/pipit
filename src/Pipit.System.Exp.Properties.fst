@@ -1,4 +1,4 @@
-(* Translation to transition system proof *)
+(* Proofs related to abstract transition systems (Section 4) *)
 module Pipit.System.Exp.Properties
 
 open Pipit.Prim.Table
@@ -42,7 +42,6 @@ let rec system_of_exp_invariant
     | _ :: _ -> XB.bigstep rows e2 (SB.type_join_fst s)) /\ system_of_exp_invariant rows e2 (SB.type_join_snd s)
 
   | XMu e1 ->
-    // let s: SB.option_type_sem (SX.state_of_exp e1) = coerce_eq () s in
     system_of_exp_invariant (CR.zip2_cons (XC.lemma_bigsteps_total_vs rows e) rows) e1 s
 
   | XLet b e1 e2 ->
@@ -90,29 +89,6 @@ let lemma_system_of_exp_apps_init_XApp
     FStar.Tactics.trefl ());
   ()
 
-// let step_invariant
-//     (#t: table) (#c: context t) (#a: t.ty)
-//     (row_prefix: list (row c))
-//     (row1: row c)
-//     (e: exp t c a)
-//     (stp: SB.step_result (SX.state_of_exp e) (t.ty_sem a))
-//       =
-//   XB.bigstep (row1 :: row_prefix) e stp.v /\
-//   system_of_exp_invariant (row1 :: row_prefix) e stp.s
-// let step0_invariant
-//     (#t: table) (#c: context t) (#a: t.ty)
-//     (row1: row c)
-//     (e: exp t c a)
-//     (orcl: SB.option_type_sem (SX.oracle_of_exp e))
-//       =
-//   let t = SX.system_of_exp e in
-//   let stp = t.step row1 orcl t.init in
-//   step_invariant [] row1 e stp
-
-let tac_simp_refl () =
-  T.norm [delta; nbe; primops; iota; zeta];
-  T.trefl ()
-
 let rec step_invariant_init
     (#t: table) (#c: context t) (#a: t.ty)
     (e: exp t c a { XC.causal e })
@@ -128,7 +104,8 @@ let rec step_invariant_init
       step_apps_invariant_init e1 (fun r () -> r);
       let t' = SB.system_with_input (fun r -> ((), r)) (SX.system_of_exp_apps e1 (fun r () -> r)) in
       assert (SX.system_of_exp (XApps e1) == t')
-        by (tac_simp_refl ());
+        by (T.norm [delta; nbe; primops; iota; zeta];
+            T.trefl ());
       ()
 
     | XFby v1 e2 ->
@@ -285,82 +262,48 @@ and step_apps_invariant_step
     let orcl = SB.type_join_tup orcl2 orcl1 in
     orcl
 
-// TODO: implement iterated step, straightforward
-(*
 
-let rec dstep_many_ok
-  (#t: table) (#c: context t)
-  (rows: list (row c) { Cons? rows })
-  (e: exp t c 'a { causal e })
-  (vs: list 'a { List.Tot.length rows == List.Tot.length vs })
-  (hBSs: bigsteps rows e vs):
-    Tot (s': state_of_exp e { system_of_exp_invariant rows e s' }) (decreases rows) =
-  match hBSs with
-  | BSsS rows' e vs' r v hBSs' hBS ->
-    let t = dsystem_of_exp e in
-    (match rows' with
+let rec system_invariant_many
+    (#t: table) (#c: context t) (#a: t.ty)
+    (inputs: list (row c))
+    (e: exp t c a { XC.causal e })
+    : Tot (
+        state:   SB.option_type_sem (SX.state_of_exp e) { system_of_exp_invariant inputs e state } &
+        oracles: list (SB.option_type_sem (SX.oracle_of_exp e)) { List.length oracles == List.length inputs } &
+        results: list (t.ty_sem a) { List.length results == List.length inputs } &
+        XB.bigsteps inputs e results &
+        squash (
+          SB.system_steps (SX.system_of_exp e) inputs oracles == (state, results)
+        )) =
+    let t = SX.system_of_exp e in
+    match inputs with
     | [] ->
-      let (s', v') = t.step r t.init in
-      dstep0_ok r e v hBS;
-      s'
+      step_invariant_init e;
+      assert (SB.system_steps (SX.system_of_exp e) inputs [] == (t.init, []));
+      (| t.init, [], [], XB.BSs0 e, () |)
+    | i :: inputs' ->
+      let (| s, oracles, results, hBSs, prf |) = system_invariant_many inputs' e in
+      let (| r, hBS |) = XC.lemma_bigstep_total (i :: inputs') e in
+      let o = step_invariant_step inputs' i e r hBS s in
+      let stp = t.step i o s in
+      assert (SB.system_steps (SX.system_of_exp e)       inputs'        oracles  == (    s,      results));
+      assert (SB.system_steps (SX.system_of_exp e) (i :: inputs') (o :: oracles) == (stp.s, r :: results));
+      assert (SB.system_steps (SX.system_of_exp e)       inputs   (o :: oracles) == (stp.s, r :: results));
+      let hBSs': XB.bigsteps (i :: inputs') e (r :: results) = XB.BSsS _ e _ _ _ hBSs hBS in
+      (| stp.s, o :: oracles, r :: results, hBSs', () |)
 
-    | _ ->
-      let s = dstep_many_ok rows' e vs' hBSs' in
-      let (s', v') = t.step r s in
-      dstepn_ok rows' r e v hBS s;
-      s')
 
-#pop-options
-#push-options "--fuel 2 --ifuel 1"
-
-let rec dstep_eval_complete'
-  (#t: table) (#c: context t)
-  (rvs: list (row c & 'a) { Cons? rvs })
-  (e: exp t c 'a { causal e })
-  (hBSs: bigsteps (List.Tot.map fst rvs) e (List.Tot.map snd rvs)):
-    Tot (s': state_of_exp e { system_of_exp_invariant (List.Tot.map fst rvs) e s' /\ xsystem_stepn (system_of_dsystem (dsystem_of_exp e)) rvs s' }) (decreases rvs) =
-  let t = dsystem_of_exp e in
-  match hBSs with
-  | BSsS rows' e vs' r v hBSs' hBS ->
-    (match rows' with
-    | [] ->
-      let (s', v') = t.step r t.init in
-      dstep0_ok r e v hBS;
-      s'
-
-    | _ ->
-      let s = dstep_eval_complete' (List.Tot.tl rvs) e hBSs' in
-      let (s', v') = t.step r s in
-      dstepn_ok rows' r e v hBS s;
-      s')
-
-let dstep_eval_complete
-  (#t: table) (#c: context t)
-  (rvs: list (row c & 'a))
-  (e: exp t c 'a { causal e })
-  (hBSs: bigsteps (List.Tot.map fst rvs) e (List.Tot.map snd rvs)):
-    Tot (s': state_of_exp e { xsystem_stepn (system_of_dsystem (dsystem_of_exp e)) rvs s' }) (decreases rvs) =
-  let t = dsystem_of_exp e in
-  match hBSs with
-  | BSs0 _ -> t.init
-  | BSsS rows' e vs' r v hBSs' hBS ->
-    dstep_eval_complete' rvs e hBSs
-
-// let system_eval_complete
-//   (rvs: list (row 'c & 'a))
-//   (e: exp 'c 'a { causal e })
-//   (hBS: bigsteps (List.Tot.map fst rvs) e (List.Tot.map snd rvs)):
-//     Lemma (exists (s': state_of_exp e). xsystem_stepn (system_of_dsystem (dsystem_of_exp e)) rvs s') =
-//   let s' = dstep_many_ok (List.Tot.map fst rvs) e (List.Tot.map snd rvs) hBS in ()
-
-// let system_eval_complete'
-//   (#outer: nat) (#vars: nat)
-//   (e: exp { causal e /\ wf e vars })
-//   (streams: C.table outer vars)
-//   (vs: C.vector value outer)
-//   (hBS: bigstep streams e vs):
-//     Lemma (exists (s': option (state_of_exp e)). system_stepn' #outer (system_of_exp e vars) (C.Table?._0 streams) vs s') =
-//   match outer with
-//   | 0 -> assert (system_stepn' (system_of_exp e vars) (C.Table?._0 streams) vs None)
-//   | _ -> system_eval_complete e streams vs hBS
-*)
+(* Section 4, Theorem 4, translation-abstraction *)
+let system_translation_abstraction
+    (#t: table) (#c: context t) (#a: t.ty)
+    (inputs: list (row c))
+    (e: exp t c a { XC.causal e })
+    (results: list (t.ty_sem a) { List.length results == List.length inputs })
+    (hBSs: XB.bigsteps inputs e results)
+    : Tot (oracles: list (SB.option_type_sem (SX.oracle_of_exp e)) {
+          List.length oracles == List.length inputs /\
+          snd (SB.system_steps (SX.system_of_exp e) inputs oracles) == results
+      }) =
+  let (| s, oracles, results', hBSs', prf |) = system_invariant_many inputs e in
+  XB.bigsteps_proof_equivalence hBSs hBSs';
+  oracles

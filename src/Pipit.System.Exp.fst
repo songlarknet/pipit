@@ -64,16 +64,16 @@ let system_of_exp_base
     match e with
     | XVal v -> system_const v
     | XBVar x -> system_project (fun i -> CR.index (context_sem c) i x)
-    (** XXX:TODO: treat this as an oracle
-      * ASSUME: invent an arbitrary value for free variables. This should be
+    (** TODO: use an arbitrary value for free variables. This should be
       * changed to use an explicit oracle variable, or maybe invent a (ghost?)
       * variable of type
       * > free_var: (t: Type) -> time -> var -> t
       *
       * This assumption doesn't affect the soundness of the proof-of-translation
-      * as the proof only applies to expressions without free variables.
+      * as the proof only applies to causal expressions, which do not have free
+      * variables.
       **)
-    | XVar x -> admit () // false_elim ()
+    | XVar x -> system_const (t.val_default a)
 
 let system_of_exp_apps_distr
     (#t: table) (#arg: t.ty) (#resfun: funty t.ty) (#res #inp: Type0)

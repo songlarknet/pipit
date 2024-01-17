@@ -52,12 +52,14 @@ let mkPrim
   (prim_sem: funty_sem prim_ty): prim =
   { prim_id; prim_ty; prim_sem }
 
+(* AXIOM:ADMIT: variable equality axiom required for open types *)
 let axiom_var_eq (a b: shallow_type) (x: C.var a) (x': C.var b):
   Lemma
     (requires C.Var?.v x == C.Var?.v x' /\ a.ty_id == b.ty_id)
     (ensures a == b /\ x == x') =
   admit ()
 
+(* AXIOM:ADMIT: primitive equality axiom used to allow CSE on open primitives *)
 let axiom_prim_eq (p: prim { Some? p.prim_id }) (q: prim { Some? q.prim_id }):
   Lemma
     (requires p.prim_id == q.prim_id)

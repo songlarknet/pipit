@@ -51,8 +51,8 @@ type ref_message = {
 
 type message_status_counter = Subrange.t { min = 0; max = 7 }
 
-(* We are packing the 3-bit MSCs into 64-bits, so a node can only send/receive up to 21 application-specific message types *)
-let max_app_message_count = 21
+(* We are packing the 3-bit MSCs into 64-bits, so a node can only send/receive up to 64 application-specific message types *)
+let max_app_message_count = 63
 type app_message_index = Subrange.t { min = 0; max = max_app_message_count }
 
 type trigger = {

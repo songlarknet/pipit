@@ -40,13 +40,19 @@ let tac_extract (namespaces: list string) () =
 inline_for_extraction
 let mk_reset (#input #result: Type) (#state: Type) (t: EE.esystem input state result) (stref: B.pointer state): ST unit
     (requires (fun h -> B.live h stref))
-    (ensures (fun h _ h' -> B.live h' stref)) =
+    (ensures (fun h _ h' ->
+      B.live h' stref /\
+      B.get h' stref 0 == t.init /\
+      B.modifies (B.loc_buffer stref) h h')) =
   stref *= t.init
 
 inline_for_extraction
 let mk_step (#input #result: Type) (#state: Type) (t: EE.esystem input state result) (inp: input) (stref: B.pointer state) : ST result
     (requires (fun h -> B.live h stref))
-    (ensures (fun h _ h' -> B.live h' stref)) =
+    (ensures (fun h r h' ->
+      B.live h' stref /\
+      (B.get h' stref 0, r) == t.step inp (B.get h stref 0) /\
+      B.modifies (B.loc_buffer stref) h h')) =
   let st  = !*stref in
   let (st', res): (state & result) = t.step inp st in
   stref *= st';

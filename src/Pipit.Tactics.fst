@@ -137,14 +137,14 @@ let rec tac_descend (break_binder: T.binder -> T.Tac unit) (norm: unit -> T.Tac 
    but doesn't seem to be necessary for actual proofs.
    *)
 let pipit_simplify (namespaces: list string): T.Tac unit =
-  tac_descend (fun _ -> ()) (fun _ -> norm_phase_pre namespaces);
-  norm_phase_post ()
+  T.seq (fun _ -> tac_descend (fun _ -> ()) (fun _ -> norm_phase_pre namespaces))
+    norm_phase_post
 
 
 let pipit_simplify_products (namespaces: list string): T.Tac unit =
   tac_break_top ();
-  tac_descend (fun b -> tac_break_binder b) (fun _ -> norm_phase_pre namespaces);
-  norm_phase_post ()
+  T.seq (fun _ -> tac_descend (fun b -> tac_break_binder b) (fun _ -> norm_phase_pre namespaces))
+    norm_phase_post
 
 // NB: this causes --extract krml to crash, so need both noextract attributes
 noextract
