@@ -9,7 +9,7 @@ prove lemma-bigstep-total
 ### Pipit.System.Exp.Properties (trans) ✅
 translation is an abstraction (big)
 
-### Pipit.Prim.Table (base, easy)
+### Pipit.Prim.Table (base, easy) ✅
 simple context proofs
 
 

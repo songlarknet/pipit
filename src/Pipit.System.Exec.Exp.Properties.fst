@@ -94,12 +94,10 @@ let rec step_invariant_init
 
     | XApps e1 ->
       step_apps_invariant_init e1 (fun r () -> r);
-      // TODO norm etc
-      // norm_spec [delta; nbe; primops; iota; zeta] (EX.esystem_of_exp (XApps e1));
-      // let t' = SB.system_with_input (fun r -> ((), r)) (EX.esystem_of_exp_apps e1 (fun r () -> r)) in
-      // assert (EX.esystem_of_exp (XApps e1) == t')
-        // by (tac_simp_refl ());
-      admit () // TODO:ADMIT
+      let t' = E.esystem_with_input (fun r -> ((), r)) (EX.esystem_of_exp_apps e1 (fun r () -> r)) in
+      assert (EX.esystem_of_exp (XApps e1) == t')
+        by (tac_simp_refl ());
+      ()
 
     | XFby v1 e2 ->
       step_invariant_init e2

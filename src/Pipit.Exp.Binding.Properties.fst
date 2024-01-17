@@ -97,6 +97,7 @@ and lemma_subst_lift_id_apps (#a: funty ('t).ty) (#c: context 't) (e: exp_apps '
     lemma_subst_lift_id e2 i t p
 
 private
+unfold
 let _lift_of_drop (#c: context 't) (i1: C.index_lookup c) (p: exp 't (C.drop1 c i1) (C.get_index c i1)) (t: ('t).ty):
   exp 't (C.drop1 (t :: c) (i1 + 1)) (C.get_index (t :: c) (i1 + 1)) =
   lift1 p t
@@ -174,7 +175,6 @@ and lemma_lift_subst_distribute_le_apps (#a: funty ('t).ty) (#c: context 't) (e:
     lemma_lift_subst_distribute_le_apps e1 i1 i2 t2 p;
     lemma_lift_subst_distribute_le e2 i1 i2 t2 p
 
-
 let lemma_subst_subst_distribute_le_def (#a: ('t).ty) (#c: context 't) (e: exp 't c a) (i1: C.index_lookup c) (i2: C.index { i1 <= i2 /\ i2 < List.Tot.length c - 1 }) (p1: exp 't (C.drop1 c i1) (C.get_index c i1)) (p2: exp 't (C.drop1 (C.drop1 c i1) i2) (C.get_index (C.drop1 c i1) i2)) =
     CP.lemma_drop_drop_commute c i1 i2;
     CP.lemma_drop_get_index_lt c (i2 + 1) i1;
@@ -188,23 +188,7 @@ let lemma_subst_subst_distribute_le_base_XBVar_Si2 (#c: context 't) (i1: C.index
   Lemma (ensures lemma_subst_subst_distribute_le_def (XBase (XBVar (i2 + 1))) i1 i2 p1 p2) =
   CP.lemma_lift_drop_commute_le (C.drop1 c i1) i2 i1 (C.get_index c i1);
   CP.lemma_lift_drop_eq c i1;
-  // XXX calc is very slow!
-  // calc (==) {
-  //   C.lift1 (C.drop1 (C.drop1 c i1) i2) i1 (C.get_index c i1);
-  //   (==) { CP.lemma_lift_drop_commute_le (C.drop1 c i1) i2 i1 (C.get_index c i1) }
-  //   C.drop1 (C.lift1 (C.drop1 c i1) i1 (C.get_index c i1)) (i2 + 1);
-  //   (==) { CP.lemma_lift_drop_eq c i1 }
-  //   C.drop1 c (i2 + 1);
-  // };
-  // let p2': exp 't (C.drop1 c (i2 + 1)) (C.get_index (C.drop1 c i1) i2) = coerce_eq () (lift1' p2 i1 (C.get_index c i1)) in
   lemma_subst_lift_id p2 i1 (C.get_index c i1) (subst1' p1 i2 p2);
-  // calc (==) {
-  //   subst1' (subst1_base' (XBVar (i2 + 1)) (i2 + 1) p2') i1 (subst1' p1 i2 p2);
-  //   (==) { }
-  //   subst1' (lift1' p2 i1 (C.get_index c i1)) i1 (subst1' p1 i2 p2);
-  //   (==) { lemma_subst_lift_id p2 i1 (C.get_index c i1) (subst1' p1 i2 p2) }
-  //   p2;
-  // };
   ()
 
 #pop-options
@@ -225,6 +209,8 @@ let lemma_subst_subst_distribute_le_base (#a: ('t).ty) (#c: context 't) (e: exp_
     then ()
     else ()
 
+private
+unfold
 let _lift_of_drop2 (#c: context 't) (i1: C.index_lookup c) (i2: C.index { i1 <= i2 /\ i2 < List.Tot.length c - 1 }) (p: exp 't (C.drop1 (C.drop1 c i1) i2) (C.get_index (C.drop1 c i1) i2)) (t: ('t).ty):
   exp 't (C.drop1 (C.drop1 (t :: c) (i1 + 1)) (i2 + 1))
     (C.get_index (C.drop1 (t :: c) (i1 + 1)) (i2 + 1)) =
@@ -250,7 +236,16 @@ let lemma_subst_subst_distribute_le_context_facts
   assert (C.get_index (te :: c) (i2 + 2) == C.get_index (te :: C.drop1 c i1) (i2 + 1));
   ()
 
-#push-options "--fuel 1 --ifuel 0" // --split_queries always"
+module T = FStar.Tactics
+let tac_unfold_env (): T.Tac unit =
+  ignore (T.repeat T.revert);
+  T.norm [delta_only [`%lemma_subst_subst_distribute_le_def; `%lemma_lift_subst_distribute_le_def; `%_lift_of_drop; `%_lift_of_drop2; `%lift1]];
+  ignore (T.repeat T.intro)
+
+
+
+#push-options "--fuel 1 --ifuel 0"
+// --z3rlimit 20
 private
 let lemma_subst_subst_distribute_le_bind
   (#c: context 't)
@@ -263,18 +258,26 @@ let lemma_subst_subst_distribute_le_bind
       lemma_subst_subst_distribute_le_context_facts te i1 i2;
       (subst1' (subst1' e (i1 + 1) (_lift_of_drop i1 p1 te)) (i2 + 1) (_lift_of_drop2 i1 i2 p2 te)) ==
       (subst1' (subst1' e (i2 + 2) (lift1 (lift1' p2 i1 (C.get_index c i1)) te)) (i1 + 1) (lift1 (subst1' p1 i2 p2) te)))) =
+  // let subst_req: squash (lemma_subst_subst_distribute_le_def e (i1 + 1) (i2 + 1) (_lift_of_drop i1 p1 te) (_lift_of_drop2 i1 i2 p2 te)) = () in
+  // norm_spec [delta_only [`%lemma_subst_subst_distribute_le_def; `%_lift_of_drop; `%_lift_of_drop2; `%lift1]] (lemma_subst_subst_distribute_le_def e (i1 + 1) (i2 + 1) (_lift_of_drop i1 p1 te) (_lift_of_drop2 i1 i2 p2 te));
+
   lemma_lift_lift_commute p2 i1 0 (C.get_index c i1) te;
   lemma_lift_subst_distribute_le p1 i2 0 te p2;
+  // assert (lift1' (subst1' p1 i2 p2) 0 te == subst1' (lift1' p1 0 te) (i2 + 1) (lift1' p2 0 te));
   lemma_subst_subst_distribute_le_context_facts te i1 i2;
   CP.lemma_lift_drop_commute_le (C.drop1 c i1) i2 i1 (C.get_index c i1);
   CP.lemma_lift_drop_eq c i1;
   CP.lemma_drop_drop_commute c i1 i2;
   CP.lemma_drop_get_index_lt c (i2 + 1) i1;
 
-  // TODO:ADMIT:FLAKY why did this regress?
-  assume (
+  assert (
       (subst1' (subst1' e (i1 + 1) (_lift_of_drop i1 p1 te)) (i2 + 1) (_lift_of_drop2 i1 i2 p2 te)) ==
       (subst1' (subst1' e (i2 + 2) (lift1 (lift1' p2 i1 (C.get_index c i1)) te)) (i1 + 1) (lift1 (subst1' p1 i2 p2) te)))
+    by (
+      tac_unfold_env ();
+      // T.dump "T";
+      ())
+
 
 
 private
@@ -287,7 +290,10 @@ let lemma_subst_subst_distribute_le_XMu
     (ensures (lemma_subst_subst_distribute_le_def (XMu e) i1 i2 p1 p2)) =
   lemma_subst_subst_distribute_le_bind e i1 i2 p1 p2;
   CP.lemma_lift_drop_commute_le (C.drop1 c i1) i2 i1 (C.get_index c i1);
-  ()
+  assert (
+    subst1' (subst1' (XMu e) i1 p1) i2 p2 ==
+    subst1' (subst1' (XMu e) (i2 + 1) (lift1' p2 i1 (C.get_index c i1))) i1 (subst1' p1 i2 p2)
+  ) by (tac_unfold_env ())
 
 private
 let lemma_subst_subst_distribute_le_XLet
@@ -301,7 +307,10 @@ let lemma_subst_subst_distribute_le_XLet
     (ensures (lemma_subst_subst_distribute_le_def (XLet te e1 e2) i1 i2 p1 p2)) =
   lemma_subst_subst_distribute_le_bind e2 i1 i2 p1 p2;
   CP.lemma_lift_drop_commute_le (C.drop1 c i1) i2 i1 (C.get_index c i1);
-  ()
+  assert (
+    subst1' (subst1' (XLet te e1 e2) i1 p1) i2 p2 ==
+    subst1' (subst1' (XLet te e1 e2) (i2 + 1) (lift1' p2 i1 (C.get_index c i1))) i1 (subst1' p1 i2 p2)
+  ) by (tac_unfold_env ())
 
 private
 let lemma_subst_subst_distribute_le_XContract
@@ -318,7 +327,12 @@ let lemma_subst_subst_distribute_le_XContract
     (ensures (lemma_subst_subst_distribute_le_def (XContract status er eg ei) i1 i2 p1 p2)) =
   lemma_subst_subst_distribute_le_bind eg i1 i2 p1 p2;
   CP.lemma_lift_drop_commute_le (C.drop1 c i1) i2 i1 (C.get_index c i1);
-  ()
+    // CP.lemma_drop_drop_commute c i1 i2;
+    // CP.lemma_drop_get_index_lt c (i2 + 1) i1;
+  assert (
+    subst1' (subst1' (XContract status er eg ei) i1 p1) i2 p2 ==
+    subst1' (subst1' (XContract status er eg ei) (i2 + 1) (lift1' p2 i1 (C.get_index c i1))) i1 (subst1' p1 i2 p2)
+  ) by (tac_unfold_env ())
 
 #pop-options
 
