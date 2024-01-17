@@ -53,7 +53,7 @@ $(BUILD)/deps.mk.rsp:
 $(BUILD)/deps.mk: $(BUILD)/deps.mk.rsp $(FSTAR_SRCS)
 	@echo "* Updating dependencies"
 	@true $(shell rm -f $@.rsp) $(foreach f,$(FSTAR_SRCS),$(shell echo $(f) >> $@.rsp))
-	$(Q)$(FSTAR_EXE) $(FSTAR_DEP_OPT) --dep full @$@.rsp > $@.tmp
+	$(Q)$(FSTAR_EXE) $(FSTAR_DEP_OPT) --dep full @$@.rsp > $@.tmp || echo "*** No F*: not building dependencies *** "
 	@mv $@.tmp $@
 
 include $(BUILD)/deps.mk
