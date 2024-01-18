@@ -1,3 +1,12 @@
+(* Trigger scheduling model (simplified cycles).
+  This file is partial: it is missing the value for TRIGGERS_COUNT.
+  To check it, define a new file that looks like:
+
+  > const TRIGGERS_COUNT: int = 64;
+  > include "trigger_simple_enable.lus"
+
+  Or see run-eval.sh *)
+
 type cycle = int;
 type time = int;
 
@@ -7,7 +16,6 @@ type Trigger = struct {
   -- ignore cycle repeat factor
 };
 
-const TRIGGERS_COUNT: int = 16;
 type index = subrange [0, TRIGGERS_COUNT-1] of int;
 
 function enabled(
