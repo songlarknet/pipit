@@ -51,7 +51,7 @@ COPY --chown=opam:opam Makefile Makefile
 RUN eval $(opam env); make verify -j8
 
 # Run extraction
-# RUN eval $(opam env); make extract -j8
+RUN eval $(opam env); make extract -j8
 
 # For benchmark script
 RUN sudo apt-get install time --yes

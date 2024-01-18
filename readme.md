@@ -2,7 +2,6 @@
 
 This is the supplementary material for our paper submission.
 It is based on an anonymised version of our git repository.
-We intend to submit a Docker image for the artefact submission deadline next week (Jan 23); if you run into any issues running this, consider trying the Docker image.
 
 Pipit is an embedded language for implementing and verifying *reactive systems*, such as the anti-lock braking system in a car, or the  [system that fills the water reservoir of your coffee machine (REDACTED)](REDACTED).
 Pipit is a research project and is in the early stages of development.
@@ -34,6 +33,31 @@ Pipit uses [opam](https://opam.ocaml.org/), the OCaml package manager.
 Pipit requires a recent development version of F\*.
 We maintain a fork with the right version at [REDACTED](REDACTED).
 This fork currently has some minor improvements to avoid duplication of work during code-generation, which we expect to be integrated upstream in the near future.
+
+### Docker instructions
+
+We provide a Docker image: this should be easier for evaluation, but isn't necessarily convenient for devlopment.
+You can build the Docker image by running:
+```
+docker build -t pipit .
+```
+
+The above command might require `sudo` on Linux.
+The above installs all dependencies, compiles and verifies Pipit and the examples, and extracts the C code.
+
+To enter a shell, run:
+```
+docker run -i pipit
+```
+
+For some unfortunate reason, this doesn't display a prompt.
+You can then find the generated C code, such as `build/extract/ttcan/Network_TTCan_Extract.c`.
+
+To run the evaluation benchmark (Figure 11, table of verification runtime) you can run:
+```
+docker run -i pipit example/ttcan/lus/run-eval.sh
+```
+This takes a few hours, and generates a file `build/tmp.report`.
 
 ### Dependency installation
 
