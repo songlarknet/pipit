@@ -50,13 +50,17 @@ all: verify-retry extract
 $(BUILD)/deps.mk.rsp:
 	@mkdir -p $(BUILD)
 
+ifneq (, $(shell which $(FSTAR_EXE)))
 $(BUILD)/deps.mk: $(BUILD)/deps.mk.rsp $(FSTAR_SRCS)
 	@echo "* Updating dependencies"
 	@true $(shell rm -f $@.rsp) $(foreach f,$(FSTAR_SRCS),$(shell echo $(f) >> $@.rsp))
-	$(Q)$(FSTAR_EXE) $(FSTAR_DEP_OPT) --dep full @$@.rsp > $@.tmp || echo "*** No F*: not building dependencies *** "
+	$(Q) $(FSTAR_EXE) $(FSTAR_DEP_OPT) --dep full @$@.rsp > $@.tmp
 	@mv $@.tmp $@
 
 include $(BUILD)/deps.mk
+
+endif
+
 
 %.fst.checked:
 	@echo "* Checking: $<"
@@ -79,27 +83,27 @@ extract: extract-pump extract-simple extract-ttcan
 extract-pump: EXTRACT_MODULE=Pump.Extract
 extract-pump: EXTRACT_FILE=example/Pump.Extract.fst
 extract-pump: EXTRACT_NAME=pump
-extract-pump: extract-mk
+extract-pump: build/Pump.Extract.extract
 
 .PHONY: extract-simple
 extract-simple: EXTRACT_MODULE=Simple.Extract
 extract-simple: EXTRACT_FILE=example/Simple.Extract.fst
 extract-simple: EXTRACT_NAME=simple
-extract-simple: extract-mk
+extract-simple: build/Simple.Extract.extract
 
 .PHONY: extract-ttcan
 extract-ttcan: EXTRACT_MODULE=Network.TTCan.Extract
 extract-ttcan: EXTRACT_FILE=example/ttcan/Network.TTCan.Extract.fst
 extract-ttcan: EXTRACT_NAME=ttcan
-extract-ttcan: extract-mk
+extract-ttcan: build/Network.TTCan.Extract.extract
 
-.PHONY: extract-mk
-extract-mk:
+build/%.extract: build/cache/%.fst.checked
 	@echo "* Extracting $(EXTRACT_MODULE)"
 	@rm -f $(BUILD)/extract/$(EXTRACT_NAME)/*.krml
 	@mkdir -p $(BUILD)/extract/$(EXTRACT_NAME)
 	$(Q)$(FSTAR_EXE) $(FSTAR_OPT) $(EXTRACT_FILE) --codegen krml --odir $(BUILD)/extract/$(EXTRACT_NAME)
 	$(Q)cd $(BUILD)/extract/$(EXTRACT_NAME) && $(KARAMEL_EXE) *.krml -bundle $(EXTRACT_MODULE)=* -skip-linking -skip-compilation $(KRML_OPT)
+	$(Q)touch $@
 
 .PHONY: clean
 clean:
@@ -108,6 +112,8 @@ clean:
 	@echo "* Cleaning deps"
 	@rm -f $(BUILD)/deps.mk
 	@rm -f $(BUILD)/deps.mk.rsp
+	@echo "* Cleaning *.extract"
+	@rm -f $(BUILD)/*.extract
 
 .PHONY: dev-init
 dev-init:
