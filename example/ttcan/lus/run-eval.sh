@@ -1,8 +1,16 @@
 #!/bin/bash
-# Tabulate TTCAN verification runtimes.
+# Tabulate TTCAN verification runtimes up to nth power-of-two.
 # Run from Pipit docker. Usage:
-# > docker run pipit example/ttcan/lus/run-eval.sh
-# Generates to `build/tmp.report`
+# > docker run pipit example/ttcan/lus/run-eval.sh 3
+# Generates to `build/tmp.report` with 3 array sizes (1, 2, 4)
+
+if [ "$#" -ne 1 ]; then
+  echo "Usage: $0 <count>"
+  echo "  where <count> dictates how many tests to run"
+  exit 1
+fi
+COUNT=$1
+
 
 TIME_FORMAT='--format=%es&%Us'
 OUT_REPORT=build/tmp.report
@@ -12,7 +20,6 @@ echo '' > $OUT_REPORT
 
 rm build/cache/Network.TTCan.TriggerTimely.fst.checked
 /usr/bin/time -o build/tmp.time $TIME_FORMAT make build/cache/Network.TTCan.TriggerTimely.fst.checked
-# /usr/bin/time -o build/tmp.time $TIME_FORMAT echo 'hi'
 PIPIT_RUNTIME=$(cat build/tmp.time)
 echo "*** Pipit took: " $PIPIT_RUNTIME
 
@@ -49,14 +56,12 @@ function row {
   printf "\n" >> $OUT_REPORT
 }
 
-row 1
-row 2
-row 4
-row 8
-row 16
-row 32
-row 64
 
+POW2=1
+for (( i = 0; i < $COUNT; ++i )); do
+  row $POW2
+  POW2=$(($POW2 * 2))
+done
 
 echo
 echo "****** Report ******"

@@ -47,15 +47,14 @@ The above installs all dependencies, compiles and verifies Pipit and the example
 
 To enter a shell, run:
 ```
-docker run -i pipit
+docker run -it pipit
 ```
 
-For some unfortunate reason, this doesn't display a prompt.
 You can then find the generated C code, such as `build/extract/ttcan/Network_TTCan_Extract.c`.
 
 To run the evaluation benchmark (Figure 11, table of verification runtime) you can run:
 ```
-docker run -i pipit example/ttcan/lus/run-eval.sh
+docker run -it pipit example/ttcan/lus/run-eval.sh 6
 ```
 This takes a few hours, and generates a file `build/tmp.report`.
 
