@@ -127,7 +127,7 @@ let type_cast (e: env) (ty: Tac.term) (mt: mode & Tac.term): Tac.Tac (mode & Tac
 
 let rec descend (e: env) (t: Tac.term): Tac.Tac (mode & Tac.term) =
   let go_stream (e: env) (t: Tac.term) (elty: Tac.term) =
-    snd (mode_cast e Stream elty (descend e t))
+    snd (mode_cast e Stream (Tac.pack Tac.Tv_Unknown) (descend e t))
   in
   // Tac.compress?
   // debug_print ("Inspecting term " ^ Tac.term_to_string t);
@@ -205,14 +205,14 @@ let rec descend (e: env) (t: Tac.term): Tac.Tac (mode & Tac.term) =
       // (mode_join md mb, Tac.pack (Tac.Tv_Let true attrs b def body))
     | _ ->
       debug_print ("stream-letrec: " ^ Tac.term_to_string def);
-      let elty = stream_ty_unify_get_elt e b.sort in
+      // let elty = stream_ty_unify_get_elt e b.sort in
       let e = env_push b Stream e in
-      let def = go_stream e def elty in
-      let body = go_stream e body elty in
+      let def = go_stream e def in
+      let body = go_stream e body in
       let defabs = Tac.pack (Tac.Tv_Abs b def) in
       let bodyabs = Tac.pack (Tac.Tv_Abs b body) in
 
-      (Stream, (`(let^) #(`#elty) (rec' #(`#elty) (`#defabs)) (`#bodyabs))))
+      (Stream, (`(let^) (rec' (`#defabs)) (`#bodyabs))))
   | Tac.Tv_Let false attrs b def body ->
     let (md, def) = descend e def in
     let (md, def) = type_cast e b.sort (md,def) in
@@ -226,8 +226,8 @@ let rec descend (e: env) (t: Tac.term): Tac.Tac (mode & Tac.term) =
     let lett = match md with
       | Pure -> Tac.pack (Tac.Tv_Let false attrs b def body)
       | Stream ->
-        let elty = stream_ty_unify_get_elt e b.sort in
-        (`(let^) #(`#elty) (`#def) (`#bodyabs))
+        // let elty = stream_ty_unify_get_elt e b.sort in
+        (`(let^) (`#def) (`#bodyabs))
     in
     (mode_join md mb, lett)
 
