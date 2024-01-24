@@ -127,7 +127,7 @@ let type_cast (e: env) (ty: Tac.term) (mt: mode & Tac.term): Tac.Tac (mode & Tac
 
 let rec descend (e: env) (t: Tac.term): Tac.Tac (mode & Tac.term) =
   let go_stream (e: env) (t: Tac.term) (elty: Tac.term) =
-    snd (mode_cast e Stream (Tac.pack Tac.Tv_Unknown) (descend e t))
+    snd (mode_cast e Stream elty (descend e t))
   in
   // Tac.compress?
   // debug_print ("Inspecting term " ^ Tac.term_to_string t);
@@ -207,8 +207,8 @@ let rec descend (e: env) (t: Tac.term): Tac.Tac (mode & Tac.term) =
       debug_print ("stream-letrec: " ^ Tac.term_to_string def);
       // let elty = stream_ty_unify_get_elt e b.sort in
       let e = env_push b Stream e in
-      let def = go_stream e def in
-      let body = go_stream e body in
+      let def = go_stream e def (Tac.pack Tac.Tv_Unknown) in
+      let body = go_stream e body (Tac.pack Tac.Tv_Unknown) in
       let defabs = Tac.pack (Tac.Tv_Abs b def) in
       let bodyabs = Tac.pack (Tac.Tv_Abs b body) in
 
@@ -268,7 +268,7 @@ let tac_lift (t: Tac.term): Tac.Tac Tac.term =
   let (mm, t') = descend e t in
   debug_print ("lifted is: " ^ Tac.term_to_string t');
   // TC required to instantiate uvars?
-  ignore (Tac.recover (fun () -> Tac.tc e.tac_env t'));
+  // ignore (Tac.recover (fun () -> Tac.tc e.tac_env t'));
   t'
 
 let fst (#a #b: eqtype): (a & b) -> a = fst
@@ -286,7 +286,7 @@ let pp_letrec (x: stream int): stream int =
   let y = (0 <: stream int) in
   // let z: stream int = 0 in
   // let rec count (i: int): int = count i in
-  1 + y
+  1 + y + count
 
 // [@@Tac.preprocess_with tac_lift]
 // let pp_pairs (x: stream int): stream (int & int) =
