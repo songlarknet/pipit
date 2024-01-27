@@ -1,4 +1,38 @@
-(* box/lift transform *)
+(* Lifting transform / syntactic sugar for streaming programs.
+
+  This file defines a preprocessor tactic that tries to "lift" non-streaming
+  operations to a streaming context. It's conceptually similar to inferring
+  monadic binds, except that our streams are applicative and not monadic.
+
+  For example, we could imagine writing a program:
+
+  > let increment_every_element (element: stream int): stream int =
+  >   element + 1
+
+  This program isn't well-typed as it mixes integer operations with streams.
+  We can insert applicative <$>, <*> and returns to make it well-typed:
+
+  > let increment_every_element (element: stream int): stream int =
+  >   (+) <$> element <*> return 1
+
+  Manually inserting these primitives isn't too bad for small programs, but
+  it gets noisy in large programs. Pipit has two additional complexities that
+  make it even noisier. First, streams are restricted to store "statically-bounded"
+  types, so that we can generate good statically-allocated C code. To support
+  this, we use a slightly different form of lifted applications that lets us
+  distinguish between partially-applied functions and real streams. The second
+  complexity is that we want to annotate each primitive with some unique
+  identifier, so that a later common-subexpression-elimination pass can check
+  whether two operations are equal.
+
+  High-level question:
+    * is this a massive hack? Should this use the new DSL framework instead?
+
+  Implementation questions / limitations:
+    * record constructors and record field accessors do not typecheck with FStar.Tactics.tc
+    * mutual recursion isn't exposed by Tac.inspect. Exposing this would be a big change, wouldn't it?
+    * any way to give error locations in Tac.fail?
+*)
 module Pipit.Sugar.Shallow.Tactics.Lift
 
 module Ref = FStar.Reflection.V2
@@ -8,20 +42,28 @@ module List = FStar.List.Tot
 
 // #push-options "--print_implicits --print_full_names --ugly"
 
+
+let rec zip2 (#x #y: Type) (xs: list x) (ys: list y): list (x & y)
+  = match xs, ys with
+  | x::xs, y::ys -> (x,y) :: zip2 xs ys
+  | _ -> []
+
+
 (*** Streaming public interface ***)
 
 assume new type stream (a: eqtype)
+type static (a: Type) = a
 
 assume val return (#a: eqtype) (x: a): stream a
 
 assume val fby (#a: eqtype) (x: a) (xs: stream a): stream a
 
-(*** Lift annotations exposed to user ***)
+(*** Lifting annotations exposed to user ***)
 unfold
-let unlifted (#a: eqtype) (x: a): a = x
+let as_static (#a: Type) (x: static a): static a = x
 
 unfold
-let lifted (#a: eqtype) (x: stream a): stream a = x
+let as_stream (#a: eqtype) (x: stream a): stream a = x
 
 (*** Internal stream combinators and inserted calls ***)
 assume new type stream_app (a: Type)
@@ -36,12 +78,13 @@ assume val rec' (#a: eqtype) (f: stream a -> stream a): stream a
 
 assume val (let^) (#a #b: eqtype) (f: stream a) (g: stream a -> stream b): stream b
 
-(*** Lift ***)
+(*** Lift transform definitions ***)
 let stream'name: Tac.name = ["Pipit"; "Sugar"; "Shallow"; "Tactics"; "Lift"; "stream"]
-let unlifted'name: Tac.name = ["Pipit"; "Sugar"; "Shallow"; "Tactics"; "Lift"; "unlifted"]
+let static'name: Tac.name = ["Pipit"; "Sugar"; "Shallow"; "Tactics"; "Lift"; "static"]
+let as_static'name: Tac.name = ["Pipit"; "Sugar"; "Shallow"; "Tactics"; "Lift"; "as_static"]
 
-
-type mode = | Stream | Pure
+// TODO: argument qualifier implicit/explicit in ModeFun
+type mode = | Stream | Static | ModeFun: mode -> explicit: bool -> mode -> mode
 
 let debug_print str = Tac.print str
 
@@ -65,196 +108,214 @@ let assert_type_annotation (ty: Tac.term) (err: string): Tac.Tac unit =
     Tac.fail ("Lift.descend: error: requires explicit type annotation: " ^ err)
   | _ -> ()
 
+let qual_is_explicit (q: Ref.aqualv): bool =
+  match q with
+  | Ref.Q_Explicit -> true
+  | _ -> false
 
-let mode_of_ty (e: env) (ty: Tac.term): Tac.Tac (mode & Tac.term) =
+let rec mode_of_ty (ty: Tac.term): Tac.Tac mode =
   match Tac.inspect_unascribe ty with
   | Tac.Tv_App tm (arg,aqual) ->
     (match Tac.inspect_unascribe tm with
     | Tac.Tv_FVar fv ->
       if Tac.inspect_fv fv = stream'name
-      then (debug_print ("here: " ^ Tac.term_to_string ty); (Stream, arg))
-      else (Pure, ty)
-    | _ -> (Pure, ty))
-  | _ -> (Pure, ty)
+      then Stream
+      // else if Tac.inspect_fv fv = static'name
+      // then Some Static
+      else Static
+    | _ -> Static)
+  | Tac.Tv_Arrow arg (Tac.C_Total res) ->
+    ModeFun (mode_of_ty arg.sort) (qual_is_explicit arg.qual) (mode_of_ty res)
+  | _ -> Static
 
-let mode_of_ty' (e: env) (ty: Tac.term): Tac.Tac mode =
-  fst (mode_of_ty e ty)
+let mode_join (m1 m2: mode): Tac.Tac mode = match m1, m2 with
+  | Stream, Static -> Stream
+  | Static, Stream -> Stream
+  | Static, Static -> Static
+  | _, _ -> if m1 = m2 then m1 else Tac.fail ("cannot join incompatible modes: " ^ Tac.term_to_string (quote (m1, m2)))
 
-let mode_join (m1 m2: mode): mode = match m1, m2 with
-  | Stream, _ -> Stream
-  | _, Stream -> Stream
-  | Pure, Pure -> Pure
-
-let modes_of_arr (e: env) (ty: Tac.term): Tac.Tac (option (list mode & mode)) =
-  match Tac.collect_arr ty with
-  | args, Tac.C_Total res ->
-    let margs = Tac.map (mode_of_ty' e) args in
-    let mres = mode_of_ty' e res in
-    if List.existsb (fun m -> m = Stream) (mres::margs)
-    then Some (margs, mres)
-    else None
-  | _ -> None
-
-
-let mode_cast (e: env) (m_expect: mode) (ty: Tac.term) (mt: mode & Tac.term): Tac.Tac (mode & Tac.term) =
+let mode_cast (m_expect: mode) (mt: mode & Tac.term): Tac.Tac (mode & Tac.term) =
   (match mt, m_expect with
-  | (Pure, tm), Stream -> (Stream, (`return #(`#ty) (`#tm)))
+  | (Static, tm), Stream -> (Stream, (`return (`#tm)))
   | (m, tm), _ -> (m, tm))
 
-let type_cast (e: env) (ty: Tac.term) (mt: mode & Tac.term): Tac.Tac (mode & Tac.term) =
+let type_cast (ty: Tac.term) (mt: mode & Tac.term): Tac.Tac (mode & Tac.term) =
   match Tac.inspect ty with
   | Tac.Tv_Unknown ->
     mt
   | _ ->
-    (match mt, mode_of_ty e ty with
-    | (Pure, tm), (Stream, elty) -> (Stream, (`return #(`#elty) (`#tm)))
+    (match mt, mode_of_ty ty with
+    | (Static, tm), Stream -> (Stream, (`return (`#tm)))
     | _ -> mt)
 
+let joins_modes (mts: list (mode & Tac.term)): Tac.Tac (mode & list Tac.term) =
+  match mts with
+  | (m0, tm) :: mts' ->
+    let ms' = List.map fst mts' in
+    let m = Tac.fold_left mode_join m0 ms' in
+    (m, Tac.map (fun x -> snd (mode_cast m x)) mts)
+  | [] -> (Static, [])
+
+(* get mode of type-annotated function body; requires type annotations *)
+let rec mode_of_letrec (t: Tac.term): Tac.Tac mode =
+  match Tac.inspect t with
+  // cannot look up in env: as env is not yet known
+  // | Tac.Tv_Var (v: Tac.namedv) ->
+  //   env_get_mode v e
+  // | Tac.Tv_FVar (v: Tac.fv) ->
+  //   mode_of_ty (Tac.tc e.tac_env t)
+  | Tac.Tv_Const (vc: Tac.vconst) ->
+    Static
+
+  | Tac.Tv_Abs bv tm ->
+    // abstractions need explicit binders
+    assert_type_annotation bv.sort ("letrec binder " ^ Tac.binder_to_string bv);
+    let m1 = mode_of_ty bv.sort in
+    let m2 = mode_of_letrec tm in
+    ModeFun m1 (qual_is_explicit bv.qual) m2
+
+  | Tac.Tv_AscribedT (tm: Tac.term) (ty: Tac.term) tac use_eq ->
+    mode_of_ty ty
+
+  | Tac.Tv_AscribedC (tm: Tac.term) (cmp: Tac.comp) tac use_eq ->
+    (match cmp with
+    | Tac.C_Total ty | Tac.C_GTotal ty ->
+      mode_of_ty ty
+    | Tac.C_Lemma _ _ _ -> Static
+    | Tac.C_Eff _ _ _ _ _ -> Tac.fail ("Lift.mode_of_letrec: unsupported effect: " ^ Tac.term_to_string t))
+  | _ ->
+    Tac.fail ("Lift.mode_of_letrec: letrecs must have explicit type annotations: " ^ Tac.term_to_string t)
+
 let rec descend (e: env) (t: Tac.term): Tac.Tac (mode & Tac.term) =
-  let go_stream (e: env) (t: Tac.term) (elty: Tac.term) =
-    snd (mode_cast e Stream elty (descend e t))
+  let go_stream (e: env) (t: Tac.term) =
+    let (m, t) = descend e t in
+    match m with
+    | Static -> (`return (`#t))
+    | Stream -> t
+    | ModeFun _ _ _ -> Tac.fail ("Lift.descend: cannot lift function to stream: " ^ Tac.term_to_string t)
   in
-  // Tac.compress?
-  // debug_print ("Inspecting term " ^ Tac.term_to_string t);
-  // debug_print (match m with | None -> "None" | Some Stream -> "Some Stream" | Some Pure -> "Some Pure");
   match Tac.inspect t with
   | Tac.Tv_Var (v: Tac.namedv) ->
     (env_get_mode v e, t)
   | Tac.Tv_BVar (v: Tac.bv) ->
     Tac.fail ("Lift.descend: unexpected bvar; expected named variables only " ^ Tac.term_to_string t)
   | Tac.Tv_FVar (v: Tac.fv) ->
-    // DISALLOW: ensure no unapplied functions?
-    (mode_of_ty' e (Tac.tc e.tac_env t), t)
+    (mode_of_ty (Tac.tc e.tac_env t), t)
   | Tac.Tv_Const (vc: Tac.vconst) ->
-    (Pure, t)
+    (Static, t)
 
   | Tac.Tv_App (hd: Tac.term) (arg, aqual) ->
-    let rec mk_pure_apps hd args: Tac.Tac Tac.term = match args with
-      | (mm,arg,aqual)::args -> mk_pure_apps (Tac.pack (Tac.Tv_App hd (arg,aqual))) args
-      | [] -> hd
-    in
-    let rec mk_lift_apps hd args: Tac.Tac Tac.term = match args with
-      | (mm,arg,aqual)::args ->
-        // CHECK: ensure fully applied? partial-applications will fail as no stream instance
-        let (mm, arg) = mode_cast e Stream (Tac.pack Tac.Tv_Unknown) (mm, arg) in
-        mk_lift_apps (`liftP'apply (`#hd) (`#arg)) args
-      | [] ->
-        hd
-    in
-    let rec go_lifts hd args m collect: Tac.Tac (mode & Tac.term) = match args with
-      | (arg,Tac.Q_Explicit)::args ->
-        let (mm,arg) = descend e arg in
-        go_lifts hd args (mode_join mm m) ((mm,arg,aqual) :: collect)
-      | (arg,aqual)::args ->
-        Tac.fail ("Lift.descend: cannot lift implicit arguments: " ^ Tac.term_to_string arg)
-      | [] ->
-        (match m with
-        | Pure -> (Pure, mk_pure_apps hd (List.rev collect))
-        | Stream ->
-          let hd = (`liftP'prim (`#hd)) in
-          (Stream, `liftP'close (`#(mk_lift_apps hd (List.rev collect)))))
-    in
-    let rec mk_apps hd modes args: Tac.Tac Tac.term = match modes, args with
-      | mx::modes, (arg,aqual)::args ->
+    let rec go_lifts m hd args: Tac.Tac (mode & Tac.term) = match m, args with
+      | ModeFun _ false m2, (_,Ref.Q_Explicit)::_ ->
+        go_lifts m2 hd args
+
+      | _, (arg,Ref.Q_Meta _) :: _
+      | _, (arg,Ref.Q_Implicit) :: _ ->
+        Tac.fail "not supported: cannot lift implicit / meta applications"
+
+      | ModeFun Static _  m2, (arg,_)::args ->
         let (ma, arg) = descend e arg in
-        let (ma, arg) = mode_cast e mx (Tac.pack Tac.Tv_Unknown) (ma, arg) in
-        mk_apps (Tac.pack (Tac.Tv_App hd (arg, aqual))) modes args
-      | _, _ -> hd
+        let (ma, arg) = mode_cast Stream (ma, arg) in
+        go_lifts m2 (`liftP'apply (`#hd) (`#arg)) args
+
+      | Static, [] -> (Stream, (`liftP'close (`#hd)))
+      | _, _ ->
+        Tac.fail ("Lift.descend:go_lifts: cannot lift ! xxxerror bad mode " ^ Tac.term_to_string t)
+    in
+    let rec go_apps m hd args: Tac.Tac (mode & Tac.term) = match m, args with
+      | ModeFun _ false m2, (_,Ref.Q_Explicit)::_ ->
+        go_apps m2 hd args
+
+      | ModeFun m1 mq m2, (arg,aq)::args ->
+        let (ma, arg) = descend e arg in
+        (match ma, m1 with
+        | Stream, Static ->
+          // TODO assert aq = Explicit; lifted apps only supports explicit
+          go_lifts m2 (`liftP'apply (liftP'prim (`#hd)) (`#arg)) args
+        | _, _ ->
+          let (ma, arg) = mode_cast m1 (ma, arg) in
+          go_apps m2 (Tac.pack (Tac.Tv_App hd (arg, aq))) args)
+
+      | _, _ :: _ ->
+        Tac.fail ("Lift.descend:go_apps: too many arguments for mode; " ^ Tac.term_to_string t)
+      | _, [] -> (m, hd)
     in
     let (hd, args) = Tac.collect_app t in
-    (match Tac.inspect hd with
-      | Tac.Tv_FVar (v: Tac.fv) ->
-        // XXX: this fails for record accessors, and lookup_typ returns None
-        let ty = Tac.tc e.tac_env hd in
-        if Tac.inspect_fv v = unlifted'name
-        then (mode_of_ty' e ty, t)
-        else
-          (match modes_of_arr e ty with
-          | None -> go_lifts hd args Pure []
-          | Some (modes, ret) -> (ret, mk_apps hd modes args))
-      | Tac.Tv_Var (v: Tac.namedv) ->
-        let ty = Tac.tc e.tac_env hd in
-        assert_type_annotation ty (Tac.namedv_to_string v);
-        (match modes_of_arr e ty with
-        | None -> go_lifts hd args Pure []
-        | Some (modes, ret) -> (ret, mk_apps hd modes args))
-      | _ ->
-        Tac.fail ("Lift.descend: expected application head; got term " ^ Tac.term_to_string hd))
+    let (mh, hd) = descend e hd in
+    // (as_static x) stops lifting of x, but if the result is applied to
+    // another argument, we still want to lift that:
+    // > lift ((as_static x) y) ==> x (lift y)
+    if FStar.Reflection.V2.TermEq.term_eq hd (`as_static)
+    then match args with
+         | [] -> Tac.fail "impossible"
+         // xxx handle implicit arg
+         | (hd, _)::args -> go_apps (mode_of_ty (Tac.tc e.tac_env hd)) hd args
+    else go_apps mh hd args
   | Tac.Tv_Abs bv tm ->
     // abstractions need explicit binders
     assert_type_annotation bv.sort (Tac.binder_to_string bv);
     debug_print ("Abs: descend with " ^ Tac.term_to_string bv.sort);
-    let (m, tm) = descend (env_push bv (mode_of_ty' e bv.sort) e) tm in
-    // lambdas are pure, but we can't lift them to streams
-    (Pure, Tac.pack (Tac.Tv_Abs bv tm))
-
+    let m1 = mode_of_ty bv.sort in
+    let (m2, tm) = descend (env_push bv m1 e) tm in
+    (ModeFun m1 (qual_is_explicit bv.qual) m2, Tac.pack (Tac.Tv_Abs bv tm))
 
   | Tac.Tv_Let true attrs b def body ->
     debug_print ("letrec: binder type: " ^ Tac.term_to_string (b.sort));
     // Letrec: recursive streams do not have lambdas; recursive functions do
     (match Tac.inspect def with
     | Tac.Tv_Abs _ _ ->
-      // TODO: need to track function modes in environment
-      Tac.fail "NOT SUPPORTED: fun letrecs"
-      // debug_print ("descending into fun-letrec: " ^ Tac.term_to_string def);
-      // // the bound function must be Pure, as streams can't hold functions
-      // let e = env_push b Pure e in
-      // let (_pure, def) = descend e def in
-      // let (mb, body) = descend e body in
-      // (mb, Tac.pack (Tac.Tv_Let true attrs b def body))
+      debug_print ("descending into fun-letrec: " ^ Tac.term_to_string def);
+      let mdef = mode_of_letrec def in
+      let e = env_push b mdef e in
+      let (_mdef, def) = descend e def in
+      let (mb, body) = descend e body in
+      (mb, Tac.pack (Tac.Tv_Let true attrs b def body))
     | _ ->
       debug_print ("stream-letrec: " ^ Tac.term_to_string def);
       let e = env_push b Stream e in
-      let def = go_stream e def (Tac.pack Tac.Tv_Unknown) in
-      let body = go_stream e body (Tac.pack Tac.Tv_Unknown) in
+      let def = go_stream e def in
+      let body = go_stream e body in
       let defabs = Tac.pack (Tac.Tv_Abs b def) in
       let bodyabs = Tac.pack (Tac.Tv_Abs b body) in
 
       (Stream, (`(let^) (rec' (`#defabs)) (`#bodyabs))))
   | Tac.Tv_Let false attrs b def body ->
     let (md, def) = descend e def in
-    let (md, def) = type_cast e b.sort (md,def) in
+    let (md, def) = type_cast b.sort (md,def) in
     let (mb, body) = descend (env_push b md e) body in
-    // cast body if md=Stream and mb=Pure; should only happen if b not mentioned
-    let (mb, body) = match md, mb with
-      | Stream, Pure -> Stream, (`return (`#body))
-      | _ -> md, body
-    in
     let bodyabs = Tac.pack (Tac.Tv_Abs b body) in
-    let lett = match md with
-      | Pure -> Tac.pack (Tac.Tv_Let false attrs b def body)
-      | Stream -> (`(let^) (`#def) (`#bodyabs))
+    let lett = match md, mb with
+      | Stream, Stream -> (`(let^) (`#def) (`#bodyabs))
+      | _, _ -> Tac.pack (Tac.Tv_Let false attrs b def body)
     in
-    (mode_join md mb, lett)
+    (mb, lett)
 
   | Tac.Tv_Match scrut ret brs ->
     let (ms, scrut) = descend e scrut in
     (match ms with
-    | Pure ->
-      let rec go_pure brs: Tac.Tac (mode & list Tac.branch) = match brs with
-        | [] -> (Pure, [])
-        | (pat,tm) :: brs ->
-          let (m,brs) = go_pure brs in
-          let (mt,tm) = descend e tm in
-          (mode_join m mt, (pat,tm) :: brs)
-      in
-      let (mb, brs) = go_pure brs in
-      (mb, Tac.pack (Tac.Tv_Match scrut ret brs))
+    | Static ->
+      let mts = Tac.map (fun (pat,tm) -> descend e tm) brs in
+      let (m, ts) = joins_modes mts in
+      let brs = zip2 (List.map fst brs) ts in
+      (m, Tac.pack (Tac.Tv_Match scrut ret brs))
     | Stream ->
-      let rec go_stream brs: Tac.Tac (mode & list Tac.branch) = match brs with
-        | [] -> (Pure, [])
-        | (pat,tm) :: brs ->
-          let (m,brs) = go_stream brs in
-          let (mt,tm) = descend e tm in
-          (mode_join m mt, (pat,tm) :: brs)
-      in
-      let (mb, brs) = go_stream brs in
-      (mb, Tac.pack (Tac.Tv_Match scrut ret brs)))
+      Tac.fail "TODO match"
+      // let rec go_stream brs: Tac.Tac (mode & list Tac.branch) = match brs with
+      //   | [] -> (Static, [])
+      //   | (pat,tm) :: brs ->
+      //     let (m,brs) = go_stream brs in
+      //     let (mt,tm) = descend e tm in
+      //     (mode_join m mt, (pat,tm) :: brs)
+      // in
+      // let (mb, brs) = go_stream brs in
+      // (mb, Tac.pack (Tac.Tv_Match scrut ret brs)))
+    | ModeFun _ _ _ ->
+      Tac.fail ("Lift.descend: match scrutinee cannot be function: match " ^ Tac.term_to_string scrut))
 
   | Tac.Tv_AscribedT (tm: Tac.term) (ty: Tac.term) tac use_eq ->
     debug_print ("AscribedT: " ^ Tac.term_to_string ty);
     let (mm, tm) = descend e tm in
-    let (mm, tm) = type_cast e ty (mm, tm) in
+    let (mm, tm) = type_cast ty (mm, tm) in
     (mm, Tac.pack (Tac.Tv_AscribedT tm ty tac use_eq))
 
   | Tac.Tv_AscribedC (tm: Tac.term) (cmp: Tac.comp) tac use_eq ->
@@ -262,18 +323,18 @@ let rec descend (e: env) (t: Tac.term): Tac.Tac (mode & Tac.term) =
     | Tac.C_Total ty ->
       debug_print ("AscribedC: " ^ Tac.term_to_string ty);
       let (mm, tm) = descend e tm in
-      let (mm, tm) = type_cast e ty (mm, tm) in
+      let (mm, tm) = type_cast ty (mm, tm) in
       (mm, Tac.pack (Tac.Tv_AscribedC tm cmp tac use_eq))
       // TODO lemmas etc?
     | _ -> Tac.fail "unsupported: type ascriptions on effects")
 
   // Type stuff: leave alone
-  | Tac.Tv_Uvar _ _ -> (Pure, t)
-  | Tac.Tv_UInst (v: Tac.fv) (us: Tac.universes) -> (Pure, t)
-  | Tac.Tv_Arrow  bv c -> (Pure, t)
-  | Tac.Tv_Type   u    -> (Pure, t)
-  | Tac.Tv_Refine b r  -> (Pure, t)
-  | Tac.Tv_Unknown     -> (Pure, t)
+  | Tac.Tv_Uvar _ _ -> (Static, t)
+  | Tac.Tv_UInst (v: Tac.fv) (us: Tac.universes) -> (Static, t)
+  | Tac.Tv_Arrow  bv c -> (Static, t)
+  | Tac.Tv_Type   u    -> (Static, t)
+  | Tac.Tv_Refine b r  -> (Static, t)
+  | Tac.Tv_Unknown     -> (Static, t)
 
   | Tac.Tv_Unsupp ->
     Tac.fail ("lift failed: cannot inspect " ^ Tac.term_to_string t)
@@ -292,10 +353,10 @@ let fst (#a #b: eqtype): (a & b) -> a = fst
 
 
 // do not support local function bindings yet
-// [@@Tac.preprocess_with tac_lift]
-// let eg_letrecfun (x: int): int =
-//   let rec count x = if x > 0 then count (x - 1) else 0 in
-//   count 0
+[@@Tac.preprocess_with tac_lift]
+let eg_letrecfun (x: int): int =
+  let rec count (x: int): int = if x > 0 then count (x - 1) else 0 in
+  count 0
 
 [@@Tac.preprocess_with tac_lift]
 let eg_letrec (x: stream int): stream int =
@@ -342,29 +403,16 @@ let eg_pairsrec (add: stream int): stream (int & int) =
 //   rcd
 
 
-// [@@Tac.preprocess_with tac_lift]
-// let eg_let (x: stream int): stream int =
-  // let y: stream (int & int) = (x + 1, x - 1)
-  // in
-  // let z: stream int = fst y in
-  // let rec count x = count x + 1 in
+[@@Tac.preprocess_with tac_lift]
+let eg_let (x: stream int): stream int =
+  let y = (x + 1, x - 1)
+  in
+  let z = fst y in
+  let rec count (x: int): int = if x > 0 then count (x - 1) else x in
   // Tac.print "hello";
-  // z
+  count z
 
-// [@@Tac.preprocess_with lift]
-// let eg_letop (x: int): int =
-//   let^ y: int = x + 1
-//   in y
-
-// [@@Tac.preprocess_with lift]
-// let eg_letrec_fun (x: int): int =
-//   let rec a z = if z >= 0 then x else a (z - 1)
-//   in a x
-
-// [@@Tac.preprocess_with lift]
-// let eg_letrec_strm (x: int): int =
-//   let rec a = x + a
-//   in a
+// mutual recursion not supported:
 
 // [@@Tac.preprocess_with lift]
 // let eg_letrec_mut (x: int): int =
