@@ -44,6 +44,8 @@ module ShallowPrim = Pipit.Prim.Shallow
 module Shallow = Pipit.Sugar.Shallow.Base
 module SugarBase = Pipit.Sugar.Base
 
+module PTB = Pipit.Tactics.Base
+
 module Ref = FStar.Reflection.V2
 module Tac = FStar.Tactics.V2
 
@@ -53,6 +55,7 @@ module Range = FStar.Range
 
 module List = FStar.List.Tot
 
+module ShallowTac = Pipit.Sugar.Shallow.Tactics
 
 (*** Lifting annotation, exposed to user ***)
 unfold
@@ -135,30 +138,27 @@ let assert_type_annotation (ty: Tac.term) (rng: Range.range) (ctx: list string):
     fail "error: term requires explicit type annotation" rng ctx
   | _ -> ()
 
-let qual_is_explicit (q: Ref.aqualv): bool =
-  match q with
-  | Ref.Q_Explicit -> true
-  | _ -> false
+let element_of_stream_ty (ty: Tac.term): Tac.Tac (option Tac.term) =
+  let (hd, args) = Tac.collect_app ty in
+  match Tac.inspect_unascribe hd, args with
+  | Tac.Tv_FVar fv, ((elty, _) :: _) ->
+    let fv' = Tac.inspect_fv fv in
+    // TODO: check for @@stream_ctor_attr instead of by-name
+    if Tac.inspect_fv fv = ["Pipit"; "Sugar"; "Shallow"; "Base"; "stream" ]
+    then Some elty
+    else None
+  | _ -> None
 
 let rec mode_of_ty (ty: Tac.term): Tac.Tac mode =
-  match Tac.inspect_unascribe ty with
-  | Tac.Tv_App tm (arg,aqual) ->
-    let (hd, args) = Tac.collect_app ty in
-    (match Tac.inspect_unascribe hd with
-    | Tac.Tv_FVar fv ->
-      let fv' = Tac.inspect_fv fv in
-      // TODO: check for @@stream_ctor_attr instead of by-name
-      if Tac.inspect_fv fv = ["Pipit"; "Sugar"; "Shallow"; "Base"; "stream" ]
-      then Stream
-      else Static
-    | _ -> Static)
-  | Tac.Tv_Arrow arg (Tac.C_Total res)
-  | Tac.Tv_Arrow arg (Tac.C_GTotal res)
+  match element_of_stream_ty ty, Tac.inspect_unascribe ty with
+  | Some _, _ -> Stream
+  | None, Tac.Tv_Arrow arg (Tac.C_Total res)
+  | None, Tac.Tv_Arrow arg (Tac.C_GTotal res)
   // We don't support general effects, but parse them anyway in case the effect is Tot
-  | Tac.Tv_Arrow arg (Tac.C_Eff _ _ res _ _) ->
-    ModeFun (mode_of_ty arg.sort) (qual_is_explicit arg.qual) (mode_of_ty res)
-  | Tac.Tv_Arrow arg (Tac.C_Lemma _ _ _) ->
-    ModeFun (mode_of_ty arg.sort) (qual_is_explicit arg.qual) Static
+  | None, Tac.Tv_Arrow arg (Tac.C_Eff _ _ res _ _) ->
+    ModeFun (mode_of_ty arg.sort) (PTB.qual_is_explicit arg.qual) (mode_of_ty res)
+  | None, Tac.Tv_Arrow arg (Tac.C_Lemma _ _ _) ->
+    ModeFun (mode_of_ty arg.sort) (PTB.qual_is_explicit arg.qual) Static
   | _ -> Static
 
 let mode_join (rng: Range.range) (m1 m2: mode): Tac.Tac mode = match m1, m2 with
@@ -189,18 +189,6 @@ let joins_modes (rng: Range.range) (mts: list (mode & Tac.term)): Tac.Tac (mode 
     (m, Tac.map (fun x -> snd (mode_cast m x)) mts)
   | [] -> (Static, [])
 
-let unwrap_AscribeT (tm: Tac.term): Tac.Tac Tac.term =
-  match Tac.inspect tm with
-  | Tac.Tv_AscribedT tm _ _ _ -> tm
-  | _ -> tm
-
-let returns_of_comp (c: Tac.comp): Tac.term =
-  match c with
-  | Tac.C_Total t
-  | Tac.C_GTotal t
-  | Tac.C_Eff _ _ t _ _ -> t
-  | Tac.C_Lemma _ _ _ -> (`unit)
-
 let lift_prim (e: env) (prim: Tac.term): Tac.Tac (Tac.term & Tac.term) =
   let ty = Tac.tc e.tac_env prim in
   let nm =
@@ -211,19 +199,33 @@ let lift_prim (e: env) (prim: Tac.term): Tac.Tac (Tac.term & Tac.term) =
     | _ -> (`None)
   in
   let (args,res) = Tac.collect_arr ty in
-  let res = returns_of_comp res in
+  let res = PTB.returns_of_comp res in
   let ft =
     List.fold_right (fun a b -> (`Table.FTFun (Shallow.shallow (`#a)) (`#b))) args (`Table.FTVal (Shallow.shallow (`#res)))
+  in
+  // eta expand primitives, if necessary: this is necessary for treating lemmas as unit prims.
+  // it also helps deal with an old, now-fixed, bug in F* normaliser where un-eta'd primops got bad types
+  let prim = match Tac.inspect_unascribe prim with
+    | Tac.Tv_Abs _ _ -> prim
+    | _ -> PTB.eta_expand prim ty
   in
   (`liftP'prim (ShallowPrim.mkPrim (`#nm) (`#ft) (`#prim))), res
 
 let lift_stream_match (e: env) (scrut: Tac.term) (ret: option Tac.match_returns_ascription) (brs: list (Tac.pattern & Tac.term)): Tac.Tac Tac.term =
   let tscrut = Tac.tc e.tac_env scrut in
+  let tscrut = match element_of_stream_ty tscrut with
+    | Some ety -> ety
+    | None -> fail ("stream match: expected scrutinee to be stream; got " ^ Tac.term_to_string tscrut) (Ref.range_of_term scrut) []
+  in
   let tret = match ret, brs with
     | Some (_, (Inl ty, _, _)), _ -> ty
-    | Some (_, (Inr cmp, _, _)), _ -> returns_of_comp cmp
+    | Some (_, (Inr cmp, _, _)), _ -> PTB.returns_of_comp cmp
     | _, (_, tm) :: _ -> Tac.tc e.tac_env tm
     | _, [] -> (`_)
+  in
+  let tret = match element_of_stream_ty tret with
+    | Some ety -> ety
+    | None -> fail ("stream match: expected branch to be stream; got " ^ Tac.term_to_string tret) (Ref.range_of_term scrut) []
   in
 
   let mk_namedv (pp: string) (ty: Tac.term) =
@@ -262,7 +264,7 @@ let rec mode_of_letrec (t: Tac.term): Tac.Tac mode =
     assert_type_annotation bv.sort (Ref.range_of_term t) ["abstraction " ^ Tac.binder_to_string bv; "in letrec (mode_of_letrec)"];
     let m1 = mode_of_ty bv.sort in
     let m2 = mode_of_letrec tm in
-    ModeFun m1 (qual_is_explicit bv.qual) m2
+    ModeFun m1 (PTB.qual_is_explicit bv.qual) m2
 
   | Tac.Tv_AscribedT (tm: Tac.term) (ty: Tac.term) tac use_eq ->
     mode_of_ty ty
@@ -332,6 +334,7 @@ let rec descend (e: env) (t: Tac.term): Tac.Tac (mode & Tac.term) =
 
       | ModeFun m1 mq m2, (arg,aq)::args ->
         let (ma, arg) = descend e arg in
+        debug_print ("go_apps: arg: " ^ Tac.term_to_string (quote ma));
         (match ma, m1 with
         | Stream, Static ->
           (match aq with
@@ -372,7 +375,7 @@ let rec descend (e: env) (t: Tac.term): Tac.Tac (mode & Tac.term) =
     debug_print ("Abs: descend with " ^ Tac.term_to_string bv.sort);
     let m1 = mode_of_ty bv.sort in
     let (m2, tm) = descend (env_push bv m1 e) tm in
-    (ModeFun m1 (qual_is_explicit bv.qual) m2, Tac.pack (Tac.Tv_Abs bv tm))
+    (ModeFun m1 (PTB.qual_is_explicit bv.qual) m2, Tac.pack (Tac.Tv_Abs bv tm))
 
   | Tac.Tv_Let true attrs b def body ->
     debug_print ("letrec: binder type: " ^ Tac.term_to_string (b.sort));
@@ -419,7 +422,7 @@ let rec descend (e: env) (t: Tac.term): Tac.Tac (mode & Tac.term) =
     // generates if-expressions with the form `match x <: bool with ...`
     // but this doesn't work if we lift the scrutinee to a stream.
     // Maybe we should convert the type ascription to `x <: stream bool`
-    let scrut = unwrap_AscribeT scrut in
+    let scrut = PTB.unwrap_AscribeT scrut in
     let (ms, scrut) = descend e scrut in
     (match ms with
     | Static ->

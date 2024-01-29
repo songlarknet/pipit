@@ -13,6 +13,9 @@ module PPS = Pipit.Prim.Shallow
 module SB  = Pipit.Sugar.Base
 module SSB = Pipit.Sugar.Shallow.Base
 
+module PTB = Pipit.Tactics.Base
+
+
 module Ref = FStar.Reflection.V2
 module Tac = FStar.Tactics.V2
 
@@ -24,27 +27,6 @@ let norm_term (e: Ref.env) (tm: Ref.term): Tac.Tac Ref.term =
   // XXX what norm options?
   Tac.norm_term_env e [delta; primops] tm
 
-
-let rec mk_abs_list (bs: list Tac.binder) (tm: Tac.term): Tac.term =
-  match bs with
-  | bv :: bs ->
-    Tac.pack (Tv_Abs bv (mk_abs_list bs tm))
-  | [] -> tm
-
-let rec mk_apps_of_binders (bs: list Tac.binder) (tm: Tac.term): Tac.term =
-  match bs with
-  | bv :: bs ->
-    let arg = Tac.pack (Tv_Var bv) in
-    let qual = match bv.qual with
-      | Ref.Q_Meta _ -> Ref.Q_Implicit
-      | q -> q
-    in
-    let tm  = Tac.pack (Tv_App tm (arg, qual)) in
-    mk_apps_of_binders bs tm
-  | [] -> tm
-
-let eta_expand (bs: list Tac.binder) (tm: Tac.term): Tac.term =
-  mk_abs_list bs (mk_apps_of_binders bs tm)
 
 #set-options "--print_full_names --print_implicits"
 // #set-options "--ugly"
@@ -134,7 +116,7 @@ let lift_prim_tm (nm: string) (tm: Ref.term): Tac.Tac Tac.term =
   lift_prim_assert_staging_ok nm bs;
   // let tm_lift = tm in
   // eta expansion to get around F* bug: https://github.com/FStarLang/FStar/issues/3185
-  let tm              = eta_expand bs tm in
+  let tm              = PTB.eta_expand_binders bs tm in
   let (funty,tm_impl) = lift_prim_get_funty bs cmp tm in
   let tm_lift = (` PPS.mkPrim (Some (`#full_nm')) (`#funty) (`#tm_impl)) in
   let tm_lift = (`SB.liftP'prim #PPS.table #(`#funty) (`#tm_lift)) in

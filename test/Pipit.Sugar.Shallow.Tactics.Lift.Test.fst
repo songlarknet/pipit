@@ -8,7 +8,8 @@ module List = FStar.List.Tot
 
 module Tac = FStar.Tactics
 
-#push-options "--print_implicits --print_full_names --ugly --print_bound_var_types"
+#push-options "--print_implicits --print_bound_var_types"
+// #push-options "--print_implicits --print_full_names --ugly --print_bound_var_types"
 
 instance has_stream_int: has_stream int = {
   ty_id       = [`%Prims.int];
@@ -18,6 +19,7 @@ instance has_stream_int: has_stream int = {
 (*** Examples / test cases ***)
 
 module Tbl = Pipit.Prim.Table
+
 
 
 [@@Tac.preprocess_with Lift.tac_lift]
@@ -83,13 +85,21 @@ let eg_let (x: stream int): stream int =
   count' x
 
 
+// XXX: not working, why not?
 // [@@Tac.preprocess_with Lift.tac_lift]
 // let eg_streaming_match (x: stream int): stream int =
-//   let abs =
-//     match x >= 0 returns stream int with
-//       | true -> x
-//       | false -> -x
-//   in abs
+//   match x >= 0 with
+//     | true -> x
+//     | false -> -x
+
+[@@Tac.preprocess_with Lift.tac_lift]
+let eg_streaming_match_lets (x: stream int): stream int =
+  let cond: stream bool = x >= 0 in
+  let abs =
+    match cond with
+      | true -> x
+      | false -> -x
+  in abs
 
 // [@@Tac.preprocess_with Lift.tac_lift]
 // let eg_streaming_if (x: stream int): stream int =
@@ -105,12 +115,12 @@ let eg_static_match (consts: list int) (x: stream int): stream int =
   | (c: int) :: _ -> c + x
 
 
-// let lemma_nat_something (x: int) (y: int): Lemma (ensures x > y) = admit ()
+let lemma_nat_something (x: int) (y: int): Lemma (ensures x > y) = admit ()
 
-// [@@Tac.preprocess_with Lift.tac_lift]
-// let eg_instantiate_lemma (x y: stream int): stream int =
-//   lemma_nat_something x y;
-//   x + y
+[@@Tac.preprocess_with Lift.tac_lift]
+let eg_instantiate_lemma (x y: stream int): stream int =
+  lemma_nat_something x y;
+  x + y
 
 
 (*** Not supported examples ***)
