@@ -39,10 +39,7 @@ instance has_stream_tup2 {| a: has_stream 'a |} {| b: has_stream 'b |}: has_stre
   val_default = (a.val_default, b.val_default);
 }
 
-[@@S.stream_ctor_attr]
 type stream (a: eqtype) {| has_stream a |} = S.stream Shallow.table (shallow a)
-[@@S.stream_ctor_attr]
-let s_explicit (a: eqtype) (strm: has_stream a) = stream a
 
 let const {| has_stream 'a |} (v: 'a): stream 'a = S.const v
 

@@ -277,7 +277,7 @@ let liftP'prim
   (fun s -> (XPrim f, s))
 
 [@@"opaque_to_smt"]
-let liftP'app
+let liftP'apply
   (#a: ('t).ty)
   (#ft: funty ('t).ty)
   (f: _s_apps 't (FTFun a ft))
@@ -294,10 +294,10 @@ let (<*>)
   (#ft: funty ('t).ty)
   (f: _s_apps 't (FTFun a ft))
   (ea: stream 't a):
-      _s_apps 't ft = liftP'app f ea
+      _s_apps 't ft = liftP'apply f ea
 
 [@@"opaque_to_smt"]
-let liftP'apps
+let liftP'stream
   (#a: ('t).ty)
   (ea: _s_apps 't (FTVal a)):
       stream 't a =
@@ -311,7 +311,7 @@ let liftP1
   (f: prim 't (FTFun a (FTVal b)))
   (e: stream 't a):
       stream 't b =
-    liftP'apps (liftP'prim f <*> e)
+    liftP'stream (liftP'prim f <*> e)
 
 [@@"opaque_to_smt"]
 let liftP2
@@ -320,7 +320,7 @@ let liftP2
   (ea: stream 't a)
   (eb: stream 't b):
        stream 't c =
-    liftP'apps (liftP'prim f <*> ea <*> eb)
+    liftP'stream (liftP'prim f <*> ea <*> eb)
 
 [@@"opaque_to_smt"]
 let liftP3
@@ -330,5 +330,5 @@ let liftP3
   (eb: stream 't b)
   (ec: stream 't c):
        stream 't d =
-    liftP'apps (liftP'prim f <*> ea <*> eb <*> ec)
+    liftP'stream (liftP'prim f <*> ea <*> eb <*> ec)
 

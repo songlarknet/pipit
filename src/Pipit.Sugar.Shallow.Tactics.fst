@@ -108,7 +108,7 @@ let rec lift_prim_go (args: list Tac.binder) (ret: Tac.comp) (app: Ref.term): Ta
       let bvv  = {bv with sort = sort } in // ; uniq = Tac.fresh () } in
       // let bvv  = {bv with sort = sort; uniq = Tac.fresh () } in
       let arg = Tac.pack (Tv_Var bvv) in
-      let app = (`SB.liftP'app (`#app) (`#arg)) in
+      let app = (`SB.liftP'apply (`#app) (`#arg)) in
       let app = lift_prim_go args ret app in
       let app = Tac.pack (Tv_Abs bvv app) in
       app
@@ -121,7 +121,7 @@ let rec lift_prim_go (args: list Tac.binder) (ret: Tac.comp) (app: Ref.term): Ta
   | [] ->
     (match ret with
     | Tac.C_Total t ->
-      (`SB.liftP'apps #PPS.table #(SSB.shallow (`#t)) (`#app))
+      (`SB.liftP'stream #PPS.table #(SSB.shallow (`#t)) (`#app))
     | _ -> Tac.fail "bad computation")
 
 let lift_prim_tm (nm: string) (tm: Ref.term): Tac.Tac Tac.term =
