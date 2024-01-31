@@ -34,7 +34,7 @@ type contract (t: table) (c: context t) (a: t.ty) =
 
 let contract_valid (#t: table) (#c: context t) (#a: t.ty) (ctr: contract t c a) =
   match ctr with
-  | Contract r g b -> XC.check_contract_definition PM.check_mode_all r g b
+  | Contract r g b -> XC.contract_valid r g b
 
 let contract_of_stream1 (#t: table) (#a #b: t.ty) (c: contract_struct (stream t a -> stream t t.propty)  (stream t b -> stream t a -> stream t t.propty) (stream t a -> stream t b)): contract t [a] b =
   Contract
