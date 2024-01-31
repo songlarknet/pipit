@@ -30,6 +30,7 @@ module PM = Pipit.Prop.Metadata
  environments, the expression `e` evaluates to value `v`.
  The stream history `streams` is in most-recent-first order.
  *)
+[@@no_auto_projectors]
 noeq
 type bigstep_base (#t: table u#i u#j) (#c: context t): (#a: t.ty) -> list (row c) -> exp_base t c a -> t.ty_sem a -> Type =
  (* Values `v` always evaluate to the value *)
@@ -48,6 +49,7 @@ type bigstep_base (#t: table u#i u#j) (#c: context t): (#a: t.ty) -> list (row c
  (* Free variables `XVar` have no evaluation rule - they aren't in the local `streams` environment *)
 
 (* bigstep streams e v *)
+[@@no_auto_projectors]
 noeq
 type bigstep (#t: table u#i u#j) (#c: context t): (#a: t.ty) -> list (row c) -> exp t c a -> t.ty_sem a -> Type u#(max i j) =
  (* Base expressions *)
@@ -155,6 +157,7 @@ and bigstep_apps (#t: table) (#c: context t): (#a: funty t.ty) -> list (row c) -
 
 (* Under streaming history `streams`, evaluate expression `e` at each step to
    produce stream of values `vs` *)
+[@@no_auto_projectors]
 noeq
 type bigsteps (#t: table u#i u#j) (#c: context t) (#a: t.ty): list (row c) -> exp t c a -> list (t.ty_sem a) -> Type =
  | BSs0:
@@ -175,11 +178,22 @@ let rec bigstep_always (#t: table u#i u#j) (#c: context t)
   (e: exp t c t.propty): Tot prop (decreases rows) =
   match rows with
   | [] -> True
-  | _ :: rows' ->
+  | row1 :: rows' ->
     // XXX: squash: bigstep_always shows up in refinements, so it's useful to have it as prop.
     // If this causes issues, try lifting to Type; requires changing Pipit.Exp.Checked.Base too
     squash (bigstep rows e true) /\
     bigstep_always rows' e
+
+let bigstep_always_cons (#t: table u#i u#j) (#c: context t)
+  (rows: list (row c))
+  (row1: row c)
+  (e: exp t c t.propty): Lemma
+    (bigstep_always (row1 :: rows) e <==> (squash (bigstep (row1 :: rows) e true) /\ bigstep_always rows e))
+    [SMTPat (bigstep_always (row1 :: rows) e)]
+     =
+  assert (bigstep_always (row1 :: rows) e <==> (squash (bigstep (row1 :: rows) e true) /\ bigstep_always rows e))
+    by (FStar.Tactics.norm [delta_only [`%bigstep_always]; zeta; iota]);
+  ()
 
 
 (* Properties *)
