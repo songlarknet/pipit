@@ -238,16 +238,15 @@ let system_pre (#input #value: Type)
       });
   }
 
-let system_mu (#input #input' #value: Type)
+let system_mu (#input #value: Type)
   (#oracle #state: option Type)
-  (extend: input -> value -> input')
-  (t1: system input' oracle state value):
+  (t1: system (value & input) oracle state value):
        system input (Some value `type_join` oracle) state value =
   { init = t1.init;
     step = (fun i vo s ->
       let v = type_join_fst vo in
       let o = type_join_snd vo in
-      let stp1 = t1.step (extend i v) o s in
+      let stp1 = t1.step (v, i) o s in
       {
         s = stp1.s;
         v = v;
