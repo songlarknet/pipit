@@ -197,10 +197,13 @@ let lemma_check_all_bless (#t: table u#i u#j) (#c: context t) (#a: t.ty) (e: exp
   Lemma (ensures check_all PM.check_mode_valid (bless e))
     [SMTPat (check_all PM.check_mode_valid (bless e))] =
   introduce forall streams.
-    squash (check PM.check_mode_valid streams (bless e))
+    check_prop PM.check_mode_valid streams (bless e)
   with (
-    // eliminate forall streams.
-    //   squash (check PM.check_mode_all streams e)
-    // with streams;
+
+    assert (check_prop PM.check_mode_all streams e);
+    // norm_spec [delta_only [`%check_prop]] (check_prop PM.check_mode_all streams e);
+    assert (squash (check PM.check_mode_all streams e))
+       by (FStar.Tactics.dump "X");
+      // ;
     bind_squash () (fun (x : check PM.check_mode_all streams e) -> return_squash (lemma_check_bless x))
   )

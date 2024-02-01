@@ -19,6 +19,7 @@ open Pipit.Exp.Bigstep
 open Pipit.Exp.Binding
 open Pipit.Exp.Causality
 open Pipit.Exp.Checked.Base
+module XCP = Pipit.Exp.Checked.Properties
 
 module C  = Pipit.Context.Base
 module CR = Pipit.Context.Row
@@ -52,7 +53,16 @@ let lemma_check_XBase
   (m: PM.check_mode)
   (b: exp_base t c a):
   Lemma (check_all m (XBase b))
-    // [SMTPat (check_all m (XBase b))]
+    [SMTPat (check_all m (XBase b))]
+    = admit ()
+
+let lemma_check_XFby
+  (#t: table) (#c: context t) (#a: t.ty)
+  (m: PM.check_mode)
+  (v: t.ty_sem a)
+  (e: exp t c a { check_all m e }):
+  Lemma (check_all m (XFby v e))
+    [SMTPat (check_all m (XFby v e))]
     = admit ()
 
 let lemma_check_XPrim
@@ -60,7 +70,7 @@ let lemma_check_XPrim
   (m: PM.check_mode)
   (p: t.prim):
   Lemma (check_all_apps m (XPrim #t #c p))
-    // [SMTPat (check_all_apps m (XPrim #t #c p))]
+    [SMTPat (check_all_apps m (XPrim #t #c p))]
     = admit ()
 
 let lemma_check_XApp
@@ -69,15 +79,15 @@ let lemma_check_XApp
   (f: exp_apps t c (FTFun arg res) { check_all_apps m f })
   (e: exp      t c        arg      { check_all      m e }):
   Lemma (check_all_apps m (XApp f e))
-    // [SMTPat (check_all_apps m (XApp f e))]
+    [SMTPat (check_all_apps m (XApp f e))]
     = admit ()
 
 let lemma_check_XApps
-  (#t: table) (#c: context t) (#arg: t.ty) (#res: funty t.ty)
+  (#t: table) (#c: context t) (#arg: t.ty)
   (m: PM.check_mode)
   (f: exp_apps t c (FTVal arg) { check_all_apps m f }):
   Lemma (check_all m (XApps f))
-    // [SMTPat (check_all_apps m (XApp f e))]
+    [SMTPat (check_all m (XApps f))]
     = admit ()
 
 let lemma_check_XApp1

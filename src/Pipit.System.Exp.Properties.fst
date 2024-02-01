@@ -39,7 +39,10 @@ let rec system_of_exp_invariant
     let s: SB.option_type_sem (SB.type_join (Some (t.ty_sem a)) (SX.state_of_exp e2)) = s in
     (match rows with
     | [] -> SB.type_join_fst s == v1
-    | _ :: _ -> SB.type_join_fst s == XC.lemma_bigstep_total_v rows e2) /\ system_of_exp_invariant rows e2 (SB.type_join_snd s)
+    | _ :: _ ->
+      let v: t.ty_sem a = XC.lemma_bigstep_total_v rows e2 in
+      SB.type_join_fst s == v) /\
+    system_of_exp_invariant rows e2 (SB.type_join_snd s)
 
   | XMu e1 ->
     system_of_exp_invariant (CR.zip2_cons (XC.lemma_bigsteps_total_vs rows e) rows) e1 s

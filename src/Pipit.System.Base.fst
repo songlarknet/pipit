@@ -41,16 +41,17 @@ let type_join_tup (#t1 #t2: option Type) (v1: option_type_sem t1) (v2: option_ty
   | None, o2 -> v2
   | o1, None -> v1
 
-let prop_join (o1 o2: option prop): option prop =
-  match o1, o2 with
-  | Some o1, Some o2 -> Some (o1 /\ o2)
-  | None, o2 -> o2
-  | o1, None -> o1
-
 let option_prop_sem (t: option prop): prop =
   match t with
   | Some t -> t
   | None   -> True
+
+let prop_join (o1 o2: option prop):
+  op: option prop { option_prop_sem op <==> (option_prop_sem o1 /\ option_prop_sem o2)} =
+  match o1, o2 with
+  | Some o1, Some o2 -> Some (o1 /\ o2)
+  | None, o2 -> o2
+  | o1, None -> o1
 
 (* Assumptions and obligations that a transition system must make; these
   are called the transition rely and guarantee in the paper. *)

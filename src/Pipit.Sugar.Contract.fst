@@ -32,7 +32,7 @@ type contract (t: table) (c: context t) (a: t.ty) =
     (body: XCC.cexp t c a) ->
     contract t c a
 
-let contract_valid (#t: table) (#c: context t) (#a: t.ty) (ctr: contract t c a) =
+let contract_valid (#t: table u#i u#j) (#c: context t) (#a: t.ty) (ctr: contract t c a) =
   match ctr with
   | Contract r g b -> XC.contract_valid r g b
 
@@ -46,7 +46,7 @@ let system_induct_k1 (#t: table) (#c: context t) (#a: t.ty) (ctr: contract t c a
   match ctr with
   | Contract r g b -> SI.induct1 (SX.system_of_contract r g b)
 
-let stream_of_contract1 (#t: table) (#a #b: t.ty) (ctr: contract t [a] b { contract_valid ctr }): stream t a -> stream t b =
+let stream_of_contract1 (#t: table u#i u#j) (#a #b: t.ty) (ctr: contract t [a] b { contract_valid ctr }): stream t a -> stream t b =
   match ctr with
   | Contract rely guar body -> Check.stream_of_contract1 #t #_ #_ #rely #guar body
 

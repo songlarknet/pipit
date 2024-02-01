@@ -103,25 +103,28 @@ and check_apps (mode: PM.check_mode) (#t: table) (#c: context t): (#a: funty t.t
           check      mode streams e        ->
           check_apps mode streams (XApp f e)
 
+let check_prop (#t: table u#i u#j) (#c: context t) (#a: t.ty) (mode: PM.check_mode) (streams: list (row c)) (e: exp t c a): prop =
+  squash (check mode streams e)
 
-let check_all (#t: table u#i u#j) (#c: context t) (#a: t.ty) (mode: PM.check_mode) (e: exp t c a) =
+
+let check_all (#t: table u#i u#j) (#c: context t) (#a: t.ty) (mode: PM.check_mode) (e: exp t c a): prop =
   forall (streams: list (row c)).
-    squash (check mode streams e)
+    check_prop mode streams e
 
-let check_all_apps (#t: table u#i u#j) (#c: context t) (#a: funty t.ty) (mode: PM.check_mode) (e: exp_apps t c a) =
+let check_all_apps (#t: table u#i u#j) (#c: context t) (#a: funty t.ty) (mode: PM.check_mode) (e: exp_apps t c a): prop =
   forall (streams: list (row c)).
     squash (check_apps mode streams e)
 
-let contract_valid (#t: table) (#c: context t) (#a: t.ty)
-  (rely: exp t c t.propty) (guar: exp t (a::c) t.propty) (impl: exp t c a) =
+let contract_valid (#t: table u#i u#j) (#c: context t) (#a: t.ty)
+  (rely: exp t c t.propty) (guar: exp t (a::c) t.propty) (impl: exp t c a): prop =
   forall (streams: list (row c)).
-  check PM.check_mode_unknown streams rely ==>
-  check PM.check_mode_unknown streams impl ==>
-  check PM.check_mode_unknown streams (subst1 guar impl) ==>
+  check_prop PM.check_mode_valid streams rely ==>
+  check_prop PM.check_mode_valid streams impl ==>
+  check_prop PM.check_mode_valid streams (subst1 guar impl) ==>
   bigstep_always streams rely ==>
-    (check PM.check_mode_unknown streams rely /\
-    check PM.check_mode_unknown streams impl /\
-    check PM.check_mode_unknown streams (subst1 guar impl) /\
+    (check_prop PM.check_mode_unknown streams rely /\
+    check_prop PM.check_mode_unknown streams impl /\
+    check_prop PM.check_mode_unknown streams (subst1 guar impl) /\
     bigstep_always streams (subst1 guar impl))
 
 let rec bless (#t: table) (#c: context t) (#a: t.ty) (e: exp t c a): Tot (exp t c a) (decreases e) =
