@@ -27,7 +27,8 @@ let contract_system_induct_k1' (#t: table) (#c: context t) (#a: t.ty) (r: XCC.ce
   SI.induct1 (SX.system_of_contract r g i)
 
 let stream_of_contract1 (#t: table) (#a #b: t.ty) (#r: XCC.cexp t [a] t.propty) (#g: XCC.cexp t [b; a] t.propty) (contr: contract t [a] b r g): stream t a -> stream t b =
-  let rely = XC.bless r in
+  // let rely = XC.bless r in
+  let rely = r in
   let guar = XC.bless g in
   let impl = XC.bless contr in
   let e = XContract PM.PSUnknown rely guar impl in

@@ -123,6 +123,7 @@ let contract_valid (#t: table u#i u#j) (#c: context t) (#a: t.ty)
   check_prop PM.check_mode_valid streams (subst1 guar impl) ==>
   bigstep_always streams rely ==>
     (check_prop PM.check_mode_unknown streams rely /\
+    // the above rely check isn't strictly necessary:
     check_prop PM.check_mode_unknown streams impl /\
     check_prop PM.check_mode_unknown streams (subst1 guar impl) /\
     bigstep_always streams (subst1 guar impl))
