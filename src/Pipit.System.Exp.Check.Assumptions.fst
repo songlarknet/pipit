@@ -37,7 +37,7 @@ let step_XContract_asm' (#t: table) (#c: context t) (#a: t.ty)
       let stpr = eval_step rows row1 er (SB.type_join_fst s) in
       let stpg = eval_step rows' row1' eg (SB.type_join_snd s) in
     (SB.option_prop_sem stpr.chck.assumptions /\
-      SB.option_prop_sem stpg.chck.assumptions /\
+      (b2t stpr.v ==> SB.option_prop_sem stpg.chck.assumptions) /\
       (b2t stpr.v ==> b2t stpg.v) /\
       (ps == PM.PSValid ==> b2t stpr.v))
   ))
@@ -124,12 +124,17 @@ let rec check_step_asm
     let rows' = CR.zip2_cons vs rows in
     let row1' = CR.cons v row1 in
     let s: SB.option_type_sem (SB.type_join (SX.state_of_exp er) (SX.state_of_exp eg)) = s in
-    check_step_asm rows row1  er (SB.type_join_fst s);
-    check_step_asm rows' row1' eg (SB.type_join_snd s);
+
     let stpr = eval_step rows row1 er (SB.type_join_fst s) in
     let stpg = eval_step rows' row1' eg (SB.type_join_snd s) in
     let vr = stpr.v in
     let vg = stpg.v in
+
+    check_step_asm rows row1  er (SB.type_join_fst s);
+    introduce b2t vr ==> SB.option_prop_sem stpg.chck.assumptions
+    with hvr.
+      check_step_asm rows' row1' eg (SB.type_join_snd s);
+
     assert (vr == XC.lemma_bigstep_total_v (row1  :: rows)  er);
     assert (vg == XC.lemma_bigstep_total_v (row1' :: rows') eg);
     assert (XB.bigstep_always rows er);

@@ -48,7 +48,8 @@ let rec check_invariant
     (PM.prop_status_contains mode ps ==> XB.bigstep_always rows er) /\
     (PM.prop_status_contains mode PM.PSValid ==> XB.bigstep_always rows er ==> XB.bigstep_always rows' eg) /\
     check_invariant rows er mode /\
-    check_invariant rows' eg mode
+    // XXX: this should be restricted to
+    (XB.bigstep_always rows er ==> check_invariant rows' eg mode)
 
 and check_apps_invariant
   (#t: table) (#c: context t) (#a: funty t.ty)

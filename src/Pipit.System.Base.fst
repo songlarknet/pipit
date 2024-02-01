@@ -162,12 +162,18 @@ let system_contract_instance (#input: Type)
         let stp2 = tg.step (v, i) o2 s2 in
         let rprop = stp1.v == true in
         let gprop = stp2.v == true in
+        let stp2_chck = {
+          assumptions = (match stp2.chck.assumptions with
+            | None -> None
+            | Some asm -> Some (rprop ==> asm));
+          obligations = stp2.chck.obligations;
+        } in
         {
           s    = type_join_tup stp1.s stp2.s;
           v    = v;
           chck = checks_assumption (rprop ==> gprop) `checks_join`
                  checks_of_prop status rprop `checks_join`
-                 stp1.chck `checks_join` stp2.chck;
+                 stp1.chck `checks_join` stp2_chck;
         });
   }
 

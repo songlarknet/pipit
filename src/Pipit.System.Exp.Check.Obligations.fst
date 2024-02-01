@@ -153,11 +153,12 @@ let rec check_step_obl
     let row1' = CR.cons v row1 in
     let s: SB.option_type_sem (SB.type_join (SX.state_of_exp er) (SX.state_of_exp eg)) = s in
     check_step_obl rows row1  er (SB.type_join_fst s);
-    check_step_obl rows' row1' eg (SB.type_join_snd s);
     let stpr = eval_step rows row1 er (SB.type_join_fst s) in
     let stpg = eval_step rows' row1' eg (SB.type_join_snd s) in
     let vr = stpr.v in
     let vg = stpg.v in
+    assert (b2t vr);
+    check_step_obl rows' row1' eg (SB.type_join_snd s);
     assert (vr == XC.lemma_bigstep_total_v (row1  :: rows)  er);
     assert (vg == XC.lemma_bigstep_total_v (row1' :: rows') eg);
     assert (XB.bigstep_always rows er);
