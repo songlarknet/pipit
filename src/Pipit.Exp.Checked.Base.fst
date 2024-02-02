@@ -72,7 +72,7 @@ type check (mode: PM.check_mode) (#t: table u#i u#j) (#c: context t): (#a: t.ty)
           // a function impliciation here (`bigstep_always -> check & check`)
           // makes induction difficult.
           // note that bigstep_always is decidable.
-          either (~ (bigstep_always streams rely))
+          either (squash (~ (bigstep_always streams rely)))
             (check mode streams impl &
             check mode streams (subst1 guar impl)) ->
 

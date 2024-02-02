@@ -1,4 +1,5 @@
-module Pipit.Exp.Checked.Properties
+(* Properties about blessing *)
+module Pipit.Exp.Checked.Bless
 
 open Pipit.Exp.Checked.Base
 
@@ -137,17 +138,6 @@ let rec lemma_bless_of_bigstep_always (#t: table) (#c: context t) (streams: list
     lemma_bless_of_bigstep_always s' e;
     ()
 
-// let rec lemma_bigstep_always_of_bless (#t: table) (#c: context t) (streams: list (row c)) (e: exp t c t.propty):
-//   Lemma
-//     (requires (bigstep_always streams (bless e)))
-//     (ensures (bigstep_always streams e))
-//     (decreases streams) =
-//   match streams with
-//   | [] -> ()
-//   | _ :: s' ->
-//     //ADMIT:easy, apply determinism or implement other direction of lemma_bless_of_bigstep
-//     admit ()
-
 let rec lemma_check_bless (#t: table) (#c: context t) (#a: t.ty) (#streams: list (row c)) (#e: exp t c a) (hC: check PM.check_mode_all streams e):
   Tot (check PM.check_mode_valid streams (bless e))
     (decreases hC) =
@@ -170,7 +160,7 @@ let rec lemma_check_bless (#t: table) (#c: context t) (#a: t.ty) (#streams: list
     lemma_bless_of_bigstep_always s r;
     lemma_bless_of_bigstep_always s (subst1 g i);
 
-    let hCig': either (~ (bigstep_always s (bless r))) (check PM.check_mode_valid s (bless i) & check PM.check_mode_valid s (bless (subst1 g i))) =
+    let hCig': either (squash (~ (bigstep_always s (bless r)))) (check PM.check_mode_valid s (bless i) & check PM.check_mode_valid s (bless (subst1 g i))) =
       match hCig with
       | Inl hBN -> false_elim ()
       | Inr (hCi, hCg) -> Inr (lemma_check_bless hCi, lemma_check_bless hCg)

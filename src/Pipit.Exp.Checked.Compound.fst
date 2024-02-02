@@ -19,7 +19,7 @@ open Pipit.Exp.Bigstep
 open Pipit.Exp.Binding
 open Pipit.Exp.Causality
 open Pipit.Exp.Checked.Base
-module XCP = Pipit.Exp.Checked.Properties
+module XCB = Pipit.Exp.Checked.Bless
 
 module C  = Pipit.Context.Base
 module CR = Pipit.Context.Row
