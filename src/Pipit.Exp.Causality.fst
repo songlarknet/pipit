@@ -49,7 +49,9 @@ let rec direct_dependency (#t: table) (#c: context t) (#a: t.ty) (e: exp t c a) 
   (* Should we care if a contract's relies or guarantees mention `i`?
      I don't think it's strictly necessary - causality is required for total evaluation, which
      uses the implementation rather than the abstraction. *)
-  | XContract _ _rely _guar impl ->
+  | XContract _ rely guar impl ->
+    direct_dependency rely i ||
+    direct_dependency guar (i + 1) ||
     direct_dependency impl i
 
 and direct_dependency_apps (#t: table) (#c: context t) (#a: funty t.ty) (e: exp_apps t c a) (i: C.index) : Tot bool (decreases e) =
@@ -97,7 +99,9 @@ let rec lemma_direct_dependency_lift_ge (#tbl: table) (#c: context tbl) (#a: tbl
     lemma_direct_dependency_lift_ge e2 (i + 1) (i' + 1) t
   | XCheck _ e1 ->
     lemma_direct_dependency_lift_ge e1 i i' t
-  | XContract _ _ _ impl ->
+  | XContract _ rely guar impl ->
+    lemma_direct_dependency_lift_ge rely i i' t;
+    lemma_direct_dependency_lift_ge guar (i + 1) (i' + 1) t;
     lemma_direct_dependency_lift_ge impl i i' t
 and
   lemma_direct_dependency_lift_ge_apps (#tbl: table) (#c: context tbl) (#a: funty tbl.ty) (e: exp_apps tbl c a) (i: C.index_lookup c) (i': C.index { i >= i' /\ i' <= List.Tot.length c }) (t: tbl.ty):
@@ -134,7 +138,10 @@ let rec lemma_direct_dependency_not_subst
     lemma_direct_dependency_not_subst (i + 1) (i' + 1) e2 (lift1 p b)
   | XCheck _ e1 ->
     lemma_direct_dependency_not_subst i i' e1 p
-  | XContract _ _ _ body ->
+  | XContract _ rely guar body ->
+    lemma_direct_dependency_not_subst i i' rely p;
+    lemma_direct_dependency_lift_ge p i 0 a;
+    lemma_direct_dependency_not_subst (i + 1) (i' + 1) guar (lift1 p a);
     lemma_direct_dependency_not_subst i i' body p
 
 and lemma_direct_dependency_not_subst_apps

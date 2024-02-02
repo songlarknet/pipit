@@ -306,12 +306,14 @@ let rec lemma_check_substitute_intros_no_dep
 
   | XMu e1 ->
     let CkMu _ _ hCK1 = hCKe' in
+    lemma_direct_dependency_not_subst i 0 e1 (XMu e1);
     lemma_subst_subst_distribute_XMu e1 i e;
     let hCK1' = lemma_check_substitute_intros_no_dep mode i rows e (subst1 e1 (XMu e1)) hCKe hCK1 in
     CkMu _ (subst1' e1 (i + 1) (lift1 e a)) hCK1'
 
   | XLet b e1 e2 ->
     let CkLet _ _ _ hCK = hCKe' in
+    lemma_direct_dependency_not_subst i 0 e2 e1;
     lemma_subst_subst_distribute_le e2 0 i e1 e;
     let hCK' = lemma_check_substitute_intros_no_dep mode i rows e (subst1 e2 e1) hCKe hCK in
     CkLet _ (subst1' e1 i e) (subst1' e2 (i + 1) (lift1 e b)) hCK'
@@ -336,6 +338,7 @@ let rec lemma_check_substitute_intros_no_dep
       | Inl hN ->
         Inl ()
       | Inr (hCb,hCg) ->
+        lemma_direct_dependency_not_subst i 0 eg eb;
         lemma_subst_subst_distribute_le eg 0 i eb e;
         let hCb' = lemma_check_substitute_intros_no_dep mode i rows e eb hCKe hCb in
         let hCg' = lemma_check_substitute_intros_no_dep mode i rows e (subst1 eg eb) hCKe hCg in
