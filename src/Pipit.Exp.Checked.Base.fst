@@ -9,128 +9,92 @@ open Pipit.Exp.Bigstep
 open Pipit.Exp.Binding
 
 module C  = Pipit.Context.Base
+module CR = Pipit.Context.Row
 module PM = Pipit.Prop.Metadata
 
-[@@no_auto_projectors]
-noeq
-type check (mode: PM.check_mode) (#t: table u#i u#j) (#c: context t): (#a: t.ty) -> list (row c) -> exp t c a -> Type =
- | CkBase:
-          #valty: t.ty ->
-          streams: list (row c)    ->
-          e: exp_base t c valty    ->
-          check mode streams (XBase e)
- | CkApps:
-          #valty: t.ty ->
-          streams: list (row c)    ->
-          e: exp_apps t c (FTVal valty)    ->
-          check_apps mode streams e ->
-          check mode streams (XApps e)
- | CkFby1: #a: t.ty                ->
-           start: list (row c) { List.Tot.length start <= 1 }
-                                   ->
-           v0: t.ty_sem a          ->
-           e: exp t c a            ->
-           check mode start (XFby v0 e)
- | CkFbyS: #a: t.ty                 ->
-           latest: row c            ->
-           prefix: list (row c) { List.Tot.length prefix >= 1 }
-                                    ->
-           v0: t.ty_sem a           ->
-           e: exp t c a             ->
-           check mode            prefix           e ->
-           check mode (latest :: prefix) (XFby v0 e)
+module XC = Pipit.Exp.Causality
 
- | CkMu: #valty: t.ty                         ->
-         streams: list (row c)                ->
-         e: exp t (C.close1 c valty) valty    ->
-         check mode streams (subst1 e (XMu e))     ->
-         check mode streams (XMu e)
- | CkLet:
-          #a: t.ty -> #b: t.ty                ->
-          streams: list (row c)               ->
-          e1: exp t c b                       ->
-          e2: exp t (C.close1 c b) a          ->
-          (* WRONG: this should check e1 as well.
-          > let _ = check ... in e
-            Unused bindings need to be checked
-           *)
-          check mode streams (subst1 e2 e1)        ->
-          check mode streams (XLet b e1 e2)
+(* Check an expression under given mode and environment *)
+let rec check (#t: table u#i u#j) (#c: context t) (#a: t.ty)
+  (mode: PM.check_mode)
+  (rows: list (row c))
+  (e: exp t c a)
+  : Tot prop (decreases e) =
+  match e with
+  | XBase _ -> True
+  | XApps ea ->
+    check_apps mode rows ea
+  | XFby v e1 ->
+    check mode rows e1
+  | XMu e1 ->
+    // Extend environment to include recursive value of e1; check subexpression
+    forall (vs: list (t.ty_sem a) { bigsteps_prop rows (XMu e1) vs }).
+      check mode (CR.extend1 vs rows) e1
+  | XLet b e1 e2 ->
+    // Check e1, then use e1's values to check e2
+    check mode rows e1 /\
+    (forall (vs: list (t.ty_sem b) { bigsteps_prop rows e1 vs}).
+      check mode (CR.extend1 vs rows) e2)
+  | XCheck ps e1 ->
+    // Check that property evaluates to trues.
+    // We also check inside the property. Although it seems odd that properties
+    // can include more properties, it can happen after inlining.
+    check mode rows e1 /\
+    (PM.prop_status_contains mode ps ==>
+      bigstep_always rows e1)
+  | XContract ps rely guar body ->
+    // Contract instantiation:
+    // The property status is used to delay checking the caller.
+    // When checking the caller, the rely must be trues.
+    (PM.prop_status_contains mode ps ==>
+      bigstep_always rows rely) /\
+    // Check rely subexpression
+    check mode rows rely /\
+    // Contract definition:
+    (forall (vs: list (t.ty_sem a) { bigsteps_prop rows body vs}).
+      // Check that if rely is trues, then guarantee is trues.
+      (PM.prop_status_contains mode PM.PSValid ==>
+        bigstep_always rows rely ==>
+        bigstep_always (CR.extend1 vs rows) guar) /\
+      // If rely is trues, then also check sub-properties of body and guar
+      (bigstep_always rows rely ==>
+        (check mode rows body /\
+        check mode (CR.extend1 vs rows) guar)))
 
- | CkContract:
-          #valty: t.ty                        ->
-          streams: list (row c)               ->
-          status: PM.contract_status             ->
-          rely: exp t c            t.propty   ->
-          guar: exp t (valty :: c) t.propty   ->
-          impl: exp t c            valty      ->
-          squash (PM.prop_status_contains mode status ==> bigstep_always streams rely) ->
-          squash (PM.prop_status_contains mode PM.PSValid ==>
-            bigstep_always streams rely ==>
-            bigstep_always streams (subst1 guar impl)) ->
-          check mode streams rely                  ->
-
-          // if rely is true, then impl & guar check ok.
-          // this is stated as a semi-classical implication because we need the
-          // checks to be strictly smaller than the resulting check.
-          // a function impliciation here (`bigstep_always -> check & check`)
-          // makes induction difficult.
-          // note that bigstep_always is decidable.
-          either (squash (~ (bigstep_always streams rely)))
-            (check mode streams impl &
-            check mode streams (subst1 guar impl)) ->
-
-          check mode streams (XContract status rely guar impl)
-
- | CkCheck:
-          streams: list (row c)                   ->
-          status:  PM.prop_status                    ->
-          eprop:   exp t c             t.propty   ->
-          check mode streams                eprop      ->
-          squash (PM.prop_status_contains mode status ==>
-            bigstep_always streams eprop) ->
-          check mode streams (XCheck status eprop)
-
-and check_apps (mode: PM.check_mode) (#t: table) (#c: context t): (#a: funty t.ty) -> list (row c) -> exp_apps t c a -> Type =
- (* Primitives `p` are looked up in the primitive table semantics *)
- | CkPrim:
-          streams: list (row c) ->
-          p: t.prim             ->
-          check_apps mode streams (XPrim p)
-
- (* Element-wise application *)
- | CkApp: streams: list (row c)       ->
-          #a: t.ty -> #b: funty t.ty  ->
-          f: exp_apps t c (FTFun a b) ->
-          e: exp t c  a               ->
-          check_apps mode streams f        ->
-          check      mode streams e        ->
-          check_apps mode streams (XApp f e)
-
-let check_prop (#t: table u#i u#j) (#c: context t) (#a: t.ty) (mode: PM.check_mode) (streams: list (row c)) (e: exp t c a): prop =
-  squash (check mode streams e)
+and check_apps (#t: table) (#c: context t) (#a: funty t.ty)
+  (mode: PM.check_mode)
+  (rows: list (row c))
+  (e: exp_apps t c a)
+  : Tot prop (decreases e) =
+  match e with
+  | XPrim p -> True
+  | XApp ef ea ->
+    check_apps mode rows ef /\
+    check      mode rows ea
 
 
 let check_all (#t: table u#i u#j) (#c: context t) (#a: t.ty) (mode: PM.check_mode) (e: exp t c a): prop =
   forall (streams: list (row c)).
-    check_prop mode streams e
+    check mode streams e
 
 let check_all_apps (#t: table u#i u#j) (#c: context t) (#a: funty t.ty) (mode: PM.check_mode) (e: exp_apps t c a): prop =
   forall (streams: list (row c)).
-    squash (check_apps mode streams e)
+    check_apps mode streams e
 
 let contract_valid (#t: table u#i u#j) (#c: context t) (#a: t.ty)
-  (rely: exp t c t.propty) (guar: exp t (a::c) t.propty) (impl: exp t c a): prop =
+  (rely: exp t c t.propty) (guar: exp t (a::c) t.propty) (body: exp t c a): prop =
   forall (streams: list (row c)).
-  check_prop PM.check_mode_valid streams rely ==>
-  check_prop PM.check_mode_valid streams impl ==>
-  check_prop PM.check_mode_valid streams (subst1 guar impl) ==>
+  forall (vs: list (t.ty_sem a) { bigsteps_prop streams body vs }).
+  check PM.check_mode_valid streams rely ==>
+  check PM.check_mode_valid streams body ==>
+  check PM.check_mode_valid (CR.extend1 vs streams) guar ==>
   bigstep_always streams rely ==>
-    (check_prop PM.check_mode_unknown streams rely /\
-    // the above rely check isn't strictly necessary:
-    check_prop PM.check_mode_unknown streams impl /\
-    check_prop PM.check_mode_unknown streams (subst1 guar impl) /\
-    bigstep_always streams (subst1 guar impl))
+    // We don't need to check unknown properties in the rely: they will be
+    // checked at instantiation time.
+    (// check PM.check_mode_unknown streams rely /\
+    check PM.check_mode_unknown streams body /\
+    check PM.check_mode_unknown (CR.extend1 vs streams) guar /\
+    bigstep_always (CR.extend1 vs streams) guar)
 
 let rec bless (#t: table) (#c: context t) (#a: t.ty) (e: exp t c a): Tot (exp t c a) (decreases e) =
   match e with

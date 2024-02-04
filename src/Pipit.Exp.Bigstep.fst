@@ -24,6 +24,8 @@ module CR = Pipit.Context.Row
 module CP = Pipit.Context.Properties
 module PM = Pipit.Prop.Metadata
 
+module List = FStar.List
+
 (* bigstep_base streams e v
 
  Bigstep semantics: in streaming history `streams`, which is a sequence of
@@ -172,6 +174,16 @@ type bigsteps (#t: table u#i u#j) (#c: context t) (#a: t.ty): list (row c) -> ex
     bigsteps        rows  e      vs     ->
     bigstep  (row :: rows) e  v         ->
     bigsteps (row :: rows) e (v :: vs)
+
+
+(* Many-bigstep is a Type, but a prop is useful for extending the context.
+  Extending the context also requires the lengths to match *)
+let bigsteps_prop (#t: table u#i u#j) (#c: context t) (#a: t.ty)
+  (rows: list (row c))
+  (e: exp t c a)
+  (vs: list (t.ty_sem a)) =
+  List.length rows == List.length vs /\
+  squash (bigsteps rows e vs)
 
 let rec bigstep_always (#t: table u#i u#j) (#c: context t)
   (rows: list (row c))
