@@ -19,6 +19,7 @@ module SI  = Pipit.System.Ind
 module XB  = Pipit.Exp.Bigstep
 module XC  = Pipit.Exp.Causality
 module XK  = Pipit.Exp.Checked.Base
+module XKS = Pipit.Exp.Checked.Subst
 
 module PM = Pipit.Prop.Metadata
 
@@ -34,16 +35,6 @@ let check_invariant_all
   forall (rows: list (row c)).
     check_invariant rows e mode
 
-
-let checkK_init
-  (#t: table) (#c: context t) (#a: t.ty)
-  (e: exp t c a { XC.causal e })
-  (mode: PM.check_mode):
-  Lemma (ensures (
-    XK.check_prop mode [] e
-  ))
-  // TODO:ADMIT: needs fancy substitution like in Causality?
-  = admit ()
 
 let check_all_Fby
   (#t: table) (#c: context t) (#a: t.ty)
@@ -61,7 +52,11 @@ let check_all_Fby
   introduce forall (rows: list (row c)). XK.check_prop mode rows e
   with
     match rows with
-    | [] -> checkK_init e mode // check_init e mode
+    | [] ->
+      let k: XK.check mode rows e = checkK_init e mode in
+      let kk: squash (XK.check mode rows e) = return_squash k in
+      // assert (XK.check_prop mode rows e);
+      () // check_init e mode
     | r::_ ->
       assert (XK.check_prop mode (r::rows) (XFby v e));
       let hC: squash (XK.check mode (r::rows) (XFby v e)) = () in

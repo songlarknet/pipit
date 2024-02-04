@@ -367,3 +367,35 @@ and lemma_check_substitute_intros_no_dep_apps
     let hCKf' = lemma_check_substitute_intros_no_dep_apps mode i rows e ef hCKe hCKf in
     let hCKa' = lemma_check_substitute_intros_no_dep mode i rows e ea hCKe hCKa in
     CkApp rows _ _ hCKf' hCKa'
+
+
+
+let rec lemma_check_nil
+  (#t: table) (#c: context t) (#a: t.ty)
+  (mode: PM.check_mode)
+  (e: exp t c a { causal e }):
+    Tot (check mode [] e)
+      (decreases e)
+  // TODO:ADMIT: needs fancy substitution like in Causality?
+  = match e with
+  | XBase b -> CkBase _ b
+  | XApps _ -> admit ()
+  | XFby v e1 -> CkFby1 [] v e1
+  | XMu e1 ->
+    let hCk = lemma_check_nil mode e1 in
+    let hCk' = lemma_check_substitute_intros_no_dep
+      mode 0 [] (XMu e1) e1
+      (fun r -> false_elim ())
+      hCk
+    in
+    CkMu [] e1 hCk'
+  | XLet b e1 e2 ->
+    let hCk1 = lemma_check_nil mode e1 in
+    let hCk2 = lemma_check_nil mode e2 in
+    let hCk2' = lemma_check_substitute_intros
+      mode 0 [] e1 e2
+      (fun r -> hCk1) hCk2
+    in
+    CkLet [] e1 e2 hCk2'
+
+  | _ -> admit ()
