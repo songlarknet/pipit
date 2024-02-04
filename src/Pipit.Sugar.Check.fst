@@ -52,19 +52,19 @@ let exp_of_stream2 (#t: table) (#a #b #c: t.ty) (f: stream t a -> stream t b -> 
 let exp_of_stream3 (#t: table) (#a #b #c #d: t.ty) (f: stream t a -> stream t b -> stream t c -> stream t d) : XCC.cexp t [a; b; c] d = exp_of_stream3 f
 
 
-let stream_of_checked0 (#t: table) (#a: t.ty) (e: exp t [] a { XC.check_all PM.check_mode_all e }): stream t a =
+let stream_of_checked0 (#t: table) (#a: t.ty) (e: XCC.cexp t [] a { XC.check_all PM.check_mode_unknown e }): stream t a =
   let e' = XC.bless e in
   stream_of_exp0 e'
 
-let stream_of_checked1 (#t: table) (#a #b: t.ty) (e: exp t [a] b { XC.check_all PM.check_mode_all e }): stream t a -> stream t b =
+let stream_of_checked1 (#t: table) (#a #b: t.ty) (e: XCC.cexp t [a] b { XC.check_all PM.check_mode_unknown e }): stream t a -> stream t b =
   let e' = XC.bless e in
   stream_of_exp1 e'
 
-let stream_of_checked2 (#t: table) (#a #b #c: t.ty) (e: exp t [a; b] c { XC.check_all PM.check_mode_all e }): stream t a -> stream t b -> stream t c =
+let stream_of_checked2 (#t: table) (#a #b #c: t.ty) (e: XCC.cexp t [a; b] c { XC.check_all PM.check_mode_unknown e }): stream t a -> stream t b -> stream t c =
   let e' = XC.bless e in
   stream_of_exp2 e'
 
-let stream_of_checked3 (#t: table) (#a #b #c #d: t.ty) (e: exp t [a; b; c] d { XC.check_all PM.check_mode_all e }): stream t a -> stream t b -> stream t c -> stream t d =
+let stream_of_checked3 (#t: table) (#a #b #c #d: t.ty) (e: XCC.cexp t [a; b; c] d { XC.check_all PM.check_mode_unknown e }): stream t a -> stream t b -> stream t c -> stream t d =
   let e' = XC.bless e in
   stream_of_exp3 e'
 
@@ -77,7 +77,7 @@ let system_induct_k (#t: table) (#c: context t) (#a: t.ty) (k: nat) (e: XCC.cexp
 
 let lemma_check_system_induct_k1 (#t: table) (#c: context t) (#a: t.ty) (e: XCC.cexp t c a):
   Lemma (requires (system_induct_k1 e))
-        (ensures  (XC.check_all PM.check_mode_all e))
+        (ensures  (XC.check_all PM.check_mode_unknown e))
         [SMTPat (system_induct_k1 e)]
         =
     // TODO:ADMIT: induction is sound
@@ -85,7 +85,7 @@ let lemma_check_system_induct_k1 (#t: table) (#c: context t) (#a: t.ty) (e: XCC.
 
 let lemma_check_system_induct_k (#t: table) (#c: context t) (#a: t.ty) (k: nat) (e: XCC.cexp t c a):
   Lemma (requires (system_induct_k k e))
-        (ensures  (XC.check_all PM.check_mode_all e))
+        (ensures  (XC.check_all PM.check_mode_unknown e))
         [SMTPat (system_induct_k k e)]
         =
     // TODO:ADMIT: induction is sound

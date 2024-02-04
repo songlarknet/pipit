@@ -36,7 +36,7 @@ let step_XLet_obl' (#t: table) (#c: context t) (#a b: t.ty)
     (ensures (
       let v :: vs = XC.lemma_bigsteps_total_vs (row1 :: rows) e1 in
 
-      let rows' = CR.zip2_cons vs rows in
+      let rows' = CR.extend1 vs rows in
       let row1' = CR.cons v row1 in
       let stp1 = eval_step rows row1 e1 (SB.type_join_fst s) in
       let stp2 = eval_step rows' row1' e2 (SB.type_join_snd s) in
@@ -48,7 +48,7 @@ let step_XLet_obl' (#t: table) (#c: context t) (#a b: t.ty)
   =
     let v :: vs = XC.lemma_bigsteps_total_vs (row1 :: rows) e1 in
 
-    let rows' = CR.zip2_cons vs rows in
+    let rows' = CR.extend1 vs rows in
     let row1' = CR.cons v row1 in
     let stp1 = eval_step rows row1 e1 (SB.type_join_fst s) in
     let stp2 = eval_step rows' row1' e2 (SB.type_join_snd s) in
@@ -112,7 +112,7 @@ let rec check_step_obl
 
   | XMu e1 ->
     let (| v :: vs, hBSs |) = XC.lemma_bigsteps_total (row1 :: rows) (XMu e1) in
-    let rows' = CR.zip2_cons vs rows in
+    let rows' = CR.extend1 vs rows in
     let row1' = CR.cons v row1 in
     check_step_obl rows' row1' e1 s;
     let hBS1 = XC.lemma_bigstep_substitute_elim_XMu (row1 :: rows) e1 (v :: vs) hBSs in
@@ -121,7 +121,7 @@ let rec check_step_obl
 
   | XLet b e1 e2 ->
     let (| vleft :: vlefts, hBS1s |) = XC.lemma_bigsteps_total (row1 :: rows) e1 in
-    let rows' = CR.zip2_cons vlefts rows in
+    let rows' = CR.extend1 vlefts rows in
     let row1' = CR.cons vleft row1 in
     let s: SB.option_type_sem (SB.type_join (SX.state_of_exp e1) (SX.state_of_exp e2)) = s in
     check_step_obl rows row1 e1 (SB.type_join_fst s);
@@ -149,7 +149,7 @@ let rec check_step_obl
 
   | XContract ps er eg eb ->
     let v :: vs = XC.lemma_bigsteps_total_vs (row1 :: rows) eb in
-    let rows' = CR.zip2_cons vs rows in
+    let rows' = CR.extend1 vs rows in
     let row1' = CR.cons v row1 in
     let s: SB.option_type_sem (SB.type_join (SX.state_of_exp er) (SX.state_of_exp eg)) = s in
     check_step_obl rows row1  er (SB.type_join_fst s);

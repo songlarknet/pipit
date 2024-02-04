@@ -19,7 +19,7 @@ module SI  = Pipit.System.Ind
 module XB  = Pipit.Exp.Bigstep
 module XC  = Pipit.Exp.Causality
 module XK  = Pipit.Exp.Checked.Base
-module XKS = Pipit.Exp.Checked.Subst
+// module XKS = Pipit.Exp.Checked.Subst
 
 module PM = Pipit.Prop.Metadata
 
@@ -36,37 +36,37 @@ let check_invariant_all
     check_invariant rows e mode
 
 
-let check_all_Fby
-  (#t: table) (#c: context t) (#a: t.ty)
-  (v: t.ty_sem a)
-  (e: exp t c a { XC.causal e })
-  (mode: PM.check_mode):
-  Lemma
-    (requires (
-      XK.check_all mode (XFby v e)
-    ))
-    (ensures (
-      XK.check_all mode e
-    ))
-  =
-  introduce forall (rows: list (row c)). XK.check_prop mode rows e
-  with
-    match rows with
-    | [] ->
-      let k: XK.check mode rows e = checkK_init e mode in
-      let kk: squash (XK.check mode rows e) = return_squash k in
-      // assert (XK.check_prop mode rows e);
-      () // check_init e mode
-    | r::_ ->
-      assert (XK.check_prop mode (r::rows) (XFby v e));
-      let hC: squash (XK.check mode (r::rows) (XFby v e)) = () in
-      let hC': squash (XK.check mode rows e) =
-        bind_squash hC (fun hC ->
-        match hC with
-        | XK.CkFbyS _ _ _ _ _ -> ()
-        | _ -> false_elim ()
-      ) in
-      ()
+// let check_all_Fby
+//   (#t: table) (#c: context t) (#a: t.ty)
+//   (v: t.ty_sem a)
+//   (e: exp t c a { XC.causal e })
+//   (mode: PM.check_mode):
+//   Lemma
+//     (requires (
+//       XK.check_all mode (XFby v e)
+//     ))
+//     (ensures (
+//       XK.check_all mode e
+//     ))
+//   =
+//   introduce forall (rows: list (row c)). XK.check_prop mode rows e
+//   with
+//     match rows with
+//     | [] ->
+//       let k: XK.check mode rows e = checkK_init e mode in
+//       let kk: squash (XK.check mode rows e) = return_squash k in
+//       // assert (XK.check_prop mode rows e);
+//       () // check_init e mode
+//     | r::_ ->
+//       assert (XK.check_prop mode (r::rows) (XFby v e));
+//       let hC: squash (XK.check mode (r::rows) (XFby v e)) = () in
+//       let hC': squash (XK.check mode rows e) =
+//         bind_squash hC (fun hC ->
+//         match hC with
+//         | XK.CkFbyS _ _ _ _ _ -> ()
+//         | _ -> false_elim ()
+//       ) in
+//       ()
 
 
 let rec check_invariant_of_check_all
@@ -86,7 +86,7 @@ let rec check_invariant_of_check_all
   match e with
   | XBase _ -> ()
   | XFby v e1 ->
-    check_all_Fby v e1 mode;
+    // check_all_Fby v e1 mode;
     check_invariant_of_check_all rows e1 mode
   | XMu e1 ->
     admit ()

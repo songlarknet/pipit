@@ -530,7 +530,7 @@ let lemma_bigstep_substitute_elim_XLet
   (e2: exp t (valty :: c) a { causal e2 })
   (v: t.ty_sem a)
   (hBS2: bigstep rows (XLet valty e1 e2) v):
-    (bigstep (CR.zip2_cons vs rows) e2 v) =
+    (bigstep (CR.extend1 vs rows) e2 v) =
   match hBS2 with
   | BSLet _ _ _ _ hBS2' ->
     lemma_bigstep_substitute_elim 0 rows e1 vs e2 v hBS1s hBS2'
@@ -544,7 +544,7 @@ let lemma_bigstep_substitute_elim_XMu
   (e: exp t (valty :: c) valty { causal (XMu e) })
   (vs: list (t.ty_sem valty) { List.Tot.length rows == List.Tot.length vs })
   (hBSs: bigsteps rows (XMu e) vs):
-    (bigstep (CR.zip2_cons vs rows) e (List.Tot.hd vs)) =
+    (bigstep (CR.extend1 vs rows) e (List.Tot.hd vs)) =
     match hBSs with
     | BSsS _ _ _ _ _ _ hBS ->
       match hBS with
@@ -562,7 +562,7 @@ let lemma_bigstep_substitute_intros_XMu
   (row: row c)
   (v v': t.ty_sem valty)
   (hBSs: bigsteps rows (XMu e) vs)
-  (hBS1: bigstep (CR.cons v' row :: CR.zip2_cons vs rows) e v):
+  (hBS1: bigstep (CR.cons v' row :: CR.extend1 vs rows) e v):
     (bigstep (row :: rows) (XMu e) v) =
     let hBS'': bigstep (row :: rows) (subst1 e (XMu e)) v =
       lemma_bigstep_substitute_intros_no_dep 0 rows (XMu e) vs e row v' v hBSs hBS1 in
@@ -610,13 +610,13 @@ let rec lemma_bigstep_total
   | XMu e1 ->
     let (| vs, hBSs |) = lemma_bigsteps_total tl e in
     let v' = t.val_default (XMu?.valty e) in
-    let (| v, hBS0 |) = lemma_bigstep_total (CR.cons v' hd :: CR.zip2_cons vs tl) e1 in
+    let (| v, hBS0 |) = lemma_bigstep_total (CR.cons v' hd :: CR.extend1 vs tl) e1 in
     let hBS' = lemma_bigstep_substitute_intros_XMu tl e1 vs hd v v' hBSs hBS0 in
     (| v, hBS' |)
 
   | XLet b e1 e2 ->
     let (| vs, hBSs |) = lemma_bigsteps_total rows e1 in
-    let (| v, hBS2 |) = lemma_bigstep_total (CR.zip2_cons vs rows) e2 in
+    let (| v, hBS2 |) = lemma_bigstep_total (CR.extend1 vs rows) e2 in
     let hBS' = lemma_bigstep_substitute_intros 0 rows e1 vs e2 v hBSs hBS2 in
     (| v, BSLet rows e1 e2 v hBS' |)
 

@@ -17,7 +17,12 @@ module PM  = Pipit.Prop.Metadata
 module T   = FStar.Tactics
 
 (*
-   The invariant describes the transition system's state after it has been fed with all of `rows` as inputs.
+  This invariant describes the properties of the transition system evaluation
+  after it has been fed with all of `rows` as inputs. It is very similar to the
+  checked semantics in Pipit.Exp.Checked.Base, but it's a bit simpler. The
+  proofs only apply to causal expressions, so we can use the "evaluator"
+  instead of the bigsteps relation. Also, we only have to deal with contract
+  instances here, rather than both definitions and instances.
 *)
 let rec check_invariant
   (#t: table) (#c: context t) (#a: t.ty)
@@ -33,21 +38,22 @@ let rec check_invariant
     check_invariant rows e2 mode
 
   | XMu e1 ->
-    check_invariant (CR.zip2_cons (XC.lemma_bigsteps_total_vs rows e) rows) e1 mode
+    check_invariant (CR.extend1 (XC.lemma_bigsteps_total_vs rows e) rows) e1 mode
 
   | XLet b e1 e2 ->
     check_invariant rows e1 mode /\
-    check_invariant (CR.zip2_cons (XC.lemma_bigsteps_total_vs rows e1) rows) e2 mode
+    check_invariant (CR.extend1 (XC.lemma_bigsteps_total_vs rows e1) rows) e2 mode
 
   | XCheck ps e1 ->
     check_invariant rows e1 mode /\
     (PM.prop_status_contains mode ps ==> XB.bigstep_always rows e1)
 
   | XContract ps er eg eb ->
-    let rows' = CR.zip2_cons (XC.lemma_bigsteps_total_vs rows eb) rows in
+    let rows' = CR.extend1 (XC.lemma_bigsteps_total_vs rows eb) rows in
     (PM.prop_status_contains mode ps ==> XB.bigstep_always rows er) /\
-    (PM.prop_status_contains mode PM.PSValid ==> XB.bigstep_always rows er ==> XB.bigstep_always rows' eg) /\
     check_invariant rows er mode /\
+    (PM.prop_status_contains mode PM.PSValid ==> XB.bigstep_always rows er ==> XB.bigstep_always rows' eg) /\
+    // Unlike checked semantics, we do not need to check the body here
     (XB.bigstep_always rows er ==> check_invariant rows' eg mode)
 
 and check_apps_invariant

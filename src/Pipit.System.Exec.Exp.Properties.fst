@@ -45,12 +45,12 @@ let rec system_of_exp_invariant
     | _ :: _ -> XB.bigstep rows e2 (SB.type_join_fst s)) /\ system_of_exp_invariant rows e2 (SB.type_join_snd s)
 
   | XMu e1 ->
-    system_of_exp_invariant (CR.zip2_cons (XC.lemma_bigsteps_total_vs rows e) rows) e1 s
+    system_of_exp_invariant (CR.extend1 (XC.lemma_bigsteps_total_vs rows e) rows) e1 s
 
   | XLet b e1 e2 ->
     let s: SB.option_type_sem (SB.type_join (EX.estate_of_exp e1) (EX.estate_of_exp e2)) = s in
     system_of_exp_invariant rows e1 (SB.type_join_fst s) /\
-    system_of_exp_invariant (CR.zip2_cons (XC.lemma_bigsteps_total_vs rows e1) rows) e2 (SB.type_join_snd s)
+    system_of_exp_invariant (CR.extend1 (XC.lemma_bigsteps_total_vs rows e1) rows) e2 (SB.type_join_snd s)
 
   | XCheck _ e1 ->
     // We don't execute checks for extraction
@@ -164,7 +164,7 @@ let rec step_invariant_step
       let (| vs', hBSMus'|) = XC.lemma_bigsteps_total (row1 :: rows) (XMu e1) in
       let XB.BSsS _ _ vs _ v' hBSMus hBSMu = hBSMus' in
       XB.bigstep_deterministic hBS hBSMu;
-      let rows' = CR.zip2_cons vs rows in
+      let rows' = CR.extend1 vs rows in
 
       let bottom = t.val_default a in
       let t1 = EX.esystem_of_exp e1 in
@@ -196,7 +196,7 @@ let rec step_invariant_step
     | XLet b e1 e2 ->
       let (| vlefts', hBS1s' |) = XC.lemma_bigsteps_total (row1 :: rows) e1 in
       let XB.BSsS _ _ vlefts _ vleft hBS1s hBS1 = hBS1s' in
-      let rows' = CR.zip2_cons vlefts rows in
+      let rows' = CR.extend1 vlefts rows in
       let row1' = CR.cons vleft row1 in
       let s: SB.option_type_sem (SB.type_join (EX.estate_of_exp e1) (EX.estate_of_exp e2)) = s in
       assert (system_of_exp_invariant rows  e1 (SB.type_join_fst s));

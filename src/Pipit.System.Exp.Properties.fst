@@ -45,12 +45,12 @@ let rec system_of_exp_invariant
     system_of_exp_invariant rows e2 (SB.type_join_snd s)
 
   | XMu e1 ->
-    system_of_exp_invariant (CR.zip2_cons (XC.lemma_bigsteps_total_vs rows e) rows) e1 s
+    system_of_exp_invariant (CR.extend1 (XC.lemma_bigsteps_total_vs rows e) rows) e1 s
 
   | XLet b e1 e2 ->
     let s: SB.option_type_sem (SB.type_join (SX.state_of_exp e1) (SX.state_of_exp e2)) = s in
     system_of_exp_invariant rows e1 (SB.type_join_fst s) /\
-    system_of_exp_invariant (CR.zip2_cons (XC.lemma_bigsteps_total_vs rows e1) rows) e2 (SB.type_join_snd s)
+    system_of_exp_invariant (CR.extend1 (XC.lemma_bigsteps_total_vs rows e1) rows) e2 (SB.type_join_snd s)
 
   | XCheck _ e1 ->
     let s: SB.option_type_sem (SX.state_of_exp e1) = s in
@@ -59,7 +59,7 @@ let rec system_of_exp_invariant
   | XContract _ er eg eb ->
     let s: SB.option_type_sem (SB.type_join (SX.state_of_exp er) (SX.state_of_exp eg)) = s in
     system_of_exp_invariant rows  er (SB.type_join_fst s) /\
-    system_of_exp_invariant (CR.zip2_cons (XC.lemma_bigsteps_total_vs rows eb) rows) eg (SB.type_join_snd s)
+    system_of_exp_invariant (CR.extend1 (XC.lemma_bigsteps_total_vs rows eb) rows) eg (SB.type_join_snd s)
 
 and system_of_exp_apps_invariant
   (#t: table) (#c: context t) (#a: funty t.ty)
@@ -164,14 +164,14 @@ let rec step_oracle
 
   | XMu e1 ->
     let vs = XC.lemma_bigsteps_total_vs rows (XMu e1) in
-    let rows' = CR.zip2_cons vs rows in
+    let rows' = CR.extend1 vs rows in
 
     let orcl1 = step_oracle rows' e1 in
     SB.type_join_tup #(Some (t.ty_sem a)) #(SX.oracle_of_exp e1) (List.hd vs) orcl1
 
   | XLet b e1 e2 ->
     let vlefts = XC.lemma_bigsteps_total_vs rows e1 in
-    let rows' = CR.zip2_cons vlefts rows in
+    let rows' = CR.extend1 vlefts rows in
 
     let orcl1 = step_oracle rows  e1 in
     let orcl2 = step_oracle rows' e2 in
@@ -182,7 +182,7 @@ let rec step_oracle
 
   | XContract ps er eg eb ->
     let vs = XC.lemma_bigsteps_total_vs rows eb in
-    let rows' = CR.zip2_cons vs rows in
+    let rows' = CR.extend1 vs rows in
 
     let or = step_oracle rows  er in
     let og = step_oracle rows' eg in
@@ -223,14 +223,14 @@ let rec invariant_step
 
   | XMu e1 ->
     let v :: vs = XC.lemma_bigsteps_total_vs (row1 :: rows) (XMu e1) in
-    let rows' = CR.zip2_cons vs rows in
+    let rows' = CR.extend1 vs rows in
     let row1' = CR.cons v row1 in
     invariant_step rows' row1' e1 s;
     ()
 
   | XLet b e1 e2 ->
     let vleft :: vlefts = XC.lemma_bigsteps_total_vs (row1 :: rows) e1 in
-    let rows' = CR.zip2_cons vlefts rows in
+    let rows' = CR.extend1 vlefts rows in
     let row1' = CR.cons vleft row1 in
     let s: SB.option_type_sem (SB.type_join (SX.state_of_exp e1) (SX.state_of_exp e2)) = s in
     invariant_step rows  row1  e1 (SB.type_join_fst s);
@@ -242,7 +242,7 @@ let rec invariant_step
 
   | XContract ps er eg eb ->
     let v :: vs = XC.lemma_bigsteps_total_vs (row1 :: rows) eb in
-    let rows' = CR.zip2_cons vs rows in
+    let rows' = CR.extend1 vs rows in
     let row1' = CR.cons v row1 in
     let s: SB.option_type_sem (SB.type_join (SX.state_of_exp er) (SX.state_of_exp eg)) = s in
     invariant_step rows  row1  er (SB.type_join_fst s);
