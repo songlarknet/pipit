@@ -50,6 +50,10 @@ type check (mode: PM.check_mode) (#t: table u#i u#j) (#c: context t): (#a: t.ty)
           streams: list (row c)               ->
           e1: exp t c b                       ->
           e2: exp t (C.close1 c b) a          ->
+          (* WRONG: this should check e1 as well.
+          > let _ = check ... in e
+            Unused bindings need to be checked
+           *)
           check mode streams (subst1 e2 e1)        ->
           check mode streams (XLet b e1 e2)
 
