@@ -10,6 +10,7 @@ open Pipit.Exp.Bigstep
 open Pipit.Exp.Binding
 
 module C  = Pipit.Context.Base
+module CR = Pipit.Context.Row
 module PM = Pipit.Prop.Metadata
 
 open FStar.Squash
@@ -138,62 +139,88 @@ let rec lemma_bless_of_bigstep_always (#t: table) (#c: context t) (streams: list
     lemma_bless_of_bigstep_always s' e;
     ()
 
-let rec lemma_check_bless (#t: table) (#c: context t) (#a: t.ty) (#streams: list (row c)) (#e: exp t c a) (hC: check PM.check_mode_all streams e):
-  Tot (check PM.check_mode_valid streams (bless e))
-    (decreases hC) =
-  match hC with
-  | CkBase s b -> CkBase s b
-  | CkApps s ea hCA -> CkApps s (bless_apps ea) (lemma_check_bless_apps hCA)
-  | CkFby1 s v e1 -> CkFby1 s v (bless e1)
-  | CkFbyS l p v e1 hC1 ->
-    CkFbyS l p v _ (lemma_check_bless hC1)
-  | CkMu s e1 hC1 ->
-    lemma_bless_distributes_subst e1 0 (XMu e1);
-    CkMu s (bless e1) (lemma_check_bless hC1)
-  | CkLet s e1 e2 hC1 ->
-    lemma_bless_distributes_subst e2 0 e1;
-    CkLet s (bless e1) (bless e2) (lemma_check_bless hC1)
-  | CkContract s ps r g i hR hG hCr hCig ->
-    lemma_bless_distributes_subst g 0 i;
-
-    assert (bigstep_always s r);
-    lemma_bless_of_bigstep_always s r;
-    lemma_bless_of_bigstep_always s (subst1 g i);
-
-    let hCig': either (squash (~ (bigstep_always s (bless r)))) (check PM.check_mode_valid s (bless i) & check PM.check_mode_valid s (bless (subst1 g i))) =
-      match hCig with
-      | Inl hBN -> false_elim ()
-      | Inr (hCi, hCg) -> Inr (lemma_check_bless hCi, lemma_check_bless hCg)
-    in
-
-    CkContract #PM.check_mode_valid s PM.PSValid (bless r) (bless g) (bless i) () () (lemma_check_bless hCr) hCig'
-
-  | CkCheck s ps e1 hC1 hB ->
-    lemma_bless_of_bigstep_always s e1;
-    CkCheck s PM.PSValid (bless e1) (lemma_check_bless hC1) ()
-
-and lemma_check_bless_apps (#t: table) (#c: context t) (#a: funty t.ty) (#streams: list (row c)) (#ea: exp_apps t c a) (hC: check_apps PM.check_mode_all streams ea):
-  Tot (check_apps PM.check_mode_valid streams (bless_apps ea))
-    (decreases hC)=
-  match hC with
-  | CkPrim s p -> CkPrim s p
-  | CkApp s f e1 hCA hC1 ->
-    CkApp s (bless_apps f) (bless e1)
-      (lemma_check_bless_apps hCA)
-      (lemma_check_bless hC1)
+let lemma_bless_of_bigsteps_prop (#t: table) (#c: context t) (#a: t.ty)
+  (streams: list (row c))
+  (e: exp t c a)
+  (vs: list (t.ty_sem a)):
+  Lemma (ensures (
+    bigsteps_prop streams (bless e) vs ==>
+    bigsteps_prop streams e vs
+  ))
+  // TODO:ADMIT: easy, induction on bigsteps
+  // proving other direction is also easy but may not be necessary
+  = admit ()
 
 
-let lemma_check_all_bless (#t: table u#i u#j) (#c: context t) (#a: t.ty) (e: exp t c a { check_all PM.check_mode_all e }):
+let rec lemma_check_bless (#t: table) (#c: context t) (#a: t.ty) (streams: list (row c)) (e: exp t c a):
+  Lemma
+    (requires (
+      check PM.check_mode_valid streams e /\
+      check PM.check_mode_unknown streams e
+    ))
+    (ensures (
+      check PM.check_mode_valid streams (bless e)
+    ))
+    (decreases e) =
+  match e with
+  | XBase b -> ()
+  | XApps ea -> lemma_check_bless_apps streams ea
+  | XFby v e1 -> lemma_check_bless streams e1
+  | XMu e1 ->
+    introduce forall (vs: list (t.ty_sem a) { bigsteps_prop streams (XMu (bless e1)) vs }). check PM.check_mode_valid (CR.extend1 vs streams) (bless e1)
+    with (
+      lemma_bless_of_bigsteps_prop streams (XMu e1) vs;
+      lemma_check_bless (CR.extend1 vs streams) e1
+    )
+  | XLet b e1 e2 ->
+    lemma_check_bless streams e1;
+    introduce forall (vs: list (t.ty_sem b) { bigsteps_prop streams (bless e1) vs }). check PM.check_mode_valid (CR.extend1 vs streams) (bless e2)
+    with (
+      lemma_bless_of_bigsteps_prop streams e1 vs;
+      lemma_check_bless (CR.extend1 vs streams) e2
+    )
+  | XCheck ps e1 ->
+    lemma_check_bless streams e1;
+    lemma_bless_of_bigstep_always streams e1
+
+  | XContract ps er eg eb ->
+    lemma_bless_of_bigstep_always streams er;
+    lemma_check_bless streams er;
+    lemma_check_bless streams eb;
+
+    introduce forall (vs: list (t.ty_sem a) { bigsteps_prop streams (bless eb) vs }).
+      bigstep_always (CR.extend1 vs streams) (bless eg) /\
+      check PM.check_mode_valid (CR.extend1 vs streams) (bless eg)
+    with (
+      lemma_bless_of_bigsteps_prop streams eb vs;
+      lemma_bless_of_bigstep_always (CR.extend1 vs streams) eg;
+      lemma_check_bless (CR.extend1 vs streams) eg;
+      ()
+    )
+
+
+and lemma_check_bless_apps (#t: table) (#c: context t) (#a: funty t.ty) (streams: list (row c)) (ea: exp_apps t c a):
+  Lemma
+    (requires (
+      check_apps PM.check_mode_valid streams ea /\
+      check_apps PM.check_mode_unknown streams ea
+    ))
+    (ensures (
+      check_apps PM.check_mode_valid streams (bless_apps ea)
+    ))
+    (decreases ea) =
+  match ea with
+  | XPrim f -> ()
+  | XApp f e ->
+    lemma_check_bless_apps streams f;
+    lemma_check_bless streams e
+
+
+let lemma_check_all_bless (#t: table u#i u#j) (#c: context t) (#a: t.ty) (e: exp t c a { check_all PM.check_mode_valid e /\ check_all PM.check_mode_unknown e }):
   Lemma (ensures check_all PM.check_mode_valid (bless e))
     [SMTPat (check_all PM.check_mode_valid (bless e))] =
   introduce forall streams.
-    check_prop PM.check_mode_valid streams (bless e)
+    check PM.check_mode_valid streams (bless e)
   with (
-
-    assert (check_prop PM.check_mode_all streams e);
-    // norm_spec [delta_only [`%check_prop]] (check_prop PM.check_mode_all streams e);
-    assert (squash (check PM.check_mode_all streams e))
-       by (FStar.Tactics.dump "X");
-      // ;
-    bind_squash () (fun (x : check PM.check_mode_all streams e) -> return_squash (lemma_check_bless x))
+    lemma_check_bless streams e
   )
