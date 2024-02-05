@@ -6,6 +6,7 @@ open Pipit.System.Exp.Check.Base
 
 module SXCA = Pipit.System.Exp.Check.Assumptions
 module SXCO = Pipit.System.Exp.Check.Obligations
+module SXCS = Pipit.System.Exp.Check.Sound
 
 module CR  = Pipit.Context.Row
 
@@ -16,20 +17,13 @@ module SI  = Pipit.System.Ind
 
 module XB  = Pipit.Exp.Bigstep
 module XC  = Pipit.Exp.Causality
+module XK  = Pipit.Exp.Checked.Base
 
 module PM = Pipit.Prop.Metadata
 
 module T    = FStar.Tactics
 
 #push-options "--split_queries always"
-
-let check_invariant_all
-  (#t: table) (#c: context t) (#a: t.ty)
-  (mode: PM.check_mode)
-  (e: exp t c a { XC.causal e })
-  : Tot prop =
-  forall (rows: list (row c)).
-    check_invariant mode rows e
 
 let rec induct1_sound
   (#t: table) (#c: context t) (#a: t.ty)
@@ -39,10 +33,12 @@ let rec induct1_sound
   Pure
     (SB.step_result (SX.state_of_exp e) (t.ty_sem a))
     (requires (
-      check_invariant_all PM.check_mode_valid e /\
+      XK.check_all PM.check_mode_valid e /\
+      XK.sealed true e /\
       SI.induct1 (SX.system_of_exp e)
     ))
     (ensures (fun stp ->
+      XK.check PM.check_mode_unknown (row1 :: rows) e /\
       check_invariant PM.check_mode_unknown (row1 :: rows) e /\
       SXP.system_of_exp_invariant (row1 :: rows) e stp.s /\
       SB.option_prop_sem stp.chck.assumptions /\
@@ -50,6 +46,7 @@ let rec induct1_sound
       (exists s. stp == (SX.system_of_exp e).step row1 (SXP.step_oracle (row1 :: rows) e) s)
     ))
   =
+    SXCS.check_invariant_of_check_base PM.check_mode_valid (row1 :: rows) e;
     match rows with
     | [] ->
       SXP.invariant_init e;
@@ -58,6 +55,7 @@ let rec induct1_sound
       let stp = eval_step rows row1 e s0 in
       SXCA.check_step_asm rows row1 e s0;
       SXCO.check_step_obl rows row1 e s0;
+      SXCS.check_base_unknown_of_check_invariant (row1 :: rows) e;
       stp
     | row1' :: rows' ->
       let stp0 = induct1_sound rows' row1' e in
@@ -66,6 +64,7 @@ let rec induct1_sound
       assert (check_invariant PM.check_mode_unknown          rows  e);
       SXCA.check_step_asm rows row1 e stp0.s;
       SXCO.check_step_obl rows row1 e stp0.s;
+      SXCS.check_base_unknown_of_check_invariant (row1 :: rows) e;
       stp
 
 let induct1_sound_all
@@ -73,16 +72,17 @@ let induct1_sound_all
   (e: exp t c a { XC.causal e }):
   Lemma
     (requires (
-      check_invariant_all PM.check_mode_valid e /\
+      XK.check_all PM.check_mode_valid e /\
+      XK.sealed true e /\
       SI.induct1 (SX.system_of_exp e)
     ))
     (ensures (
-      check_invariant_all PM.check_mode_unknown e
+      XK.check_all PM.check_mode_unknown e
     ))
   =
-    introduce forall (rows: list (row c)). check_invariant PM.check_mode_unknown rows e
+    introduce forall (rows: list (row c)). XK.check PM.check_mode_unknown rows e
     with match rows with
-      | [] -> check_init PM.check_mode_unknown e
+      | [] -> SXCS.check_base_nil PM.check_mode_unknown e
       | row1 :: rows ->
         let stp = induct1_sound rows row1 e in
         ()

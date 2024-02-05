@@ -27,6 +27,51 @@ module T    = FStar.Tactics
 
 #push-options "--split_queries always"
 
+let rec check_base_nil
+  (#t: table) (#c: context t) (#a: t.ty)
+  (mode: PM.check_mode)
+  (e: exp t c a { XC.causal e }):
+  Lemma
+    (ensures (
+      XK.check mode [] e
+    ))
+    (decreases e)
+    =
+  match e with
+  | XBase _ -> ()
+  | XApps ea ->
+    check_base_apps_nil mode ea
+  | XFby v e1 ->
+    check_base_nil mode e1
+  | XMu e1 ->
+    check_base_nil mode e1
+  | XLet b e1 e2 ->
+    check_base_nil mode e1;
+    check_base_nil mode e2
+  | XCheck ps e1 ->
+    check_base_nil mode e1
+  | XContract ps er eg eb ->
+    check_base_nil mode er;
+    check_base_nil mode eg;
+    check_base_nil mode eb
+
+and check_base_apps_nil
+  (#t: table) (#c: context t) (#a: funty t.ty)
+  (mode: PM.check_mode)
+  (e: exp_apps t c a { XC.causal_apps e }):
+  Lemma
+    (ensures (
+      XK.check_apps mode [] e
+    ))
+    (decreases e)
+    =
+  match e with
+  | XPrim _ -> ()
+  | XApp f e ->
+    check_base_apps_nil mode f;
+    check_base_nil mode e
+
+
 let rec check_invariant_of_check_base
   (#t: table) (#c: context t) (#a: t.ty)
   (mode: PM.check_mode)
