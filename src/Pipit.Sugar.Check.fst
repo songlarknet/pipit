@@ -21,23 +21,20 @@ type contract (t: table) (c: context t) (a: t.ty) (rely: XCC.cexp t c t.propty) 
 let contract_of_exp1 (#t: table) (#a #b: t.ty) (r: XCC.cexp t [a] t.propty) (g: XCC.cexp t [b; a] t.propty) (i: XCC.cexp t [a] b  { XC.contract_valid r g i }): contract t [a] b r g = i
 
 let contract_system_induct_k1' (#t: table) (#c: context t) (#a: t.ty) (r: XCC.cexp t c t.propty) (g: XCC.cexp t (a :: c) t.propty) (i: XCC.cexp t c a): prop =
-  // Pipit.Exp.Causality.causal r /\
-  // Pipit.Exp.Causality.causal g /\
-  // Pipit.Exp.Causality.causal i /\
   SI.induct1 (SX.system_of_contract r g i)
 
-let stream_of_contract1 (#t: table) (#a #b: t.ty) (#r: XCC.cexp t [a] t.propty) (#g: XCC.cexp t [b; a] t.propty) (contr: contract t [a] b r g): stream t a -> stream t b =
+let exp_of_contract (#t: table) (#c: context t) (#a: t.ty) (#r: XCC.cexp t c t.propty) (#g: XCC.cexp t (a :: c) t.propty) (contr: contract t c a r g): XCC.cexp t c a =
   // let rely = XCC.bless r in
   let rely = r in
-  let guar = XCC.bless g in
-  let impl = XCC.bless contr in
+  let guar = XC.bless g in
+  let impl = XC.bless contr in
   let e = XContract PM.PSUnknown rely guar impl in
-  // TODO:ADMIT: bless is sealed
-  assume (XC.sealed false impl);
-  assume (XC.sealed false guar);
   // TODO:ADMIT: requires contract_check
-  assume (XC.contract_valid r g contr ==> XC.check_all PM.check_mode_valid e);
-  stream_of_exp1 e
+  // assume (XC.contract_valid r g contr ==> XC.check_all PM.check_mode_valid e);
+  e
+
+let stream_of_contract1 (#t: table) (#a #b: t.ty) (#r: XCC.cexp t [a] t.propty) (#g: XCC.cexp t [b; a] t.propty) (contr: contract t [a] b r g): stream t a -> stream t b =
+  stream_of_exp1 (exp_of_contract contr)
 
 // let stream_of_contract2 (#t: table) (#a #b #c: t.ty) (contr: _contract t [a; b] c { XC.contract_valid contr.rely contr.guar contr.impl }): stream t a -> stream t b -> stream t c =
 //   let rely = XCC.bless contr.rely in
