@@ -56,8 +56,8 @@ let contract_always_rely
     (eg: exp t (a :: c) t.propty { XC.causal eg })
     (eb: exp t       c         a { XC.causal eb })
     : Lemma (requires (
-        check_invariant (row1 :: rows) (XContract ps er eg eb) PM.check_mode_valid /\
-        check_invariant          rows  (XContract ps er eg eb) PM.check_mode_unknown))
+        check_invariant PM.check_mode_valid  (row1 :: rows) (XContract ps er eg eb) /\
+        check_invariant PM.check_mode_unknown         rows  (XContract ps er eg eb)))
       (ensures (
         XB.bigstep_always rows er))
         =
@@ -72,8 +72,8 @@ let rec check_step_asm
   (e: exp t c a { XC.causal e })
   (s: SB.option_type_sem (SX.state_of_exp e) { SXP.system_of_exp_invariant rows e s })
   : Lemma (requires (
-      check_invariant (row1 :: rows) e PM.check_mode_valid /\
-      check_invariant          rows  e PM.check_mode_unknown))
+      check_invariant PM.check_mode_valid  (row1 :: rows) e /\
+      check_invariant PM.check_mode_unknown         rows  e))
     (ensures (
       let stp = eval_step rows row1 e s in
       SB.option_prop_sem stp.chck.assumptions))
@@ -107,7 +107,7 @@ let rec check_step_asm
     ()
 
   | XCheck ps e1 ->
-    assert (check_invariant (row1 :: rows) e1 PM.check_mode_valid);
+    assert (check_invariant PM.check_mode_valid (row1 :: rows) e1);
     assert (PM.prop_status_contains PM.check_mode_valid ps ==> XB.bigstep_always (row1 :: rows) e1);
     check_step_asm rows row1 e1 s;
     let stp1 = eval_step rows row1 e1 s in
@@ -164,8 +164,8 @@ and check_step_apps_asm
   (inp0: inp)
   (s: SB.option_type_sem (SX.state_of_exp_apps e) { SXP.system_of_exp_apps_invariant rows e s })
   : Lemma (requires (
-      check_apps_invariant (row1 :: rows) e PM.check_mode_valid /\
-      check_apps_invariant          rows  e PM.check_mode_unknown))
+      check_apps_invariant PM.check_mode_valid   (row1 :: rows) e /\
+      check_apps_invariant PM.check_mode_unknown          rows  e))
     (ensures (
       let stp = eval_step_apps rows row1 e f inp0 s in
       SB.option_prop_sem stp.chck.assumptions))

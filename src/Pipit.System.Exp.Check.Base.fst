@@ -26,53 +26,53 @@ module T   = FStar.Tactics
 *)
 let rec check_invariant
   (#t: table) (#c: context t) (#a: t.ty)
+  (mode: PM.check_mode)
   (rows: list (row c))
   (e: exp t c a { XC.causal e })
-  (mode: PM.check_mode):
-    Tot prop (decreases e) =
+  : Tot prop (decreases e) =
   match e with
   | XBase _ -> True
-  | XApps e1 -> check_apps_invariant rows e1 mode
+  | XApps e1 -> check_apps_invariant mode rows e1
 
   | XFby v1 e2 ->
-    check_invariant rows e2 mode
+    check_invariant mode rows e2
 
   | XMu e1 ->
-    check_invariant (CR.extend1 (XC.lemma_bigsteps_total_vs rows e) rows) e1 mode
+    check_invariant mode (CR.extend1 (XC.lemma_bigsteps_total_vs rows e) rows) e1
 
   | XLet b e1 e2 ->
-    check_invariant rows e1 mode /\
-    check_invariant (CR.extend1 (XC.lemma_bigsteps_total_vs rows e1) rows) e2 mode
+    check_invariant mode rows e1 /\
+    check_invariant mode (CR.extend1 (XC.lemma_bigsteps_total_vs rows e1) rows) e2
 
   | XCheck ps e1 ->
-    check_invariant rows e1 mode /\
+    check_invariant mode rows e1 /\
     (PM.prop_status_contains mode ps ==> XB.bigstep_always rows e1)
 
   | XContract ps er eg eb ->
     let rows' = CR.extend1 (XC.lemma_bigsteps_total_vs rows eb) rows in
     (PM.prop_status_contains mode ps ==> XB.bigstep_always rows er) /\
-    check_invariant rows er mode /\
+    check_invariant mode rows er /\
     (PM.prop_status_contains mode PM.PSValid ==> XB.bigstep_always rows er ==> XB.bigstep_always rows' eg) /\
     // Unlike checked semantics, we do not need to check the body here
-    (XB.bigstep_always rows er ==> check_invariant rows' eg mode)
+    (XB.bigstep_always rows er ==> check_invariant mode rows' eg)
 
 and check_apps_invariant
   (#t: table) (#c: context t) (#a: funty t.ty)
+  (mode: PM.check_mode)
   (rows: list (row c))
   (e: exp_apps t c a { XC.causal_apps e })
-  (mode: PM.check_mode):
-    Tot prop (decreases e) =
+  : Tot prop (decreases e) =
   match e with
   | XPrim _ -> True
   | XApp e1 e2 ->
-    check_apps_invariant rows e1 mode /\
-    check_invariant rows e2 mode
+    check_apps_invariant mode rows e1 /\
+    check_invariant mode rows e2
 
 let rec check_init
     (#t: table) (#c: context t) (#a: t.ty)
-    (e: exp t c a { XC.causal e })
     (mode: PM.check_mode)
-    : Lemma (ensures check_invariant [] e mode)
+    (e: exp t c a { XC.causal e })
+    : Lemma (ensures check_invariant mode [] e)
       (decreases e) =
     let tx = SX.system_of_exp e in
     let rows: list (row c) = [] in
@@ -80,43 +80,43 @@ let rec check_init
     | XBase _ -> ()
 
     | XApps e1 ->
-      check_apps_init e1 (fun r () -> r) mode;
+      check_apps_init mode e1 (fun r () -> r);
       ()
 
     | XFby v1 e2 ->
-      check_init e2 mode
+      check_init mode e2
 
     | XMu e1 ->
-      check_init e1 mode;
+      check_init mode e1;
       ()
 
     | XLet b e1 e2 ->
-      check_init e1 mode;
-      check_init e2 mode;
+      check_init mode e1;
+      check_init mode e2;
       ()
 
     | XCheck _ e1 ->
-      check_init e1 mode
+      check_init mode e1
 
     | XContract ps er eg eb ->
-      check_init er mode;
-      check_init eg mode;
+      check_init mode er;
+      check_init mode eg;
       ()
 
 and check_apps_init
     (#t: table) (#c: context t) (#a: funty t.ty) (#res #inp: Type0)
+    (mode: PM.check_mode)
     (e: exp_apps t c a { XC.causal_apps e })
     (f: funty_sem t.ty_sem a -> inp -> res)
-    (mode: PM.check_mode)
     : Lemma (ensures
-        check_apps_invariant [] e mode)
+        check_apps_invariant mode [] e)
       (decreases e) =
   match e with
   | XPrim _ -> ()
   | XApp e1 e2 ->
     let f' = SX.system_of_exp_apps_distr f in
-    check_apps_init e1 f' mode;
-    check_init e2 mode;
+    check_apps_init mode e1 f';
+    check_init mode e2;
     ()
 
 let eval_step

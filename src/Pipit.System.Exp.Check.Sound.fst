@@ -27,79 +27,70 @@ module T    = FStar.Tactics
 
 #push-options "--split_queries always"
 
-let check_invariant_all
+let rec check_invariant_of_check_base
   (#t: table) (#c: context t) (#a: t.ty)
   (mode: PM.check_mode)
-  (e: exp t c a { XC.causal e }):
-    Tot prop =
-  forall (rows: list (row c)).
-    check_invariant rows e mode
-
-
-// let check_all_Fby
-//   (#t: table) (#c: context t) (#a: t.ty)
-//   (v: t.ty_sem a)
-//   (e: exp t c a { XC.causal e })
-//   (mode: PM.check_mode):
-//   Lemma
-//     (requires (
-//       XK.check_all mode (XFby v e)
-//     ))
-//     (ensures (
-//       XK.check_all mode e
-//     ))
-//   =
-//   introduce forall (rows: list (row c)). XK.check_prop mode rows e
-//   with
-//     match rows with
-//     | [] ->
-//       let k: XK.check mode rows e = checkK_init e mode in
-//       let kk: squash (XK.check mode rows e) = return_squash k in
-//       // assert (XK.check_prop mode rows e);
-//       () // check_init e mode
-//     | r::_ ->
-//       assert (XK.check_prop mode (r::rows) (XFby v e));
-//       let hC: squash (XK.check mode (r::rows) (XFby v e)) = () in
-//       let hC': squash (XK.check mode rows e) =
-//         bind_squash hC (fun hC ->
-//         match hC with
-//         | XK.CkFbyS _ _ _ _ _ -> ()
-//         | _ -> false_elim ()
-//       ) in
-//       ()
-
-
-let rec check_invariant_of_check_all
-  (#t: table) (#c: context t) (#a: t.ty)
   (rows: list (row c))
-  (e: exp t c a { XC.causal e })
-  (mode: PM.check_mode):
+  (e: exp t c a { XC.causal e }):
   Lemma
     (requires (
-      XK.check_all mode e
+      XK.check mode rows e
     ))
     (ensures (
-      check_invariant rows e mode
+      check_invariant mode rows e
     ))
     (decreases e)
     =
   match e with
   | XBase _ -> ()
+  | XApps ea ->
+    check_invariant_of_check_base_apps mode rows ea
   | XFby v e1 ->
-    // check_all_Fby v e1 mode;
-    check_invariant_of_check_all rows e1 mode
+    check_invariant_of_check_base mode rows e1
   | XMu e1 ->
-    admit ()
-  | _ -> admit ()
+    let rows' = CR.extend1 (XC.lemma_bigsteps_total_vs rows (XMu e1)) rows in
+    check_invariant_of_check_base mode rows' e1
+  | XLet b e1 e2 ->
+    check_invariant_of_check_base  mode rows e1;
+    let rows' = CR.extend1 (XC.lemma_bigsteps_total_vs rows e1) rows in
+    check_invariant_of_check_base  mode rows' e2
+  | XCheck ps e1 ->
+    check_invariant_of_check_base  mode rows e1
+  | XContract ps er eg eb ->
+    check_invariant_of_check_base mode rows er;
+    let rows' = CR.extend1 (XC.lemma_bigsteps_total_vs rows eb) rows in
+    introduce XB.bigstep_always rows er ==> check_invariant mode rows' eg
+    with pf. check_invariant_of_check_base mode rows' eg;
+    ()
+and check_invariant_of_check_base_apps
+  (#t: table) (#c: context t) (#a: funty t.ty)
+  (mode: PM.check_mode)
+  (rows: list (row c))
+  (e: exp_apps t c a { XC.causal_apps e }):
+  Lemma
+    (requires (
+      XK.check_apps mode rows e
+    ))
+    (ensures (
+      check_apps_invariant mode rows e
+    ))
+    (decreases e)
+    =
+  match e with
+  | XPrim _ -> ()
+  | XApp f e ->
+    check_invariant_of_check_base_apps mode rows f;
+    check_invariant_of_check_base mode rows e
 
-let rec check_all_of_check_unknown
+
+let rec check_of_sealed
   (#t: table) (#c: context t) (#a: t.ty)
   (rows: list (row c))
   (e: exp t c a { XC.causal e }):
   Lemma
     (requires (
-      XK.check_all PM.check_mode_valid e /\
-      check_invariant_all PM.check_mode_unknown e
+      XK.check PM.check_mode_valid rows e /\
+      XK.sealed false e
     ))
     (ensures (
       XK.check PM.check_mode_unknown rows e
@@ -107,12 +98,145 @@ let rec check_all_of_check_unknown
     (decreases e)
     =
   match e with
-  | XBase b -> return_squash (XK.CkBase #PM.check_mode_unknown rows b)
-  // | XFby v e1 ->
-  //   check_all_Fby v e1 PM.check_mode_valid;
-  //   check_all_of_check_unknown rows e1
-    // check_invariant_of_check_all rows e1 mode
+  | XBase _ -> ()
+  | XApps ea ->
+    check_apps_of_sealed rows ea
+  | XFby v e1 ->
+    check_of_sealed rows e1
   | XMu e1 ->
-    admit ()
-  | _ -> admit ()
+    let rows' = CR.extend1 (XC.lemma_bigsteps_total_vs rows (XMu e1)) rows in
+    check_of_sealed rows' e1;
+    introduce forall (vs: list (t.ty_sem a) { XB.bigsteps_prop rows (XMu e1) vs }).
+      XK.check PM.check_mode_unknown (CR.extend1 vs rows) e1
+    with
+      XB.bigsteps_deterministic_squash rows (XMu e1) vs (XC.lemma_bigsteps_total_vs rows (XMu e1));
+    ()
+  | XLet b e1 e2 ->
+    check_of_sealed rows e1;
+    let rows' = CR.extend1 (XC.lemma_bigsteps_total_vs rows e1) rows in
+    check_of_sealed rows' e2;
+    introduce forall (vs: list (t.ty_sem b) { XB.bigsteps_prop rows e1 vs }).
+      XK.check PM.check_mode_unknown (CR.extend1 vs rows) e2
+    with
+      XB.bigsteps_deterministic_squash rows e1 vs (XC.lemma_bigsteps_total_vs rows e1);
+    ()
+  | XCheck ps e1 ->
+    check_of_sealed rows e1;
+    ()
+  | XContract ps er eg eb ->
+    check_of_sealed rows er;
+    check_of_sealed rows eb;
+    let rows' = CR.extend1 (XC.lemma_bigsteps_total_vs rows eb) rows in
+    check_of_sealed rows' eg;
+    introduce forall (vs: list (t.ty_sem a) { XB.bigsteps_prop rows eb vs }).
+      XK.check PM.check_mode_unknown (CR.extend1 vs rows) eg
+    with
+      XB.bigsteps_deterministic_squash rows eb vs (XC.lemma_bigsteps_total_vs rows eb);
+    ()
 
+and check_apps_of_sealed
+  (#t: table) (#c: context t) (#a: funty t.ty)
+  (rows: list (row c))
+  (e: exp_apps t c a { XC.causal_apps e }):
+  Lemma
+    (requires (
+      XK.check_apps PM.check_mode_valid rows e /\
+      XK.sealed_apps false e
+    ))
+    (ensures (
+      XK.check_apps PM.check_mode_unknown rows e
+    ))
+    (decreases e)
+    =
+  match e with
+  | XPrim _ -> ()
+  | XApp f e ->
+    check_apps_of_sealed rows f;
+    check_of_sealed rows e
+
+
+let rec check_base_unknown_of_check_invariant
+  (#t: table) (#c: context t) (#a: t.ty)
+  (rows: list (row c))
+  (e: exp t c a { XC.causal e }):
+  Lemma
+    (requires (
+      XK.check PM.check_mode_valid rows e /\
+      XK.sealed true e /\
+      check_invariant PM.check_mode_unknown rows e
+    ))
+    (ensures (
+      XK.check PM.check_mode_unknown rows e
+    ))
+    (decreases e)
+    =
+  match e with
+  | XBase _ -> ()
+  | XApps ea ->
+    check_base_unknown_of_check_invariant_apps rows ea
+  | XFby v e1 ->
+    check_base_unknown_of_check_invariant rows e1
+  | XMu e1 ->
+    let rows' = CR.extend1 (XC.lemma_bigsteps_total_vs rows (XMu e1)) rows in
+    assert (XK.check PM.check_mode_valid rows' e1);
+    assert (check_invariant PM.check_mode_unknown rows' e1);
+
+    check_base_unknown_of_check_invariant rows' e1;
+
+    introduce forall (vs: list (t.ty_sem a) { XB.bigsteps_prop rows (XMu e1) vs }).
+      XK.check PM.check_mode_unknown (CR.extend1 vs rows) e1
+    with
+      XB.bigsteps_deterministic_squash rows (XMu e1) vs (XC.lemma_bigsteps_total_vs rows (XMu e1));
+
+    ()
+
+  | XLet b e1 e2 ->
+    check_base_unknown_of_check_invariant rows e1;
+    let rows' = CR.extend1 (XC.lemma_bigsteps_total_vs rows e1) rows in
+    assert (XK.check PM.check_mode_valid rows' e2);
+    assert (check_invariant PM.check_mode_unknown rows' e2);
+    check_base_unknown_of_check_invariant rows' e2;
+
+    introduce forall (vs: list (t.ty_sem b) { XB.bigsteps_prop rows e1 vs }).
+      XK.check PM.check_mode_unknown (CR.extend1 vs rows) e2
+    with
+      XB.bigsteps_deterministic_squash rows e1 vs (XC.lemma_bigsteps_total_vs rows e1);
+
+    ()
+
+  | XCheck ps e1 ->
+    check_base_unknown_of_check_invariant rows e1
+  | XContract ps er eg eb ->
+    assert (XB.bigstep_always rows er);
+    check_base_unknown_of_check_invariant rows er;
+    let rows' = CR.extend1 (XC.lemma_bigsteps_total_vs rows eb) rows in
+    check_base_unknown_of_check_invariant rows' eg;
+
+    introduce forall (vs: list (t.ty_sem a) { XB.bigsteps_prop rows eb vs }).
+      XK.check PM.check_mode_unknown (CR.extend1 vs rows) eg
+    with
+      XB.bigsteps_deterministic_squash rows eb vs (XC.lemma_bigsteps_total_vs rows eb);
+    check_of_sealed rows eb;
+    ()
+
+
+and check_base_unknown_of_check_invariant_apps
+  (#t: table) (#c: context t) (#a: funty t.ty)
+  (rows: list (row c))
+  (e: exp_apps t c a { XC.causal_apps e }):
+  Lemma
+    (requires (
+      XK.check_apps PM.check_mode_valid rows e /\
+      XK.sealed_apps true e /\
+      check_apps_invariant PM.check_mode_unknown rows e
+    ))
+    (ensures (
+      XK.check_apps PM.check_mode_unknown rows e
+    ))
+    (decreases e)
+    =
+  match e with
+  | XPrim _ -> ()
+  | XApp f e ->
+    check_base_unknown_of_check_invariant_apps rows f;
+    check_base_unknown_of_check_invariant rows e

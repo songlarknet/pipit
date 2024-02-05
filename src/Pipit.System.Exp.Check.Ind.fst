@@ -25,11 +25,11 @@ module T    = FStar.Tactics
 
 let check_invariant_all
   (#t: table) (#c: context t) (#a: t.ty)
+  (mode: PM.check_mode)
   (e: exp t c a { XC.causal e })
-  (mode: PM.check_mode):
-    Tot prop =
+  : Tot prop =
   forall (rows: list (row c)).
-    check_invariant rows e mode
+    check_invariant mode rows e
 
 let rec induct1_sound
   (#t: table) (#c: context t) (#a: t.ty)
@@ -39,11 +39,11 @@ let rec induct1_sound
   Pure
     (SB.step_result (SX.state_of_exp e) (t.ty_sem a))
     (requires (
-      check_invariant_all e PM.check_mode_valid /\
+      check_invariant_all PM.check_mode_valid e /\
       SI.induct1 (SX.system_of_exp e)
     ))
     (ensures (fun stp ->
-      check_invariant (row1 :: rows) e PM.check_mode_unknown /\
+      check_invariant PM.check_mode_unknown (row1 :: rows) e /\
       SXP.system_of_exp_invariant (row1 :: rows) e stp.s /\
       SB.option_prop_sem stp.chck.assumptions /\
       SB.option_prop_sem stp.chck.obligations /\
@@ -53,7 +53,7 @@ let rec induct1_sound
     match rows with
     | [] ->
       SXP.invariant_init e;
-      check_init e PM.check_mode_unknown;
+      check_init PM.check_mode_unknown e;
       let s0 = (SX.system_of_exp e).init in
       let stp = eval_step rows row1 e s0 in
       SXCA.check_step_asm rows row1 e s0;
@@ -62,8 +62,8 @@ let rec induct1_sound
     | row1' :: rows' ->
       let stp0 = induct1_sound rows' row1' e in
       let stp  = eval_step rows row1 e stp0.s in
-      assert (check_invariant (row1 :: rows) e PM.check_mode_valid);
-      assert (check_invariant          rows  e PM.check_mode_unknown);
+      assert (check_invariant PM.check_mode_valid   (row1 :: rows) e);
+      assert (check_invariant PM.check_mode_unknown          rows  e);
       SXCA.check_step_asm rows row1 e stp0.s;
       SXCO.check_step_obl rows row1 e stp0.s;
       stp
@@ -73,16 +73,16 @@ let induct1_sound_all
   (e: exp t c a { XC.causal e }):
   Lemma
     (requires (
-      check_invariant_all e PM.check_mode_valid /\
+      check_invariant_all PM.check_mode_valid e /\
       SI.induct1 (SX.system_of_exp e)
     ))
     (ensures (
-      check_invariant_all e PM.check_mode_unknown
+      check_invariant_all PM.check_mode_unknown e
     ))
   =
-    introduce forall (rows: list (row c)). check_invariant rows e PM.check_mode_unknown
+    introduce forall (rows: list (row c)). check_invariant PM.check_mode_unknown rows e
     with match rows with
-      | [] -> check_init e PM.check_mode_unknown
+      | [] -> check_init PM.check_mode_unknown e
       | row1 :: rows ->
         let stp = induct1_sound rows row1 e in
         ()

@@ -96,6 +96,38 @@ let contract_valid (#t: table u#i u#j) (#c: context t) (#a: t.ty)
     check PM.check_mode_unknown (CR.extend1 vs streams) guar /\
     bigstep_always (CR.extend1 vs streams) guar)
 
+
+(* Check that an expression is "sealed", in that it contains no unknown
+  properties. When verifying properties via transition system, we do not allow
+  contract instances with unknown properties inside them, though unknown
+  properties can occur outside of contracts.
+  When generating executable code, we should not allow unknown properties at
+  all, although this check is not yet implemented. *)
+let rec sealed (#t: table u#i u#j) (#c: context t) (#a: t.ty)
+  (allow_unknowns: bool)
+  (e: exp t c a)
+  : Tot prop (decreases e) =
+  match e with
+  | XBase _ -> True
+  | XApps ea ->
+    sealed_apps allow_unknowns ea
+  | XFby v e1 -> sealed allow_unknowns e1
+  | XMu e1 -> sealed allow_unknowns e1
+  | XLet b e1 e2 -> sealed allow_unknowns e1 /\ sealed allow_unknowns e2
+  | XCheck ps e1 -> (ps == PM.PSUnknown ==> allow_unknowns) /\ sealed allow_unknowns e1
+  | XContract ps rely guar body ->
+    (ps == PM.PSUnknown ==> allow_unknowns) /\
+    sealed allow_unknowns rely /\ sealed allow_unknowns guar /\ sealed false body
+
+and sealed_apps (#t: table) (#c: context t) (#a: funty t.ty)
+  (allow_unknowns: bool)
+  (e: exp_apps t c a)
+  : Tot prop (decreases e) =
+  match e with
+  | XPrim p -> True
+  | XApp ef ea ->
+    sealed_apps allow_unknowns ef /\ sealed allow_unknowns ea
+
 let rec bless (#t: table) (#c: context t) (#a: t.ty) (e: exp t c a): Tot (exp t c a) (decreases e) =
   match e with
   | XBase _ -> e

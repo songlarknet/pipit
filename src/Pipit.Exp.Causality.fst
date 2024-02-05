@@ -672,7 +672,7 @@ let lemma_bigsteps_total_vs
   (#c: context t)
   (#a: t.ty)
   (rows: list (row c)) (e: exp t c a { causal e }):
-    vs: list (t.ty_sem a) { List.Tot.length vs == List.Tot.length rows /\ bigsteps rows e vs } =
+    vs: list (t.ty_sem a) { bigsteps_prop rows e vs } =
   let (| vs, _ |) = lemma_bigsteps_total rows e in
   vs
 
@@ -684,5 +684,4 @@ let lemma_bigstep_total_always
     (ensures (lemma_bigstep_total_v (row1 :: rows) e == true))
     [SMTPat (bigstep_always (row1 :: rows) e)] =
   let v = lemma_bigstep_total_v (row1 :: rows) e in
-  // let (| v, hBS |) = lemma_bigstep_total (row1 :: rows) e in
   bigstep_deterministic_squash (row1 :: rows) e v true

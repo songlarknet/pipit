@@ -26,8 +26,13 @@ module CR = Pipit.Context.Row
 module CP = Pipit.Context.Properties
 module PM = Pipit.Prop.Metadata
 
-type cexp (t: table u#i u#j) (c: context t) (a: t.ty) = e: exp t c a { check_all PM.check_mode_valid e }
-type cexp_apps (t: table u#i u#j) (c: context t) (a: funty t.ty) = e: exp_apps t c a { check_all_apps PM.check_mode_valid e }
+type cexp (t: table u#i u#j) (c: context t) (a: t.ty) = e: exp t c a { check_all PM.check_mode_valid e /\ sealed true e }
+type cexp_apps (t: table u#i u#j) (c: context t) (a: funty t.ty) = e: exp_apps t c a { check_all_apps PM.check_mode_valid e /\ sealed_apps true e }
+
+let bless (#a: ('t).ty) (#c: context 't) (e: cexp 't c a): cexp 't c a =
+  let e' = bless e in
+  // TODO:ADMIT bless is sealed
+  coerce_eq (admit ()) e'
 
 (* Cannot yet prove this:
   this is used in the syntactic sugar, but not in the semantics.
@@ -37,10 +42,10 @@ let close1 (#a #b: ('t).ty) (#c: context 't) (e: cexp 't c a) (x: C.var b): cexp
   // TODO:ADMIT lemma close1 preserves validity
   coerce_eq (admit ()) e'
 
-let subst1 (#a #b: ('t).ty) (#c: context 't) (e: cexp 't (b :: c) a) (payload: cexp 't c b): cexp 't c a =
-  let e' = subst1 e payload in
-  // TODO:ADMIT lemma subst1 preserves validity
-  coerce_eq (admit ()) e'
+(* Substitution does not preserve the "sealed-ness" of expressions: it could
+  introduce unknown properties inside contracts, which wouldn't be proved by
+  the (abstract) transition systems. *)
+// let subst1 (#a #b: ('t).ty) (#c: context 't) (e: cexp 't (b :: c) a) (payload: cexp 't c b): cexp 't c a =
 
 let weaken (#c c': context 't) (#a: ('t).ty) (e: cexp 't c a): Tot (cexp 't (C.append c c') a) =
   let e' = weaken c' e in

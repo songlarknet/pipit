@@ -326,3 +326,20 @@ let bigstep_deterministic_squash
   FStar.Squash.bind_squash #(bigstep streams e v2) #(v1 == v2) ()
     (fun (b: bigstep streams e v2) ->
       bigstep_deterministic a b))
+
+
+let bigsteps_deterministic_squash
+  (#t: table)
+  (#c: context t)
+  (streams: list (row c))
+  (#a: t.ty)
+  (e: exp t c a)
+  (vs1 vs2: list (t.ty_sem a)):
+    Lemma
+      (requires (bigsteps streams e vs1 /\ bigsteps streams e vs2))
+      (ensures (vs1 == vs2)) =
+  FStar.Squash.bind_squash #(bigsteps streams e vs1) ()
+    (fun (a: bigsteps streams e vs1) ->
+  FStar.Squash.bind_squash #(bigsteps streams e vs2) #(vs1 == vs2) ()
+    (fun (b: bigsteps streams e vs2) ->
+      bigsteps_proof_equivalence a b))

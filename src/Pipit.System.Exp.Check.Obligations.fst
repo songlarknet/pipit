@@ -93,12 +93,12 @@ let rec check_step_obl
   (s: SB.option_type_sem (SX.state_of_exp e) { SXP.system_of_exp_invariant rows e s })
   : Lemma (requires (
       let stp = eval_step rows row1 e s in
-      check_invariant (row1 :: rows) e PM.check_mode_valid /\
-      check_invariant          rows  e PM.check_mode_unknown /\
+      check_invariant PM.check_mode_valid   (row1 :: rows) e /\
+      check_invariant PM.check_mode_unknown          rows  e /\
       SB.option_prop_sem stp.chck.assumptions /\
       SB.option_prop_sem stp.chck.obligations))
     (ensures (
-      check_invariant (row1 :: rows) e PM.check_mode_unknown))
+      check_invariant PM.check_mode_unknown (row1 :: rows) e))
     (decreases e) =
   match e with
   | XBase b -> ()
@@ -126,8 +126,8 @@ let rec check_step_obl
     let s: SB.option_type_sem (SB.type_join (SX.state_of_exp e1) (SX.state_of_exp e2)) = s in
     check_step_obl rows row1 e1 (SB.type_join_fst s);
 
-    assert (check_invariant (row1' :: rows') e2 PM.check_mode_valid);
-    assert (check_invariant          rows'  e2 PM.check_mode_unknown);
+    assert (check_invariant PM.check_mode_valid   (row1' :: rows') e2);
+    assert (check_invariant PM.check_mode_unknown           rows'  e2);
 
   // todo assert stp.assumptions => stp2.assumptions
     step_XLet_obl' b e1 e2 rows row1 s;
@@ -174,12 +174,12 @@ and check_step_apps_obl
   (s: SB.option_type_sem (SX.state_of_exp_apps e) { SXP.system_of_exp_apps_invariant rows e s })
   : Lemma (requires (
       let stp = eval_step_apps rows row1 e f inp0 s in
-      check_apps_invariant (row1 :: rows) e PM.check_mode_valid /\
-      check_apps_invariant          rows  e PM.check_mode_unknown /\
+      check_apps_invariant PM.check_mode_valid  (row1 :: rows) e /\
+      check_apps_invariant PM.check_mode_unknown         rows  e /\
       SB.option_prop_sem stp.chck.assumptions /\
       SB.option_prop_sem stp.chck.obligations))
     (ensures (
-      check_apps_invariant (row1 :: rows) e PM.check_mode_unknown))
+      check_apps_invariant PM.check_mode_unknown (row1 :: rows) e))
     (decreases e) =
   match e with
   | XPrim _ -> ()
