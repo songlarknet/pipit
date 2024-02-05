@@ -29,17 +29,18 @@ module PM = Pipit.Prop.Metadata
 type cexp (t: table u#i u#j) (c: context t) (a: t.ty) = e: exp t c a { check_all PM.check_mode_valid e /\ sealed true e }
 type cexp_apps (t: table u#i u#j) (c: context t) (a: funty t.ty) = e: exp_apps t c a { check_all_apps PM.check_mode_valid e /\ sealed_apps true e }
 
-let bless (#a: ('t).ty) (#c: context 't) (e: cexp 't c a): cexp 't c a =
+let bless (#a: ('t).ty) (#c: context 't) (e: cexp 't c a { check_all PM.check_mode_unknown e }): cexp 't c a =
   let e' = bless e in
-  // TODO:ADMIT bless is sealed
-  coerce_eq (admit ()) e'
+  XCB.lemma_sealed_of_bless true e;
+  XCB.lemma_check_all_bless e;
+  e'
 
 (* Cannot yet prove this:
   this is used in the syntactic sugar, but not in the semantics.
 *)
 let close1 (#a #b: ('t).ty) (#c: context 't) (e: cexp 't c a) (x: C.var b): cexp 't (b :: c) a =
   let e' = close1 e x in
-  // TODO:ADMIT lemma close1 preserves validity
+  // AXIOM:ADMIT lemma close1 preserves validity
   coerce_eq (admit ()) e'
 
 (* Substitution does not preserve the "sealed-ness" of expressions: it could

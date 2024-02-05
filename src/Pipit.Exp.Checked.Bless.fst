@@ -13,9 +13,11 @@ module C  = Pipit.Context.Base
 module CR = Pipit.Context.Row
 module PM = Pipit.Prop.Metadata
 
+module List = FStar.List.Tot
+
 open FStar.Squash
 
-
+(*** Bindings and substitution ***)
 let rec lemma_bless_distributes_lift (#t: table) (#c: context t) (#t1: t.ty)
   (e1: exp t c t1)
   (ix: C.index_insert c)
@@ -94,6 +96,7 @@ and lemma_bless_distributes_subst_apps (#t: table) (#c: context t) (#t1: funty t
     lemma_bless_distributes_subst_apps f ix e2;
     lemma_bless_distributes_subst e ix e2
 
+(*** Bigstep properties ***)
 let rec lemma_bless_of_bigstep (#t: table) (#c: context t) (#a: t.ty) (#streams: list (row c)) (#e: exp t c a) (#v: t.ty_sem a) (hBS: bigstep streams e v):
   Tot (bigstep streams (bless e) v)
     (decreases hBS) =
@@ -124,6 +127,50 @@ and lemma_bless_of_bigstep_apps (#t: table) (#c: context t) (#a: funty t.ty) (#s
       (lemma_bless_of_bigstep_apps hBA)
       (lemma_bless_of_bigstep hB)
 
+
+let rec lemma_bigstep_of_bless (#t: table) (#c: context t) (#a: t.ty) (#streams: list (row c)) (#e: exp t c a) (#v: t.ty_sem a) (hBS: bigstep streams (bless e) v):
+  Tot (bigstep streams e v)
+    (decreases hBS) =
+  match e with
+  | XBase xb ->
+    let BSBase _ _ _ xb = hBS in
+    BSBase _ _ _ xb
+  | XApps ea ->
+    let BSApps s _ v hBA = hBS in
+    BSApps s ea v (lemma_bigstep_of_bless_apps hBA)
+  | XFby v e1 ->
+    (match hBS with
+    | BSFby1 s v _ ->
+      BSFby1 s v e1
+    | BSFbyS l p v0 v' _ hB ->
+      BSFbyS l p v0 v' e1 (lemma_bigstep_of_bless hB))
+  | XMu e1 ->
+    let BSMu s _ v hB = hBS in
+    lemma_bless_distributes_subst e1 0 (XMu e1);
+    BSMu s e1 v (lemma_bigstep_of_bless hB)
+  | XLet b e1 e2 ->
+    let BSLet s _ _ v hB = hBS in
+    lemma_bless_distributes_subst e2 0 e1;
+    BSLet s e1 e2 v (lemma_bigstep_of_bless hB)
+  | XCheck ps e1 ->
+    let BSCheck s _ _ v hB = hBS in
+    BSCheck s ps e1 v (lemma_bigstep_of_bless hB)
+  | XContract ps er eg eb ->
+    let BSContract s _ _ _ _ v hB = hBS in
+    BSContract s ps er eg eb v (lemma_bigstep_of_bless hB)
+
+and lemma_bigstep_of_bless_apps (#t: table) (#c: context t) (#a: funty t.ty) (#streams: list (row c)) (#e: exp_apps t c a) (#v: funty_sem t.ty_sem a) (hBS: bigstep_apps streams (bless_apps e) v):
+  Tot (bigstep_apps streams e v)
+    (decreases hBS) =
+  match e with
+  | XPrim p -> BSPrim streams p
+  | XApp f e ->
+    let BSApp s _ _ fv ev hBA hB = hBS in
+    BSApp s f e _ _
+      (lemma_bigstep_of_bless_apps hBA)
+      (lemma_bigstep_of_bless hB)
+
+
 let rec lemma_bless_of_bigstep_always (#t: table) (#c: context t) (streams: list (row c)) (e: exp t c t.propty):
   Lemma
     (requires (bigstep_always streams e))
@@ -139,19 +186,36 @@ let rec lemma_bless_of_bigstep_always (#t: table) (#c: context t) (streams: list
     lemma_bless_of_bigstep_always s' e;
     ()
 
-let lemma_bless_of_bigsteps_prop (#t: table) (#c: context t) (#a: t.ty)
+let rec lemma_bigsteps_of_bless (#t: table) (#c: context t) (#a: t.ty)
+  (streams: list (row c))
+  (e: exp t c a)
+  (vs: list (t.ty_sem a))
+  (hBS: bigsteps streams (bless e) vs)
+  : Tot (bigsteps streams e vs) (decreases hBS)
+  = match hBS with
+  | BSs0 _ -> BSs0 e
+  | BSsS rows _ vs row v hBSs hBS1 ->
+    let hBSs' = lemma_bigsteps_of_bless rows e vs hBSs in
+    let hBS1' = lemma_bigstep_of_bless hBS1 in
+    BSsS rows e vs row v hBSs' hBS1'
+
+
+let lemma_bigsteps_prop_of_bless (#t: table) (#c: context t) (#a: t.ty)
   (streams: list (row c))
   (e: exp t c a)
   (vs: list (t.ty_sem a)):
-  Lemma (ensures (
-    bigsteps_prop streams (bless e) vs ==>
-    bigsteps_prop streams e vs
-  ))
-  // TODO:ADMIT: easy, induction on bigsteps
-  // proving other direction is also easy but may not be necessary
-  = admit ()
+  Lemma
+    (requires (
+      bigsteps_prop streams (bless e) vs
+    ))
+    (ensures (
+      bigsteps_prop streams e vs
+    ))
+    =
+    bind_squash () (fun (hB: (bigsteps streams (bless e) vs)) ->
+      return_squash (lemma_bigsteps_of_bless streams e vs hB))
 
-
+(*** Checked semantics properties ***)
 let rec lemma_check_bless (#t: table) (#c: context t) (#a: t.ty) (streams: list (row c)) (e: exp t c a):
   Lemma
     (requires (
@@ -169,14 +233,14 @@ let rec lemma_check_bless (#t: table) (#c: context t) (#a: t.ty) (streams: list 
   | XMu e1 ->
     introduce forall (vs: list (t.ty_sem a) { bigsteps_prop streams (XMu (bless e1)) vs }). check PM.check_mode_valid (CR.extend1 vs streams) (bless e1)
     with (
-      lemma_bless_of_bigsteps_prop streams (XMu e1) vs;
+      lemma_bigsteps_prop_of_bless streams (XMu e1) vs;
       lemma_check_bless (CR.extend1 vs streams) e1
     )
   | XLet b e1 e2 ->
     lemma_check_bless streams e1;
     introduce forall (vs: list (t.ty_sem b) { bigsteps_prop streams (bless e1) vs }). check PM.check_mode_valid (CR.extend1 vs streams) (bless e2)
     with (
-      lemma_bless_of_bigsteps_prop streams e1 vs;
+      lemma_bigsteps_prop_of_bless streams e1 vs;
       lemma_check_bless (CR.extend1 vs streams) e2
     )
   | XCheck ps e1 ->
@@ -192,7 +256,7 @@ let rec lemma_check_bless (#t: table) (#c: context t) (#a: t.ty) (streams: list 
       bigstep_always (CR.extend1 vs streams) (bless eg) /\
       check PM.check_mode_valid (CR.extend1 vs streams) (bless eg)
     with (
-      lemma_bless_of_bigsteps_prop streams eb vs;
+      lemma_bigsteps_prop_of_bless streams eb vs;
       lemma_bless_of_bigstep_always (CR.extend1 vs streams) eg;
       lemma_check_bless (CR.extend1 vs streams) eg;
       ()
@@ -217,10 +281,43 @@ and lemma_check_bless_apps (#t: table) (#c: context t) (#a: funty t.ty) (streams
 
 
 let lemma_check_all_bless (#t: table u#i u#j) (#c: context t) (#a: t.ty) (e: exp t c a { check_all PM.check_mode_valid e /\ check_all PM.check_mode_unknown e }):
-  Lemma (ensures check_all PM.check_mode_valid (bless e))
-    [SMTPat (check_all PM.check_mode_valid (bless e))] =
+  Lemma (ensures check_all PM.check_mode_valid (bless e)) =
   introduce forall streams.
     check PM.check_mode_valid streams (bless e)
   with (
     lemma_check_bless streams e
   )
+
+(*** Sealed ***)
+let rec lemma_sealed_of_bless (#t: table) (#c: context t) (#a: t.ty)
+  (opts: bool)
+  (e: exp t c a)
+  : Lemma (ensures sealed opts (bless e))
+    (decreases e) =
+  match e with
+  | XBase _ -> ()
+  | XApps ea -> lemma_sealed_of_bless_apps opts ea
+  | XFby v e1' -> lemma_sealed_of_bless opts e1'
+  | XMu e1' ->
+    lemma_sealed_of_bless opts e1'
+  | XLet b e1' e2' ->
+    lemma_sealed_of_bless opts e1';
+    lemma_sealed_of_bless opts e2'
+  | XCheck s e1' ->
+    lemma_sealed_of_bless opts e1'
+  | XContract s r g b ->
+    lemma_sealed_of_bless opts r;
+    lemma_sealed_of_bless opts g;
+    lemma_sealed_of_bless false b
+
+and lemma_sealed_of_bless_apps (#t: table) (#c: context t) (#t1: funty t.ty)
+  (opts: bool)
+  (e1: exp_apps t c t1):
+    Lemma
+      (ensures sealed_apps opts (bless_apps e1))
+      (decreases e1) =
+  match e1 with
+  | XPrim p -> ()
+  | XApp f e ->
+    lemma_sealed_of_bless_apps opts f;
+    lemma_sealed_of_bless opts e
