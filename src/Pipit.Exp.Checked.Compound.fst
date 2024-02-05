@@ -42,9 +42,8 @@ let bless_contract (#a: ('t).ty) (#c: context 't) (r: cexp 't c ('t).propty) (g:
   let body = Pipit.Exp.Checked.Base.bless b in
   let e' = XContract PM.PSUnknown rely guar body in
   XCB.lemma_sealed_of_bless true g;
-  XCB.lemma_sealed_of_bless true b;
+  XCB.lemma_sealed_of_bless false b;
   XCB.lemma_check_all_bless_contract r g b;
-  // XCB.lemma_check_all_bless g;
   e'
 
 

@@ -14,6 +14,7 @@ module PM  = Pipit.Prop.Metadata
 // module SB  = Pipit.System.Base
 module SI  = Pipit.System.Ind
 module SX  = Pipit.System.Exp
+module SXCI  = Pipit.System.Exp.Check.Ind
 
 type contract (t: table) (c: context t) (a: t.ty) (rely: XCC.cexp t c t.propty) (guar: XCC.cexp t (a :: c) t.propty) =
   impl: XCC.cexp t c a { XC.contract_valid rely guar impl }
@@ -24,26 +25,13 @@ let contract_system_induct_k1' (#t: table) (#c: context t) (#a: t.ty) (r: XCC.ce
   SI.induct1 (SX.system_of_contract r g i)
 
 let exp_of_contract (#t: table) (#c: context t) (#a: t.ty) (#r: XCC.cexp t c t.propty) (#g: XCC.cexp t (a :: c) t.propty) (contr: contract t c a r g): XCC.cexp t c a =
-  // let rely = XCC.bless r in
-  let rely = r in
-  let guar = XC.bless g in
-  let impl = XC.bless contr in
-  let e = XContract PM.PSUnknown rely guar impl in
-  // TODO:ADMIT: requires contract_check
-  // assume (XC.contract_valid r g contr ==> XC.check_all PM.check_mode_valid e);
-  e
+  XCC.bless_contract r g contr
 
 let stream_of_contract1 (#t: table) (#a #b: t.ty) (#r: XCC.cexp t [a] t.propty) (#g: XCC.cexp t [b; a] t.propty) (contr: contract t [a] b r g): stream t a -> stream t b =
   stream_of_exp1 (exp_of_contract contr)
 
-// let stream_of_contract2 (#t: table) (#a #b #c: t.ty) (contr: _contract t [a; b] c { XC.contract_valid contr.rely contr.guar contr.impl }): stream t a -> stream t b -> stream t c =
-//   let rely = XCC.bless contr.rely in
-//   let guar = XCC.bless contr.guar in
-//   let impl = XCC.bless contr.impl in
-//   let e = XContract PM.PSUnknown rely guar impl in
-//   // TODO:ADMIT: requires contract_check
-//   assume (XC.check_all PM.check_mode_valid e);
-//   stream_of_exp2 e
+// let stream_of_contract2 (#t: table) (#a #b #c: t.ty) (contr: contract t [a; b] c { XC.contract_valid contr.rely contr.guar contr.impl }): stream t a -> stream t b -> stream t c =
+//   stream_of_exp2 (exp_of_contract contr)
 
 
 let exp_of_stream0 (#t: table) (#ty: t.ty) (e: stream t ty) : XCC.cexp t [] ty = exp_of_stream0 e
@@ -80,8 +68,9 @@ let lemma_check_system_induct_k1 (#t: table) (#c: context t) (#a: t.ty) (e: XCC.
         (ensures  (XC.check_all PM.check_mode_unknown e))
         [SMTPat (system_induct_k1 e)]
         =
-    // TODO:ADMIT: induction is sound
-    admit ()
+    // TODO:ADMIT: causality
+    assume (Pipit.Exp.Causality.causal e);
+    SXCI.induct1_sound_all e
 
 let lemma_check_system_induct_k (#t: table) (#c: context t) (#a: t.ty) (k: nat) (e: XCC.cexp t c a):
   Lemma (requires (system_induct_k k e))

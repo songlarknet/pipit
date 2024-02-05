@@ -170,8 +170,9 @@ let rec check_of_sealed
     ()
   | XContract ps er eg eb ->
     check_of_sealed rows er;
-    check_of_sealed rows eb;
     let rows' = CR.extend1 (XC.lemma_bigsteps_total_vs rows eb) rows in
+    assert (XB.bigstep_always rows' eg);
+    check_of_sealed rows eb;
     check_of_sealed rows' eg;
     introduce forall (vs: list (t.ty_sem a) { XB.bigsteps_prop rows eb vs }).
       XK.check PM.check_mode_unknown (CR.extend1 vs rows) eg

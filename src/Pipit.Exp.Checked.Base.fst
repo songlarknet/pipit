@@ -54,12 +54,11 @@ let rec check (#t: table u#i u#j) (#c: context t) (#a: t.ty)
     (bigstep_always rows rely ==>
       (forall (vs: list (t.ty_sem a) { bigsteps_prop rows body vs}).
         // If rely and we are in contract-check-definition mode, then guarantee is trues
-        (PM.prop_status_contains mode PM.PSValid ==>
-          bigstep_always (CR.extend1 vs rows) guar) /\
+        bigstep_always (CR.extend1 vs rows) guar /\
         // If rely is trues and any mode, then check sub-properties of guar
-        check mode (CR.extend1 vs rows) guar) /\
-      // If rely is trues and any mode, then check sub-properties of body
-      check mode rows body)
+        check mode (CR.extend1 vs rows) guar /\
+        // If rely is trues and any mode, then check sub-properties of body
+        check mode rows body))
 
 and check_apps (#t: table) (#c: context t) (#a: funty t.ty)
   (mode: PM.check_mode)

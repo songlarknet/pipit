@@ -250,15 +250,16 @@ let rec lemma_check_bless (#t: table) (#c: context t) (#a: t.ty) (streams: list 
   | XContract ps er eg eb ->
     lemma_bless_of_bigstep_always streams er;
     lemma_check_bless streams er;
-    lemma_check_bless streams eb;
 
     introduce forall (vs: list (t.ty_sem a) { bigsteps_prop streams (bless eb) vs }).
       bigstep_always (CR.extend1 vs streams) (bless eg) /\
-      check PM.check_mode_valid (CR.extend1 vs streams) (bless eg)
+      check PM.check_mode_valid (CR.extend1 vs streams) (bless eg) /\
+      check PM.check_mode_valid streams (bless eb)
     with (
       lemma_bigsteps_prop_of_bless streams eb vs;
       lemma_bless_of_bigstep_always (CR.extend1 vs streams) eg;
       lemma_check_bless (CR.extend1 vs streams) eg;
+      lemma_check_bless streams eb;
       ()
     )
 
@@ -300,61 +301,29 @@ let lemma_check_all_bless_contract (#t: table u#i u#j) (#c: context t) (#a: t.ty
       (forall (vs: list (t.ty_sem a) { bigsteps_prop rows (bless b) vs}).
         (PM.prop_status_contains PM.check_mode_valid PM.PSValid ==>
           bigstep_always (CR.extend1 vs rows) (bless g)) /\
-        check PM.check_mode_valid (CR.extend1 vs rows) (bless g)) /\
-      check PM.check_mode_valid rows (bless b))
+        check PM.check_mode_valid (CR.extend1 vs rows) (bless g) /\
+        check PM.check_mode_valid rows (bless b)))
   with (
     introduce bigstep_always rows r ==>
       (forall (vs: list (t.ty_sem a) { bigsteps_prop rows (bless b) vs}).
         (PM.prop_status_contains PM.check_mode_valid PM.PSValid ==>
           bigstep_always (CR.extend1 vs rows) (bless g)) /\
-        check PM.check_mode_valid (CR.extend1 vs rows) (bless g)) /\
-      check PM.check_mode_valid rows (bless b)
+        check PM.check_mode_valid (CR.extend1 vs rows) (bless g) /\
+        check PM.check_mode_valid rows (bless b))
     with pf. (
       introduce forall (vs: list (t.ty_sem a) { bigsteps_prop rows (bless b) vs}).
-        (PM.prop_status_contains PM.check_mode_valid PM.PSValid ==>
-          bigstep_always (CR.extend1 vs rows) (bless g)) /\
+        bigstep_always (CR.extend1 vs rows) (bless g) /\
         check PM.check_mode_valid (CR.extend1 vs rows) (bless g) /\
         check PM.check_mode_valid rows (bless b)
       with (
         lemma_bigsteps_prop_of_bless rows b vs;
-        assert (check PM.check_mode_valid rows r);
-        assert (check PM.check_mode_valid rows b);
-        assert (check PM.check_mode_valid (CR.extend1 vs rows) g);
-        assert (bigstep_always rows r);
-
-        assert (check PM.check_mode_unknown rows b);
-        assert (check PM.check_mode_unknown (CR.extend1 vs rows) g);
         assert (bigstep_always (CR.extend1 vs rows) g);
-
         lemma_check_bless rows b;
         lemma_check_bless (CR.extend1 vs rows) g;
-        assert (check PM.check_mode_valid rows (bless b));
-
-        lemma_bless_of_bigstep_always (CR.extend1 vs rows) g;
-        assert (bigstep_always (CR.extend1 vs rows) (bless g));
-        assert (check PM.check_mode_valid (CR.extend1 vs rows) (bless g));
-        assert (check PM.check_mode_valid rows (bless b));
-        ()
-      );
-      assume (exists (vs: list (t.ty_sem a)). bigsteps_prop rows (bless b) vs);
-      assert (check PM.check_mode_valid rows (bless b));
-      ()
+        lemma_bless_of_bigstep_always (CR.extend1 vs rows) g
+      )
     )
-    // lemma_check_bless streams e
   )
-
-  // forall (streams: list (row c)).
-  // forall (vs: list (t.ty_sem a) { bigsteps_prop streams body vs }).
-  // check PM.check_mode_valid streams rely ==>
-  // check PM.check_mode_valid streams body ==>
-  // check PM.check_mode_valid (CR.extend1 vs streams) guar ==>
-  // bigstep_always streams rely ==>
-  //   // We don't need to check unknown properties in the rely: they will be
-  //   // checked at instantiation time.
-  //   (// check PM.check_mode_unknown streams rely /\
-  //   check PM.check_mode_unknown streams body /\
-  //   check PM.check_mode_unknown (CR.extend1 vs streams) guar /\
-  //   bigstep_always (CR.extend1 vs streams) guar)
 
 
 (*** Sealed ***)
