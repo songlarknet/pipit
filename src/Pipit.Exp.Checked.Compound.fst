@@ -72,7 +72,7 @@ let lemma_check_XBase
   (b: exp_base t c a):
   Lemma (check_all m (XBase b))
     [SMTPat (check_all m (XBase b))]
-    = admit ()
+    = ()
 
 let lemma_check_XFby
   (#t: table) (#c: context t) (#a: t.ty)
@@ -81,7 +81,7 @@ let lemma_check_XFby
   (e: exp t c a { check_all m e }):
   Lemma (check_all m (XFby v e))
     [SMTPat (check_all m (XFby v e))]
-    = admit ()
+    = ()
 
 let lemma_check_XPrim
   (#t: table) (#c: context t)
@@ -89,7 +89,7 @@ let lemma_check_XPrim
   (p: t.prim):
   Lemma (check_all_apps m (XPrim #t #c p))
     [SMTPat (check_all_apps m (XPrim #t #c p))]
-    = admit ()
+    = ()
 
 let lemma_check_XApp
   (#t: table) (#c: context t) (#arg: t.ty) (#res: funty t.ty)
@@ -98,7 +98,7 @@ let lemma_check_XApp
   (e: exp      t c        arg      { check_all      m e }):
   Lemma (check_all_apps m (XApp f e))
     [SMTPat (check_all_apps m (XApp f e))]
-    = admit ()
+    = ()
 
 let lemma_check_XApps
   (#t: table) (#c: context t) (#arg: t.ty)
@@ -106,7 +106,7 @@ let lemma_check_XApps
   (f: exp_apps t c (FTVal arg) { check_all_apps m f }):
   Lemma (check_all m (XApps f))
     [SMTPat (check_all m (XApps f))]
-    = admit ()
+    = ()
 
 let lemma_check_XApp1
   (#t: table) (#c: context t) (#arg: t.ty) (#res: funty t.ty)
@@ -115,7 +115,7 @@ let lemma_check_XApp1
   (e: exp      t c        arg      { check_all      m e }):
   Lemma (check_all_apps m (XApp #t #c #arg #res (XPrim p) e))
     // [SMTPat (check_all_apps m (XApp f e))]
-    = admit ()
+    = ()
 
 let lemma_check_XApps1
   (#t: table) (#c: context t) (#arg #res: t.ty)
@@ -124,9 +124,7 @@ let lemma_check_XApps1
   (e: exp      t c        arg      { check_all      m e }):
   Lemma (check_all m (XApps #t #c #res (XApp (XPrim p) e)))
     // [SMTPat (check_all m (XApps #t #c #res (XApp (XPrim p) e)))]
-    =
-      lemma_check_XApp1 #t #c #arg #(FTVal res) m p e;
-      admit ()
+    = ()
 
 let lemma_check_XApps2
   (#t: table) (#c: context t) (#arg1 #arg2 #res: t.ty)
@@ -136,9 +134,7 @@ let lemma_check_XApps2
   (e2: exp      t c        arg2     { check_all      m e2 }):
   Lemma (check_all m (XApps #t #c #res (XApp (XApp (XPrim p) e1) e2)))
     // [SMTPat (check_all m (XApps #t #c #res (XApp (XPrim p) e)))]
-    =
-      lemma_check_XApp1 #t #c #arg1 #(FTFun arg2 (FTVal res)) m p e1;
-      admit ()
+    = ()
 
 let lemma_check_XApps3
   (#t: table) (#c: context t) (#arg1 #arg2 #arg3 #res: t.ty)
@@ -148,26 +144,25 @@ let lemma_check_XApps3
   (e2: exp      t c        arg2     { check_all      m e2 })
   (e3: exp      t c        arg3     { check_all      m e3 }):
   Lemma (check_all m (XApps #t #c #res (XApp (XApp (XApp (XPrim p) e1) e2) e3)))
-    // [SMTPat (check_all m (XApps #t #c #res (XApp (XPrim p) e)))]
-    =
-      // lemma_check_XApp1 #t #c #arg1 #(FTFun arg2 (FTFun arg3 (FTVal res))) m p e1;
-      admit ()
+    = ()
 
 // TODO:ADMIT: proofs, relatively simple
-assume val lemma_check_XLet
+let lemma_check_XLet
   (#t: table) (#c: context t) (#a #b: t.ty)
   (m: PM.check_mode)
   (e1: exp t c a { check_all m e1 })
   (e2: exp t (a :: c) b { check_all m e2 }):
   Lemma (check_all m (XLet a e1 e2))
     [SMTPat (check_all m (XLet a e1 e2))]
+    = ()
 
-assume val lemma_check_XMu
+let lemma_check_XMu
   (#t: table) (#c: context t) (#a: t.ty)
   (m: PM.check_mode)
   (e1: exp t (a :: c) a { check_all m e1 }):
   Lemma (check_all m (XMu e1))
     [SMTPat (check_all m (XMu e1))]
+    = ()
 
 // assume val lemma_check_valid_XContract_unknown
 //   (#t: table) (#c: context t) (#a: t.ty)
@@ -177,8 +172,9 @@ assume val lemma_check_XMu
 //   Lemma (check_all PM.check_mode_valid (XContract PM.contract_status_unknown er eg ei))
 //     [SMTPat (check_all PM.check_mode_valid (XContract PM.contract_status_unknown er eg ei))]
 
-assume val lemma_check_valid_XCheck_unknown
+let lemma_check_valid_XCheck_unknown
   (#t: table) (#c: context t)
   (e1: exp t c t.propty { check_all PM.check_mode_valid e1 }):
   Lemma (check_all PM.check_mode_valid (XCheck PM.PSUnknown e1))
     [SMTPat (check_all PM.check_mode_valid (XCheck PM.PSUnknown e1))]
+    = ()
