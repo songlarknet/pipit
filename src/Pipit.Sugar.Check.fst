@@ -14,7 +14,7 @@ module PM  = Pipit.Prop.Metadata
 // module SB  = Pipit.System.Base
 module SI  = Pipit.System.Ind
 module SX  = Pipit.System.Exp
-module SXCI  = Pipit.System.Exp.Check.Ind
+module SXCE  = Pipit.System.Exp.Check.Entailment
 
 type contract (t: table) (c: context t) (a: t.ty) (rely: XCC.cexp t c t.propty) (guar: XCC.cexp t (a :: c) t.propty) =
   impl: XCC.cexp t c a { XC.contract_valid rely guar impl }
@@ -68,9 +68,10 @@ let lemma_check_system_induct_k1 (#t: table) (#c: context t) (#a: t.ty) (e: XCC.
         (ensures  (XC.check_all PM.check_mode_unknown e))
         [SMTPat (system_induct_k1 e)]
         =
-    // TODO:ADMIT: causality
+    // TODO:ADMIT: see note CAUSALITY-ADMIT
     assume (Pipit.Exp.Causality.causal e);
-    SXCI.induct1_sound_all e
+    SI.induct1_sound_all (SX.system_of_exp e);
+    SXCE.entailment_all e
 
 let lemma_check_system_induct_k (#t: table) (#c: context t) (#a: t.ty) (k: nat) (e: XCC.cexp t c a):
   Lemma (requires (system_induct_k k e))
@@ -80,10 +81,43 @@ let lemma_check_system_induct_k (#t: table) (#c: context t) (#a: t.ty) (k: nat) 
     // TODO:ADMIT: induction is sound
     admit ()
 
-let lemma_check_contract_system_induct_k1' (#t: table) (#c: context t) (#a: t.ty) (r: XCC.cexp t c t.propty) (g: XCC.cexp t (a :: c) t.propty) (i: XCC.cexp t c a):
-  Lemma (requires (contract_system_induct_k1' r g i))
-        (ensures  (XC.contract_valid r g i))
-        [SMTPat (contract_system_induct_k1' r g i)]
+let lemma_check_contract_system_induct_k1' (#t: table) (#c: context t) (#a: t.ty) (r: XCC.cexp t c t.propty) (g: XCC.cexp t (a :: c) t.propty) (b: XCC.cexp t c a):
+  Lemma (requires (contract_system_induct_k1' r g b))
+        (ensures  (XC.contract_valid r g b))
+        [SMTPat (contract_system_induct_k1' r g b)]
         =
-    // TODO:ADMIT: induction is sound
-    admit ()
+    // TODO:ADMIT: see note: CAUSALITY-ADMIT
+    assume (Pipit.Exp.Causality.causal r);
+    assume (Pipit.Exp.Causality.causal g);
+    assume (Pipit.Exp.Causality.causal b);
+    SI.induct1_sound_all (SX.system_of_contract r g b);
+    SXCE.entailment_contract_all r g b
+
+(***
+  Note: CAUSALITY-ADMIT:
+    We currently assume causality in the proof of check-correctness, as the
+    proofs of correctness only apply to causal expressions.
+    However, to check if an expression is causal we need to descend into the
+    whole program. This eagerness is problematic when we want to do compositional
+    proofs where we know that a sub-expression satisfies some contract, but do
+    not know its exact contents. Consider the FIR example, which takes a
+    non-streaming list of constant values, and recursively builds an FIR filter:
+
+    > let rec fir (coeffs: list real) (input: stream real): stream real =
+    >   match coeffs with
+    >   | [] -> zero
+    >   | c :: coeffs' -> (input * c) + fir coeffs' (0.0R `fby` input)
+
+    In the recursive construction step, we can't eagerly evaluate the
+    subexpression `fir coeffs'` to check whether it is causal, because we
+    don't have a concrete value for `coeffs'`.  Requiring causality here makes
+    it difficult to prove properties about these kinds of recursive programs.
+
+    This assumption isn't a huge problem in practice, as the code generation
+    requires causality. By the time we check the top-level expression, we will
+    have a concrete value for coeffs, so we can check the concrete expression.
+
+    In the future, we hope to solve this by enforcing causality at an earlier
+    stage in the source langugage, but this requires some changes.
+
+ ***)

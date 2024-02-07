@@ -1,3 +1,4 @@
+(* If the translated system's obligations hold, then the invariant holds *)
 module Pipit.System.Exp.Check.Obligations
 
 open Pipit.Prim.Table
@@ -58,33 +59,6 @@ let step_XLet_obl' (#t: table) (#c: context t) (#a b: t.ty)
     assert (stp.chck == stp1.chck `SB.checks_join` stp2.chck);
     ()
 
-
-// let step_XApp_obl' (#t: table) (#c: context t) (#ft: funty t.ty) (#a: t.ty) (#res #inp: Type0)
-//   (ef: exp_apps t c (FTFun a ft) { XC.causal_apps ef })
-//   (ea: exp      t c a  { XC.causal      ea })
-//   (rows: list (row c))
-//   (row1: row c)
-//   (f: funty_sem t.ty_sem ft -> inp -> res)
-//   (inp0: inp)
-//   (s: SB.option_type_sem (SB.type_join (SX.state_of_exp ea) (SX.state_of_exp_apps ef)) { SXP.system_of_exp_apps_invariant rows (XApp ef ea) s })
-//   : Lemma
-//     (requires (
-//       let stp = eval_step_apps rows row1 (XApp ef ea) f inp0 s in
-
-//       SB.option_prop_sem stp.chck.assumptions /\
-//       SB.option_prop_sem stp.chck.obligations
-//   ))
-//     (ensures (
-//       let f' = SX.system_of_exp_apps_distr f in
-//       let stpa = eval_step rows row1 ea (SB.type_join_fst s) in
-//       let stpf = eval_step_apps rows row1 ef f' (stpa.v, inp0) (SB.type_join_snd s) in
-//       SB.option_prop_sem stpf.chck.assumptions /\
-//       SB.option_prop_sem stpa.chck.assumptions /\
-//       SB.option_prop_sem stpf.chck.obligations /\
-//       SB.option_prop_sem stpa.chck.obligations
-//   ))
-//   = ()
-
 let rec check_step_obl
   (#t: table) (#c: context t) (#a: t.ty)
   (rows: list (row c))
@@ -129,14 +103,7 @@ let rec check_step_obl
     assert (check_invariant PM.check_mode_valid   (row1' :: rows') e2);
     assert (check_invariant PM.check_mode_unknown           rows'  e2);
 
-  // todo assert stp.assumptions => stp2.assumptions
     step_XLet_obl' b e1 e2 rows row1 s;
-    // let stp  = eval_step rows' row1' e2 (SB.type_join_snd s) in
-    // let stp1 = eval_step rows' row1' e2 (SB.type_join_snd s) in
-    // let stp2 = eval_step rows' row1' e2 (SB.type_join_snd s) in
-    // assert (stp.chck == stp1.chck `SB.checks_join` stp2.chck);
-    // assert (SB.option_prop_sem stp.chck.assumptions ==> SB.option_prop_sem stp2.chck.assumptions);
-    // assert (SB.option_prop_sem stp.chck.obligations ==> SB.option_prop_sem stp2.chck.obligations);
 
     check_step_obl rows' row1' e2 (SB.type_join_snd s);
     ()
@@ -186,14 +153,7 @@ and check_step_apps_obl
   | XApp e1 e2 ->
     let f' = SX.system_of_exp_apps_distr f in
     let s: SB.option_type_sem (SB.type_join (SX.state_of_exp e2) (SX.state_of_exp_apps e1)) = s in
-    // step_XApp_obl' e1 e2 rows row1 f inp0 s;
     check_step_obl rows row1 e2 (SB.type_join_fst s);
-
-    // let stp  = eval_step_apps rows row1 e f inp0 s in
     let stp2 = eval_step      rows row1 e2 (SB.type_join_fst s) in
-    // let stp1 = eval_step_apps rows row1 e1 f' (stp2.v, inp0) (SB.type_join_snd s) in
-
-    // assert (stp.chck == (stp1.chck `SB.checks_join` stp2.chck));
-
     check_step_apps_obl rows row1 e1 f' (stp2.v, inp0) (SB.type_join_snd s);
     ()

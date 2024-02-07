@@ -1,4 +1,5 @@
-module Pipit.System.Exp.Check.Sound
+(* Translating between Pipit.Exp checked semantics and system invariants *)
+module Pipit.System.Exp.Check.Invariants
 
 open Pipit.Prim.Table
 open Pipit.Exp.Base
@@ -19,7 +20,6 @@ module SI  = Pipit.System.Ind
 module XB  = Pipit.Exp.Bigstep
 module XC  = Pipit.Exp.Causality
 module XK  = Pipit.Exp.Checked.Base
-// module XKS = Pipit.Exp.Checked.Subst
 
 module PM = Pipit.Prop.Metadata
 

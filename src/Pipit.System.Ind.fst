@@ -3,17 +3,63 @@ module Pipit.System.Ind
 
 open Pipit.System.Base
 
-let rec prop_for_all (l: list prop): prop =
- match l with
- | [] -> True
- | p :: ps -> p /\ prop_for_all ps
+module List = FStar.List.Tot
 
-// let system_holds (#input #state #value: Type) (t: system input state value): prop =
-//   forall (inputs: list (input & value)) (s: state).
-//     Cons? inputs            ==>
-//     system_stepn t inputs s ==>
-//     t.chck.assumptions s ==>
-//     t.chck.obligations s
+(*** Semantics of transition system checks ***)
+
+(* An execution step of system *)
+let rec system_step_result
+  (#input #result: Type)
+  (#oracle #state: option Type)
+  (t: system input oracle state result)
+  (inputs: list (input & option_type_sem oracle) { Cons? inputs })
+  : step_result state result =
+  match inputs with
+  | [i, o] -> t.step i o t.init
+  | (i, o) :: inputs' ->
+    let pre = system_step_result t inputs' in
+    let stp = t.step i o pre.s in
+    stp
+
+(* Check whether preconditions hold now and in past *)
+let rec system_assumptions_sofar
+  (#input #result: Type)
+  (#oracle #state: option Type)
+  (t: system input oracle state result)
+  (inputs: list (input & option_type_sem oracle))
+  : prop =
+  match inputs with
+  | []  -> True
+  | (i, o) :: inputs' ->
+    let pre = system_assumptions_sofar t inputs' in
+    let stp = system_step_result t inputs in
+    pre /\ option_prop_sem stp.chck.assumptions
+
+(* Check whether postconditions hold at specific point in time *)
+let system_holds
+  (#input #result: Type)
+  (#oracle #state: option Type)
+  (t: system input oracle state result)
+  (inputs: list (input & option_type_sem oracle))
+  : prop =
+  match inputs with
+  | [] -> True
+  | (i, o) :: inputs' ->
+    let stp = system_step_result t inputs  in
+    system_assumptions_sofar t inputs ==> option_prop_sem stp.chck.obligations
+
+(* Check whether system always holds *)
+let system_holds_all
+  (#input #result: Type)
+  (#oracle #state: option Type)
+  (t: system input oracle state result)
+  : prop =
+  forall (inputs: list (input & option_type_sem oracle)).
+    system_holds t inputs
+
+
+
+(*** Standard induction (1-induction) ***)
 
 let base_case (#input #value: Type) (#oracle #state: option Type) (t: system input oracle state value): prop =
   forall (i: input) (o: option_type_sem oracle).
@@ -21,15 +67,41 @@ let base_case (#input #value: Type) (#oracle #state: option Type) (t: system inp
     option_prop_sem stp.chck.assumptions ==>
     option_prop_sem stp.chck.obligations
 
-// TODO: change base case for k to split out to separate checks for each length, eg
-// base_case_k 3 =
-//   (forall s0. t.init s0 ==> t.chck.assumptions s0 ==> t.chck.obligations s0) /\
-//   (forall s0 s1. t.init s0 ==> t.step s0 s1 ==> t.chck.assumptions s0 ==> t.chck.assumptions s1 ==> t.chck.obligations s1) /\
-//   (forall s0 s1 s2. t.init s0 ==> t.step s0 s1 ==> t.step s1 s2 ==> t.chck.assumptions s0 ==> t.chck.assumptions s1 ==> t.chck.assumptions s2 ==> t.chck.obligations s2)
-// this makes the proof obligation larger, but should make the soundness proof easier as we won't be assuming that step is always defined (which it isn't for contracts with questionable assumptions)
-// would it make sense to spell out step requirements explicitly? eg,
-//   forall s0. t.chck.assumptions s0 ==> exists s1. t.step s0 s1
-// but this quantifier alternation looks like it would be difficult to solve automatically
+let step_case (#input #value: Type) (#oracle #state: option Type) (t: system input oracle state value): prop =
+  forall (i0 i1: input) (o0 o1: option_type_sem oracle) (s0: option_type_sem state).
+    let stp1 = t.step i0 o0 s0 in
+    let stp2 = t.step i1 o1 stp1.s in
+    option_prop_sem stp1.chck.assumptions ==>
+    option_prop_sem stp1.chck.obligations ==>
+    option_prop_sem stp2.chck.assumptions ==>
+    option_prop_sem stp2.chck.obligations
+
+let induct1 (#input #value: Type) (#oracle #state: option Type)
+  (t: system input oracle state value)
+  : prop =
+    base_case t /\ step_case t
+
+let rec induct1_sound (#input #value: Type) (#oracle #state: option Type)
+  (t: system input oracle state value)
+  (inputs: list (input & option_type_sem oracle))
+  : Lemma
+    (requires (induct1 t))
+    (ensures  (system_holds t inputs)) =
+  match inputs with
+  | [] -> ()
+  | (i, o)::inputs' ->
+    induct1_sound t inputs'
+
+let induct1_sound_all (#input #value: Type) (#oracle #state: option Type)
+  (t: system input oracle state value)
+  : Lemma
+    (requires (induct1 t))
+    (ensures  (system_holds_all t)) =
+  introduce forall (inputs: list (input & option_type_sem oracle)). system_holds t inputs
+  with induct1_sound t inputs
+
+(*** K-induction ***)
+
 let rec base_case_k' (k: nat) (#input #value: Type) (#oracle #state: option Type) (t: system input oracle state value) (s: option_type_sem state) (check: prop -> prop): prop =
   match k with
   | 0 -> check True
@@ -43,15 +115,6 @@ let rec base_case_k' (k: nat) (#input #value: Type) (#oracle #state: option Type
 
 let base_case_k (k: nat) (#input #value: Type) (#oracle #state: option Type) (t: system input oracle state value): prop =
   base_case_k' k t t.init (fun r -> r)
-
-let step_case (#input #value: Type) (#oracle #state: option Type) (t: system input oracle state value): prop =
-  forall (i0 i1: input) (o0 o1: option_type_sem oracle) (s0: option_type_sem state).
-    let stp1 = t.step i0 o0 s0 in
-    let stp2 = t.step i1 o1 stp1.s in
-    option_prop_sem stp1.chck.assumptions ==>
-    option_prop_sem stp1.chck.obligations ==>
-    option_prop_sem stp2.chck.assumptions ==>
-    option_prop_sem stp2.chck.obligations
 
 let rec step_case_k' (k: nat) (#input #value: Type) (#oracle #state: option Type)  (t: system input oracle state value) (s: option_type_sem state) (chck: checks): prop =
   match k with
@@ -67,159 +130,44 @@ let step_case_k (k: nat) (#input #value: Type) (#oracle #state: option Type)  (t
     let stp = t.step i o s in
     step_case_k' k t stp.s stp.chck
 
-let induct1 (#input #value: Type) (#oracle #state: option Type)
-  (t: system input oracle state value): prop =
-    base_case t /\ step_case t
-
-// let rec induct1_sound' (#input #state #value: Type)
-//   (t: system input state value)
-//   (inputs: list (input & value))
-//   (s': state):
-//     Lemma
-//         (requires system_stepn t inputs s' /\ induct1 t /\ Cons? inputs)
-//         (ensures all_checks_hold t s')
-//         (decreases inputs) =
-//   match inputs with
-//   | [] -> ()
-//   | [(i, v)] -> ()
-//   | (i1,v1) :: (i0,v0) :: ivs ->
-//     eliminate exists (s0: state) (s1: state).
-//       system_stepn t ivs s0 /\
-//       t.step i0 s0 s1 v0 /\
-//       t.step i1 s1 s' v1
-//     returns all_checks_hold t s'
-//     with h.
-//       (induct1_sound' t ((i0, v0) :: ivs) s1)
-
-// let induct1_sound (#input #state #value: Type)
-//   (t: system input state value):
-//     Lemma
-//         (requires induct1 t)
-//         (ensures system_holds t) =
-//   introduce forall (inputs: list (input & value) { Cons? inputs }) (s: state { system_stepn t inputs s }).
-//     (Cons? inputs) ==>
-//     system_stepn t inputs s ==>
-//     all_checks_hold t s
-//   with
-//     (induct1_sound' t inputs s)
-
 let induct_k (k: nat) (#input #value: Type) (#oracle #state: option Type)
   (t: system input oracle state value): prop =
     base_case_k k t /\ step_case_k k t
 
-(* The current formulation of the base case makes it difficult to prove
-   that k-induction is sound. The issue is that base_case_k 2 has the shape:
-   >  forall s0 s1 s2.
-   >    t.init s0 /\
-   >    t.step s0 s1 /\
-   >    t.step s1 s2 /\
-   >    all_checks_hold s1 /\
-   >    all_checks_hold s2
 
-   To prove induction is sound assuming base_case_k and step_case_k,
-   you want to show that for a single step s0 to s1, the checks
-   hold. But what do you instantiate s2 to in the above? This would
-   be easier for deterministic systems.
-   We could restate base_case_k 2 as something like:
+let rec induct2_sound (#input #value: Type) (#oracle #state: option Type)
+  (t: system input oracle state value)
+  (inputs: list (input & option_type_sem oracle))
+  : Lemma
+    (requires (induct_k 2 t))
+    (ensures  (system_holds t inputs)) =
+  match inputs with
+  | [] -> ()
+  | [i, o] -> ()
+  | [i, o; i', o'] ->
+    normalize_term_spec (base_case_k 2 t);
+    ()
+  | io2 :: io1 :: io0 :: inputs' ->
+    induct2_sound t (io1 :: io0 :: inputs');
+    induct2_sound t (io0 :: inputs');
+    induct2_sound t (inputs');
+    let stp0 = system_step_result t (io0 :: inputs') in
+    let stp1 = system_step_result t (io1 :: io0 :: inputs') in
+    let stp2 = system_step_result t (io2 :: io1 :: io0 :: inputs') in
+    introduce system_assumptions_sofar t inputs ==> option_prop_sem stp2.chck.obligations
+    with pf. (
+      assert (step_case_k' 2 t stp0.s stp0.chck);
+      normalize_term_spec (step_case_k' 2 t stp0.s stp0.chck);
+      ()
+    );
+    ()
 
-   >  forall s0 s1.
-   >    t.init s0 /\
-   >    t.step s0 s1 /\
-   >    all_checks_hold s1 /\
-   >    forall s2.
-   >      t.step s1 s2 /\
-   >      all_checks_hold s2
+let induct2_sound_all (#input #value: Type) (#oracle #state: option Type)
+  (t: system input oracle state value)
+  : Lemma
+    (requires (induct_k 2 t))
+    (ensures  (system_holds_all t)) =
+  introduce forall (inputs: list (input & option_type_sem oracle)). system_holds t inputs
+  with induct2_sound t inputs
 
-   But proving this for user programs would require the pipit_simplify tactic to
-   split apart the conjunctions, which it doesn't do right now.
-*)
-
-// let rec induct2_sound' (#input #state #value: Type)
-//   (t: system input state value)
-//   (inputs: list (input & value))
-//   (s': state):
-//     Lemma
-//         (requires system_stepn t inputs s' /\ induct_k 2 t)
-//         (ensures Nil? inputs \/ all_checks_hold t s')
-//         (decreases inputs) =
-//   match inputs with
-//   | [] -> ()
-//   | [(i0, v0)] -> ()
-//   | [(i0, v0); (i1, v1)] -> ()
-//   | (i2,v2) :: (i1,v1) :: (i0,v0) :: ivs ->
-//     eliminate exists (s0: state) (s1: state) (s2: state).
-//       system_stepn t ivs s0 /\
-//       t.step i0 s0 s1 v0 /\
-//       t.step i1 s1 s2 v1 /\
-//       t.step i2 s2 s' v2
-//     returns all_checks_hold t s'
-//     with h.
-//       (induct2_sound' t ((i1, v1) :: (i0, v0) :: ivs) s2;
-//       induct2_sound' t ((i0, v0) :: ivs) s1;
-//       ())
-
-// let induct2_sound (#input #state #value: Type)
-//   (t: system input state value):
-//     Lemma
-//         (requires induct_k 2 t)
-//         (ensures system_holds t) =
-//   introduce forall (inputs: list (input & value) { Cons? inputs }) (s: state { system_stepn t inputs s }).
-//     (Cons? inputs) ==>
-//     system_stepn t inputs s ==>
-//     all_checks_hold t s
-//   with
-//     (induct2_sound' t inputs s)
-
-// let induct_k_sound (k: nat) (#input #state #value: Type)
-//   (t: system input state value):
-//     Lemma
-//         (requires induct_k k t)
-//         (ensures system_holds t) =
-//   introduce forall (inputs: list (input & value) { Cons? inputs }) (s: state { system_stepn t inputs s }).
-//     (Cons? inputs) ==>
-//     system_stepn t inputs s ==>
-//     all_checks_hold t s
-//   with
-//     // TODO inductk_sound
-//     admit ()
-
-
-(* Shelved: proof that properties proved for transition systems apply to original expression *)
-// open Pipit.Exp.Base
-// open Pipit.Exp.Bigstep
-// open Pipit.Exp.Causality
-
-// open Pipit.System.Exp
-
-// let exp_valid (e: exp) (vars: nat) = wf e vars /\ causal e
-
-// let exp_for_all (e: exp) (vars: nat): prop =
-//   forall (len: nat)
-//     (inputs: C.table len vars)
-//     (vs: C.vector value len)
-//     (hBS: bigstep inputs e vs).
-//     List.Tot.for_all (fun r -> r <> 0) vs
-
-// let prop_of_value (v: value): prop = ~ (v = 0)
-
-// let rec prop_for_all__prop_of_bool (vs: list value):
-//   Lemma (requires prop_for_all (C.vector_map #(List.Tot.length vs) prop_of_value vs))
-//         (ensures List.Tot.for_all (fun r -> r <> 0) vs) =
-
-// let induct1_exp (#vars: nat)
-//   (e: exp { exp_valid e vars }):
-//   Lemma (requires induct1 (system_map prop_of_value (system_of_exp e vars)))
-//         (ensures exp_for_all e vars) =
-//   introduce forall (len: nat) (inputs: C.vector (C.row vars) len) (vs: C.vector bool len) (hBS: bigstep (C.Table inputs) e vs). List.Tot.for_all (fun r -> r) vs
-//   with
-//   begin
-//     system_eval_complete e (C.Table inputs) vs hBS;
-//     eliminate exists (s': (state_of_exp e)). system_stepn (system_of_exp e vars) inputs vs s'
-//     returns _
-//     with hEx.
-//     begin
-//         system_map_sem prop_of_bool (system_of_exp e vars) inputs vs s';
-//         induct1_sound (system_map prop_of_bool (system_of_exp e vars)) inputs (C.vector_map prop_of_bool vs) s';
-//         prop_for_all__prop_of_bool vs
-//     end
-//   end
+(* TODO: still require proof of general k-induction *)

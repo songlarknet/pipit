@@ -1,3 +1,6 @@
+(* Properties about checks on translated systems. The main theorem is that any
+  checks we prove on the translated system also hold on the original
+  expression. See Pipit.System.Exp.Check.Entailment. *)
 module Pipit.System.Exp.Check.Base
 
 open Pipit.Prim.Table
@@ -6,6 +9,7 @@ open Pipit.Exp.Base
 module CR  = Pipit.Context.Row
 
 module SB  = Pipit.System.Base
+module SI  = Pipit.System.Ind
 module SX  = Pipit.System.Exp
 module SXP = Pipit.System.Exp.Properties
 
@@ -148,3 +152,65 @@ let eval_step_apps
   let orcl = SXP.step_apps_oracle (row1 :: rows) e in
   SXP.invariant_step_apps rows row1 e f inp0 s;
   (SX.system_of_exp_apps e f).step (inp0, row1) orcl s
+
+
+let rec inputs_with_oracles
+  (#t: table) (#c: context t) (#a: t.ty)
+  (rows: list (row c))
+  (e: exp t c a { XC.causal e })
+  : list (row c & SB.option_type_sem (SX.oracle_of_exp e)) =
+  match rows with
+  | [] -> []
+  | i :: rows' ->
+    let o = SXP.step_oracle rows e in
+    let ios = inputs_with_oracles rows' e in
+    (i, o) :: ios
+
+let rec inputs_with_oracles_contract_definition
+  (#t: table) (#c: context t) (#a: t.ty)
+  (rows: list (row c))
+  (r: exp t       c  t.propty { XC.causal r })
+  (g: exp t (a :: c) t.propty { XC.causal g })
+  (b: exp t       c         a { XC.causal b })
+  : list (row c & SB.option_type_sem (SX.oracle_of_contract_definition r g b)) =
+  match rows with
+  | [] -> []
+  | i :: rows' ->
+    let vs = XC.lemma_bigsteps_total_vs rows b in
+    let o = SB.type_join_tup
+      (SXP.step_oracle rows r)
+      (SB.type_join_tup
+        (SXP.step_oracle (CR.extend1 vs rows) g)
+        (SXP.step_oracle rows b))
+    in
+    let ios = inputs_with_oracles_contract_definition rows' r g b in
+    (i, o) :: ios
+
+
+let rec system_holds_prefix
+  (#t: table) (#c: context t) (#a: t.ty)
+  (rows: list (row c))
+  (e: exp t c a { XC.causal e })
+  : prop =
+  match rows with
+  | [] -> True
+  | hd :: tl ->
+    SI.system_holds (SX.system_of_exp e) (inputs_with_oracles rows e) /\
+    system_holds_prefix tl e
+
+let rec system_holds_prefix_of_all
+  (#t: table) (#c: context t) (#a: t.ty)
+  (rows: list (row c))
+  (e: exp t c a { XC.causal e })
+  : Lemma
+    (requires (
+      SI.system_holds_all (SX.system_of_exp e)
+    ))
+    (ensures (
+      system_holds_prefix rows e
+    )) =
+  match rows with
+  | [] -> ()
+  | hd :: tl ->
+    system_holds_prefix_of_all tl e
+

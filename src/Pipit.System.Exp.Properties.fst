@@ -75,6 +75,28 @@ and system_of_exp_apps_invariant
     system_of_exp_apps_invariant rows e1 (SB.type_join_snd s) /\
     system_of_exp_invariant rows e2 (SB.type_join_fst s)
 
+let system_of_contract_invariant
+  (#t: table) (#c: context t) (#a: t.ty)
+  (rows: list (row c))
+  (r: exp t       c  t.propty { XC.causal r })
+  (g: exp t (a :: c) t.propty { XC.causal g })
+  (b: exp t       c         a { XC.causal b })
+  (s: SB.option_type_sem (SX.state_of_contract_definition r g b))
+  : prop =
+  let s: SB.option_type_sem
+    (SB.type_join
+      (SX.state_of_exp r)
+      (SB.type_join
+        (SX.state_of_exp g)
+        (SX.state_of_exp b)))
+    = s in
+  let vs = XC.lemma_bigsteps_total_vs rows b in
+  let sr = SB.type_join_fst s in
+  let sg = SB.type_join_fst (SB.type_join_snd s) in
+  let sb = SB.type_join_snd (SB.type_join_snd s) in
+  system_of_exp_invariant rows r sr /\
+  system_of_exp_invariant (CR.extend1 vs rows) g sg /\
+  system_of_exp_invariant rows b sb
 
 let lemma_system_of_exp_apps_init_XApp
   (#t: table) (#c: context t) (#arg: t.ty) (#resfun: funty t.ty) (#res #inp: Type0)

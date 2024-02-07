@@ -1,3 +1,5 @@
+(* If the original expression's checked properties hold, then the translated
+  system's assumptions hold *)
 module Pipit.System.Exp.Check.Assumptions
 
 open Pipit.Prim.Table
