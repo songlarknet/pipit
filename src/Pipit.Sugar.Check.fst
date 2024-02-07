@@ -78,7 +78,8 @@ let lemma_check_system_induct_k (#t: table) (#c: context t) (#a: t.ty) (k: nat) 
         (ensures  (XC.check_all PM.check_mode_unknown e))
         [SMTPat (system_induct_k k e)]
         =
-    // TODO:ADMIT: induction is sound
+    // TODO:ADMIT: k-induction is sound
+    // We have proved 1-induction and 2-induction, but still need to prove general k-induction
     admit ()
 
 let lemma_check_contract_system_induct_k1' (#t: table) (#c: context t) (#a: t.ty) (r: XCC.cexp t c t.propty) (g: XCC.cexp t (a :: c) t.propty) (b: XCC.cexp t c a):
