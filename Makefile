@@ -21,9 +21,9 @@ KARAMEL_EXE ?= krml
 Z3_EXE 	    ?= z3
 Q           ?= @
 
-# Set ADMIT=1 to admit queries
-ADMIT ?=
-FSTAR_MAYBE_ADMIT = $(if $(ADMIT),--admit_smt_queries true)
+# Set LAX=1 to disable proofs
+LAX ?=
+FSTAR_MAYBE_LAX = $(if $(LAX),--lax)
 
 FSTAR_NL_DISABLE  ?= --z3smtopt '(set-option :smt.arith.nl false)'
 FSTAR_ARITH_UNBOX ?= --smtencoding.l_arith_repr native --smtencoding.elim_box true
@@ -35,12 +35,12 @@ FSTAR_SRC_DIRS = example/ example/ttcan/ src/ test/ rts/fstar/
 
 FSTAR_INCLUDES	  ?= $(addprefix --include ,$(FSTAR_SRC_DIRS))
 FSTAR_CACHE       ?= --cache_dir $(BUILD)/cache --cache_checked_modules --already_cached Prims,FStar,LowStar
-FSTAR_HINTS       ?= --hint_dir $(BUILD)/hint --use_hints --record_hints --warn_error -333
+FSTAR_HINTS       ?= --hint_dir $(BUILD)/hint --use_hints --record_hints
 
 FSTAR_DEP_OPT     ?= $(FSTAR_INCLUDES) $(FSTAR_CACHE)
 
 FSTAR_EXTRA_OPT   ?=
-FSTAR_OPT		  ?= $(FSTAR_INCLUDES) $(FSTAR_PROOF_OPT) $(FSTAR_CACHE) $(FSTAR_EXTRA_OPT) $(FSTAR_MAYBE_ADMIT)
+FSTAR_OPT		  ?= $(FSTAR_INCLUDES) $(FSTAR_PROOF_OPT) $(FSTAR_CACHE) $(FSTAR_EXTRA_OPT) $(FSTAR_MAYBE_LAX) $(FSTAR_HINTS)
 
 FSTAR_SRCS = $(wildcard $(addsuffix *.fst,$(FSTAR_SRC_DIRS)) $(addsuffix *.fsti,$(FSTAR_SRC_DIRS)))
 

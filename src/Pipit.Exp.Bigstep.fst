@@ -24,12 +24,15 @@ module CR = Pipit.Context.Row
 module CP = Pipit.Context.Properties
 module PM = Pipit.Prop.Metadata
 
+module List = FStar.List
+
 (* bigstep_base streams e v
 
  Bigstep semantics: in streaming history `streams`, which is a sequence of
  environments, the expression `e` evaluates to value `v`.
  The stream history `streams` is in most-recent-first order.
  *)
+[@@no_auto_projectors]
 noeq
 type bigstep_base (#t: table u#i u#j) (#c: context t): (#a: t.ty) -> list (row c) -> exp_base t c a -> t.ty_sem a -> Type =
  (* Values `v` always evaluate to the value *)
@@ -48,6 +51,7 @@ type bigstep_base (#t: table u#i u#j) (#c: context t): (#a: t.ty) -> list (row c
  (* Free variables `XVar` have no evaluation rule - they aren't in the local `streams` environment *)
 
 (* bigstep streams e v *)
+[@@no_auto_projectors]
 noeq
 type bigstep (#t: table u#i u#j) (#c: context t): (#a: t.ty) -> list (row c) -> exp t c a -> t.ty_sem a -> Type u#(max i j) =
  (* Base expressions *)
@@ -155,6 +159,7 @@ and bigstep_apps (#t: table) (#c: context t): (#a: funty t.ty) -> list (row c) -
 
 (* Under streaming history `streams`, evaluate expression `e` at each step to
    produce stream of values `vs` *)
+[@@no_auto_projectors]
 noeq
 type bigsteps (#t: table u#i u#j) (#c: context t) (#a: t.ty): list (row c) -> exp t c a -> list (t.ty_sem a) -> Type =
  | BSs0:
@@ -170,16 +175,37 @@ type bigsteps (#t: table u#i u#j) (#c: context t) (#a: t.ty): list (row c) -> ex
     bigstep  (row :: rows) e  v         ->
     bigsteps (row :: rows) e (v :: vs)
 
+
+(* Many-bigstep is a Type, but a prop is useful for extending the context.
+  Extending the context also requires the lengths to match *)
+let bigsteps_prop (#t: table u#i u#j) (#c: context t) (#a: t.ty)
+  (rows: list (row c))
+  (e: exp t c a)
+  (vs: list (t.ty_sem a)) =
+  List.length rows == List.length vs /\
+  squash (bigsteps rows e vs)
+
 let rec bigstep_always (#t: table u#i u#j) (#c: context t)
   (rows: list (row c))
   (e: exp t c t.propty): Tot prop (decreases rows) =
   match rows with
   | [] -> True
-  | _ :: rows' ->
+  | row1 :: rows' ->
     // XXX: squash: bigstep_always shows up in refinements, so it's useful to have it as prop.
     // If this causes issues, try lifting to Type; requires changing Pipit.Exp.Checked.Base too
     squash (bigstep rows e true) /\
     bigstep_always rows' e
+
+let bigstep_always_cons (#t: table u#i u#j) (#c: context t)
+  (rows: list (row c))
+  (row1: row c)
+  (e: exp t c t.propty): Lemma
+    (bigstep_always (row1 :: rows) e <==> (squash (bigstep (row1 :: rows) e true) /\ bigstep_always rows e))
+    [SMTPat (bigstep_always (row1 :: rows) e)]
+     =
+  assert (bigstep_always (row1 :: rows) e <==> (squash (bigstep (row1 :: rows) e true) /\ bigstep_always rows e))
+    by (FStar.Tactics.norm [delta_only [`%bigstep_always]; zeta; iota]);
+  ()
 
 
 (* Properties *)
@@ -300,3 +326,20 @@ let bigstep_deterministic_squash
   FStar.Squash.bind_squash #(bigstep streams e v2) #(v1 == v2) ()
     (fun (b: bigstep streams e v2) ->
       bigstep_deterministic a b))
+
+
+let bigsteps_deterministic_squash
+  (#t: table)
+  (#c: context t)
+  (streams: list (row c))
+  (#a: t.ty)
+  (e: exp t c a)
+  (vs1 vs2: list (t.ty_sem a)):
+    Lemma
+      (requires (bigsteps streams e vs1 /\ bigsteps streams e vs2))
+      (ensures (vs1 == vs2)) =
+  FStar.Squash.bind_squash #(bigsteps streams e vs1) ()
+    (fun (a: bigsteps streams e vs1) ->
+  FStar.Squash.bind_squash #(bigsteps streams e vs2) #(vs1 == vs2) ()
+    (fun (b: bigsteps streams e vs2) ->
+      bigsteps_proof_equivalence a b))

@@ -244,7 +244,7 @@ let tac_unfold_env (): T.Tac unit =
 
 
 
-#push-options "--fuel 1 --ifuel 0"
+#push-options "--fuel 1 --ifuel 0 --z3rlimit 20"
 // --z3rlimit 20
 private
 let lemma_subst_subst_distribute_le_bind

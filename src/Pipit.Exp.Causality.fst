@@ -49,7 +49,9 @@ let rec direct_dependency (#t: table) (#c: context t) (#a: t.ty) (e: exp t c a) 
   (* Should we care if a contract's relies or guarantees mention `i`?
      I don't think it's strictly necessary - causality is required for total evaluation, which
      uses the implementation rather than the abstraction. *)
-  | XContract _ _rely _guar impl ->
+  | XContract _ rely guar impl ->
+    direct_dependency rely i ||
+    direct_dependency guar (i + 1) ||
     direct_dependency impl i
 
 and direct_dependency_apps (#t: table) (#c: context t) (#a: funty t.ty) (e: exp_apps t c a) (i: C.index) : Tot bool (decreases e) =
@@ -97,7 +99,9 @@ let rec lemma_direct_dependency_lift_ge (#tbl: table) (#c: context tbl) (#a: tbl
     lemma_direct_dependency_lift_ge e2 (i + 1) (i' + 1) t
   | XCheck _ e1 ->
     lemma_direct_dependency_lift_ge e1 i i' t
-  | XContract _ _ _ impl ->
+  | XContract _ rely guar impl ->
+    lemma_direct_dependency_lift_ge rely i i' t;
+    lemma_direct_dependency_lift_ge guar (i + 1) (i' + 1) t;
     lemma_direct_dependency_lift_ge impl i i' t
 and
   lemma_direct_dependency_lift_ge_apps (#tbl: table) (#c: context tbl) (#a: funty tbl.ty) (e: exp_apps tbl c a) (i: C.index_lookup c) (i': C.index { i >= i' /\ i' <= List.Tot.length c }) (t: tbl.ty):
@@ -134,7 +138,10 @@ let rec lemma_direct_dependency_not_subst
     lemma_direct_dependency_not_subst (i + 1) (i' + 1) e2 (lift1 p b)
   | XCheck _ e1 ->
     lemma_direct_dependency_not_subst i i' e1 p
-  | XContract _ _ _ body ->
+  | XContract _ rely guar body ->
+    lemma_direct_dependency_not_subst i i' rely p;
+    lemma_direct_dependency_lift_ge p i 0 a;
+    lemma_direct_dependency_not_subst (i + 1) (i' + 1) guar (lift1 p a);
     lemma_direct_dependency_not_subst i i' body p
 
 and lemma_direct_dependency_not_subst_apps
@@ -523,7 +530,7 @@ let lemma_bigstep_substitute_elim_XLet
   (e2: exp t (valty :: c) a { causal e2 })
   (v: t.ty_sem a)
   (hBS2: bigstep rows (XLet valty e1 e2) v):
-    (bigstep (CR.zip2_cons vs rows) e2 v) =
+    (bigstep (CR.extend1 vs rows) e2 v) =
   match hBS2 with
   | BSLet _ _ _ _ hBS2' ->
     lemma_bigstep_substitute_elim 0 rows e1 vs e2 v hBS1s hBS2'
@@ -537,7 +544,7 @@ let lemma_bigstep_substitute_elim_XMu
   (e: exp t (valty :: c) valty { causal (XMu e) })
   (vs: list (t.ty_sem valty) { List.Tot.length rows == List.Tot.length vs })
   (hBSs: bigsteps rows (XMu e) vs):
-    (bigstep (CR.zip2_cons vs rows) e (List.Tot.hd vs)) =
+    (bigstep (CR.extend1 vs rows) e (List.Tot.hd vs)) =
     match hBSs with
     | BSsS _ _ _ _ _ _ hBS ->
       match hBS with
@@ -555,7 +562,7 @@ let lemma_bigstep_substitute_intros_XMu
   (row: row c)
   (v v': t.ty_sem valty)
   (hBSs: bigsteps rows (XMu e) vs)
-  (hBS1: bigstep (CR.cons v' row :: CR.zip2_cons vs rows) e v):
+  (hBS1: bigstep (CR.cons v' row :: CR.extend1 vs rows) e v):
     (bigstep (row :: rows) (XMu e) v) =
     let hBS'': bigstep (row :: rows) (subst1 e (XMu e)) v =
       lemma_bigstep_substitute_intros_no_dep 0 rows (XMu e) vs e row v' v hBSs hBS1 in
@@ -603,13 +610,13 @@ let rec lemma_bigstep_total
   | XMu e1 ->
     let (| vs, hBSs |) = lemma_bigsteps_total tl e in
     let v' = t.val_default (XMu?.valty e) in
-    let (| v, hBS0 |) = lemma_bigstep_total (CR.cons v' hd :: CR.zip2_cons vs tl) e1 in
+    let (| v, hBS0 |) = lemma_bigstep_total (CR.cons v' hd :: CR.extend1 vs tl) e1 in
     let hBS' = lemma_bigstep_substitute_intros_XMu tl e1 vs hd v v' hBSs hBS0 in
     (| v, hBS' |)
 
   | XLet b e1 e2 ->
     let (| vs, hBSs |) = lemma_bigsteps_total rows e1 in
-    let (| v, hBS2 |) = lemma_bigstep_total (CR.zip2_cons vs rows) e2 in
+    let (| v, hBS2 |) = lemma_bigstep_total (CR.extend1 vs rows) e2 in
     let hBS' = lemma_bigstep_substitute_intros 0 rows e1 vs e2 v hBSs hBS2 in
     (| v, BSLet rows e1 e2 v hBS' |)
 
@@ -656,7 +663,7 @@ let lemma_bigstep_total_v
   (#c: context t)
   (#a: t.ty)
   (rows: list (row c) { Cons? rows }) (e: exp t c a { causal e }):
-    t.ty_sem a =
+    v: t.ty_sem a { bigstep rows e v } =
   let (| v, _ |) = lemma_bigstep_total rows e in
   v
 
@@ -665,6 +672,16 @@ let lemma_bigsteps_total_vs
   (#c: context t)
   (#a: t.ty)
   (rows: list (row c)) (e: exp t c a { causal e }):
-    vs: list (t.ty_sem a) { List.Tot.length vs == List.Tot.length rows } =
+    vs: list (t.ty_sem a) { bigsteps_prop rows e vs } =
   let (| vs, _ |) = lemma_bigsteps_total rows e in
   vs
+
+let lemma_bigstep_total_always
+  (#t: table)
+  (#c: context t)
+  (rows: list (row c)) (row1: row c) (e: exp t c t.propty { causal e }):
+  Lemma (requires (bigstep_always (row1 :: rows) e))
+    (ensures (lemma_bigstep_total_v (row1 :: rows) e == true))
+    [SMTPat (bigstep_always (row1 :: rows) e)] =
+  let v = lemma_bigstep_total_v (row1 :: rows) e in
+  bigstep_deterministic_squash (row1 :: rows) e v true

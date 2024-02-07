@@ -71,6 +71,16 @@ To remove the ifuel restrictions for a specific type:
 ```
 But not recommended for types with unbounded recursion
 
+## Norm
+```
+[@@"opaque_to_smt"]
+let some_definition (x:nat) = x + 1
+
+let use_norm_spec (x:nat) =
+  let y = some_definition x in
+  norm_spec [delta] (some_definition x);
+  assert (y == x + 1)
+```
 
 ## Debugging
 ```

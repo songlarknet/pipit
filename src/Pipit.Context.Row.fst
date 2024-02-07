@@ -60,6 +60,10 @@ let rec zip2_cons (#a: eqtype) (rs: list a) (rs': list (row 'd) { List.length rs
   | [], [] -> []
   | r :: rs, r' :: rs' -> (cons r r') :: zip2_cons rs rs'
 
+unfold
+let extend1 (#a: eqtype) (rs: list a) (rs': list (row 'd) { List.length rs == List.length rs' }): (ret: list (row (a :: 'd)) { List.length ret == List.length rs }) =
+  zip2_cons rs rs'
+
 let rec zip2_lift1 (#a: eqtype) (rs: list (row 'c)) (i: C.index_insert 'c) (vs: list a { List.length rs == List.length vs }): (ret: list (row (C.lift1 'c i a)) { List.length ret == List.length rs }) =
   match rs, vs with
   | [], [] -> []

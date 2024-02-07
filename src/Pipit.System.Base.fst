@@ -41,16 +41,17 @@ let type_join_tup (#t1 #t2: option Type) (v1: option_type_sem t1) (v2: option_ty
   | None, o2 -> v2
   | o1, None -> v1
 
-let prop_join (o1 o2: option prop): option prop =
-  match o1, o2 with
-  | Some o1, Some o2 -> Some (o1 /\ o2)
-  | None, o2 -> o2
-  | o1, None -> o1
-
 let option_prop_sem (t: option prop): prop =
   match t with
   | Some t -> t
   | None   -> True
+
+let prop_join (o1 o2: option prop):
+  op: option prop { option_prop_sem op <==> (option_prop_sem o1 /\ option_prop_sem o2)} =
+  match o1, o2 with
+  | Some o1, Some o2 -> Some (o1 /\ o2)
+  | None, o2 -> o2
+  | o1, None -> o1
 
 (* Assumptions and obligations that a transition system must make; these
   are called the transition rely and guarantee in the paper. *)
@@ -161,12 +162,18 @@ let system_contract_instance (#input: Type)
         let stp2 = tg.step (v, i) o2 s2 in
         let rprop = stp1.v == true in
         let gprop = stp2.v == true in
+        let stp2_chck = {
+          assumptions = (match stp2.chck.assumptions with
+            | None -> None
+            | Some asm -> Some (rprop ==> asm));
+          obligations = stp2.chck.obligations;
+        } in
         {
           s    = type_join_tup stp1.s stp2.s;
           v    = v;
           chck = checks_assumption (rprop ==> gprop) `checks_join`
                  checks_of_prop status rprop `checks_join`
-                 stp1.chck `checks_join` stp2.chck;
+                 stp1.chck `checks_join` stp2_chck;
         });
   }
 
@@ -237,16 +244,15 @@ let system_pre (#input #value: Type)
       });
   }
 
-let system_mu (#input #input' #value: Type)
+let system_mu (#input #value: Type)
   (#oracle #state: option Type)
-  (extend: input -> value -> input')
-  (t1: system input' oracle state value):
+  (t1: system (value & input) oracle state value):
        system input (Some value `type_join` oracle) state value =
   { init = t1.init;
     step = (fun i vo s ->
       let v = type_join_fst vo in
       let o = type_join_snd vo in
-      let stp1 = t1.step (extend i v) o s in
+      let stp1 = t1.step (v, i) o s in
       {
         s = stp1.s;
         v = v;

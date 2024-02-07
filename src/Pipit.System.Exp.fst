@@ -99,7 +99,7 @@ let rec system_of_exp
       system_pre v (system_of_exp e1)
     | XMu e1 ->
       let t' = system_of_exp e1 in
-      system_mu #(row c) #(t.ty_sem a & row c) (fun i v -> (v, i)) t'
+      system_mu t'
     | XLet b e1 e2 ->
       system_let (fun i v -> (v, i)) (system_of_exp e1) (system_of_exp e2)
     | XCheck status e1 ->
