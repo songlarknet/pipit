@@ -18,7 +18,7 @@ instance has_stream_int: Shallow.has_stream int = {
 }
 
 (*** Examples / test cases ***)
-
+(*
 [@@source]
 let eg_letincs (x: stream int) =
   (x + x) + x
@@ -57,7 +57,6 @@ let eg_letrecfun_ann (x: int): int =
 
 %splice[] (autolift_binds [`%eg_letrecfun_ann])
 
-// TODO!
 [@@Tac.preprocess_with preprocess; source]
 let eg_let (x: stream int): stream int =
   let strm = x + 1 in
@@ -92,9 +91,10 @@ let eg_mixed_ann (x: stream int): stream int =
 
 %splice[] (autolift_binds [`%eg_mixed_ann])
 
+*)
+
 let eg_pairs (x: stream int) (y: stream bool): stream int =
-  // TODO: this requires explicit annotations for now, but it shouldn't really
-  0 `fby` fst (Mktuple2 #int #bool x y)
+  0 `fby` fst (Mktuple2 x y)
 
 %splice[] (autolift_binds [`%eg_pairs])
 
@@ -118,10 +118,11 @@ let eg_ctor (add: stream int): stream ctor =
 
 [@@Tac.preprocess_with preprocess]
 let eg_pairsrec (add: stream int): stream (int & int) =
-  let rec xy =
-    let x = 0 `fby` fst #int #int xy + add in
-    let y = 0 `fby` snd #int #int xy - add in
-    Mktuple2 #int #int x y
+  // recursive streams sometimes need annotations
+  let rec xy: stream (int & int) =
+    let x = 0 `fby` fst xy + add in
+    let y = 0 `fby` snd xy - add in
+    Mktuple2 x y
   in
   xy
 

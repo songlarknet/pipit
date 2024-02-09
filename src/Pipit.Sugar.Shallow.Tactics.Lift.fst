@@ -161,7 +161,15 @@ let rec preprocess (t: Tac.term): Tac.Tac Tac.term =
       let def = go def in
       let body = go body in
       Tac.pack (Tac.Tv_Let true attrs b def body)
-    | _ ->
+    | ti ->
+      // type annotations on letrecs are parsed as ascriptions, so pull them out
+      let (body,ty) = match ti with
+        | Tac.Tv_AscribedT body ty None _
+        | Tac.Tv_AscribedC body (Tac.C_Total ty) None _
+        -> (body, ty)
+        | _ -> (body, b.sort)
+      in
+      let b = { b with sort = ty } in
       let def = go def in
       let body = go body in
       let defabs = Tac.pack (Tac.Tv_Abs b def) in
@@ -286,21 +294,13 @@ let env_get_core_of_source (fv: Ref.fv) (e: env): Ref.fv =
       else go tl
   in go e.core_env
 
-// XXX: can we kill this?
-let assert_type_annotation (ty: Tac.term) (rng: Range.range) (ctx: list string): Tac.Tac unit =
-  match Tac.inspect_unascribe ty with
-  | Tac.Tv_Unknown ->
-    fail "error: term requires explicit type annotation" rng ctx
-  | _ -> ()
-
 let element_of_stream_ty (ty: Tac.term): Tac.Tac (option Tac.term) =
   // TODO: unify / match?
   let (hd, args) = Tac.collect_app ty in
   match Tac.inspect_unascribe hd, args with
-  | Tac.Tv_FVar fv, ((elty, _) :: _) ->
+  | Tac.Tv_FVar fv, [(elty, _); _] ->
     let fv' = Tac.inspect_fv fv in
-    // TODO: check for @@stream_ctor_attr instead of by-name?
-    if fv' = Ref.explode_qn (`%stream) // TermEq.term_eq hd (`stream)
+    if fv' = Ref.explode_qn (`%stream)
     then Some elty
     else None
   | _ -> None
@@ -351,8 +351,38 @@ let joins_modes (rng: Range.range) (mts: list (mode & Tac.term)): Tac.Tac (mode 
     (m, Tac.map (fun x -> snd (mode_cast m x)) mts)
   | [] -> (Static, [])
 
+(* Remove stream constructors from primitive before lifting (HACK?).
+
+  The idea is that if we have a polymorphic primitive applied to streams:
+  > fun (xs ys: stream int) ->
+  >   let pairs = (xs, ys) in
+  >   fst pairs
+
+  Then that will get inferred types and implicits:
+  > fun (xs ys: stream int) ->
+  >   let pairs: (stream int & stream int) = (xs, ys) in
+  >   fst #(stream int) #(stream int) pairs
+
+  But we really want to generate
+
+  > fun (xs ys: stream_core int) ->
+  >   let pairs: stream_core (int & int) = (Mktuple2 #int #int) <$> xs <*> ys in
+  >   (fst #(int) #(int)) <$> pairs
+
+  This gets half of the way there -- unwrapping the streams in the primops.
+*)
+let unwrap_prim (prim: Tac.term): Tac.Tac Tac.term =
+  let go (t: Tac.term): Tac.Tac Tac.term =
+
+    match element_of_stream_ty t with
+    | Some t' -> t'
+    | None -> t
+  in
+  Tac.visit_tm go prim
+
 let lift_prim (e: env) (prim: Tac.term): Tac.Tac (Tac.term & list Tac.term & Tac.term) =
   // TODO: unwrap prim: remove unwrap type arguments
+  let prim = unwrap_prim prim in
   let ty = Tac.tc e.tac_env prim in
   let nm =
     match Tac.inspect_unascribe prim with
@@ -519,8 +549,6 @@ let rec lift_tm (e: env) (t: Tac.term): Tac.Tac (mode & Tac.term) =
          | _ -> fail "static: impossible: expected application" (Ref.range_of_term t) []
     else go_apps mh hd args
   | Tac.Tv_Abs bv tm ->
-    // abstractions need explicit binders
-    assert_type_annotation bv.sort (Ref.range_of_term t) ["in abstraction " ^ Tac.binder_to_string bv];
     debug_print (fun () -> "Abs: lift_tm with " ^ Tac.term_to_string bv.sort);
     let m1 = mode_of_ty bv.sort in
     let (m2, tm) = lift_tm (env_push bv m1 e) tm in
