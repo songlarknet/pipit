@@ -43,37 +43,62 @@ module Table = Pipit.Prim.Table
 module ShallowPrim = Pipit.Prim.Shallow
 module Shallow = Pipit.Sugar.Shallow.Base
 module SugarBase = Pipit.Sugar.Base
-
 module PTB = Pipit.Tactics.Base
 
 module Ref = FStar.Reflection.V2
 module Tac = FStar.Tactics.V2
-
 module TermEq = FStar.Reflection.V2.TermEq
 
 module Range = FStar.Range
 
 module List = FStar.List.Tot
 
-module ShallowTac = Pipit.Sugar.Shallow.Tactics
 
-(*** Lifting annotation, exposed to user ***)
-unfold
+(*** Attributes ***)
+(* Mark as source program; to be lifted by autolifter *)
+irreducible
+let source = ()
+
+(* For generated bindings *)
+irreducible
+let core = ()
+
+(* For generated bindings; pointer back to original *)
+irreducible
+let of_source (nm: string) = ()
+
+(*** Streaming interface stubs ***)
+type stream (a: eqtype) {| Shallow.has_stream a |} = a
+
+(* Recursive streams *)
+assume val rec' (#a: eqtype) {| Shallow.has_stream a |} (f: stream a -> stream a): stream a
+(* Delayed streams *)
+assume val fby (#a: eqtype) {| Shallow.has_stream a |} (init: a) (strm: stream a): stream a
+(* Check property: a property is a stream of booleans *)
+assume val check (strm: stream bool): stream unit
+(* Lift constant to stream *)
+assume val lift (#a: eqtype) {| Shallow.has_stream a |} (x: a): stream a
+(* Do not lift *)
 let static (#a: Type) (x: a): a = x
 
-(*** Streaming operations ***)
-unfold
-let const (#a: eqtype) {| Shallow.has_stream a |} (x: a): Shallow.stream a = Shallow.const x
+(*** Implementations of stubs ***)
+[@@core; of_source(`%rec')]
+// private
+let rec_impl (#a: eqtype) {| Shallow.has_stream a |} (f: Shallow.stream a -> Shallow.stream a): Shallow.stream a = Shallow.rec' f
 
+[@@core; of_source(`%fby)]
+// private
+let fby_impl (#a: eqtype) {| Shallow.has_stream a |} (init: a) (strm: Shallow.stream a): Shallow.stream a = Shallow.fby init strm
+//TODO etc
 
-unfold
+// private
 let liftP'prim
   (#ft: Table.funty ShallowPrim.shallow_type)
   (f: SugarBase.prim ShallowPrim.table ft):
       SugarBase._s_apps ShallowPrim.table ft =
   SugarBase.liftP'prim f
 
-unfold
+// private
 let liftP'apply
   (#a: eqtype)
   {| Shallow.has_stream a |}
@@ -83,7 +108,7 @@ let liftP'apply
       SugarBase._s_apps ShallowPrim.table ft =
   SugarBase.liftP'apply f ea
 
-unfold
+// private
 let liftP'stream
   (#a: eqtype)
   {| Shallow.has_stream a |}
@@ -91,36 +116,154 @@ let liftP'stream
       Shallow.stream a =
   SugarBase.liftP'stream ea
 
-
 let fail (#a: Type) (msg: string) (rng: Range.range) (ctx: list string): Tac.Tac a =
   let str0 = "Lift transform: failure at " ^ Tac.range_to_string rng ^ "\n  " ^ msg in
   let str = List.fold_left (fun str str' -> str ^ "\n    * " ^ str') str0 ctx in
   Tac.fail str
 
 
+(*
+  Simple preprocessor to enable more streamy syntax.
+  For the most part, this leaves the term as-is. Recursive let bindings
+  are translated to stream recursion, if there are no arguments.
+  Usage:
+
+  > [@@FStar.Tactics.preprocess_with Pipit.Sugar.Stubs.preprocess; Pipit.Sugar.Stubs.source]
+  > let stream_of (cond: stream bool): stream int =
+  >   let rec x = 0 `fby` x + (if cond then 1 else 0) in
+  >   x
+
+  which gets desugared to:
+
+  > let stream_of (cond: stream bool): stream int =
+  >   let x = Pipit.Sugar.Stubs.rec' (fun x -> 0 `fby` x + (if cond then 1 else 0)) in
+  >   x
+
+ *)
+let rec preprocess (t: Tac.term): Tac.Tac Tac.term =
+  let go = preprocess in
+  match Tac.inspect t with
+  | Tac.Tv_Var _ | Tac.Tv_BVar _ | Tac.Tv_FVar _
+  | Tac.Tv_Const _ ->
+    t
+
+  | Tac.Tv_App (hd: Tac.term) (arg, aqual) ->
+    Tac.pack (Tac.Tv_App (go hd) (go arg, aqual))
+
+  | Tac.Tv_Abs bv tm ->
+    Tac.pack (Tac.Tv_Abs bv (go tm))
+
+  | Tac.Tv_Let true attrs b def body ->
+    // Letrec: recursive streams do not have lambdas; recursive functions do
+    (match Tac.inspect def with
+    | Tac.Tv_Abs _ _ ->
+      let def = go def in
+      let body = go body in
+      Tac.pack (Tac.Tv_Let true attrs b def body)
+    | _ ->
+      let def = go def in
+      let body = go body in
+      let defabs = Tac.pack (Tac.Tv_Abs b def) in
+      Tac.pack (Tac.Tv_Let false attrs b (`rec' (`#defabs)) body))
+
+  | Tac.Tv_Let false attrs b def body ->
+    let def = go def in
+    let body = go body in
+    Tac.pack (Tac.Tv_Let false attrs b def body)
+
+  | Tac.Tv_Match scrut ret brs ->
+    let scrut = go scrut in
+    let brs = Tac.map (fun (pat,br) -> (pat, go br)) brs in
+    Tac.pack (Tac.Tv_Match scrut ret brs)
+
+  | Tac.Tv_AscribedT (tm: Tac.term) (ty: Tac.term) tac use_eq ->
+    Tac.pack (Tac.Tv_AscribedT (go tm) ty tac use_eq)
+
+  | Tac.Tv_AscribedC (tm: Tac.term) (cmp: Tac.comp) tac use_eq ->
+    Tac.pack (Tac.Tv_AscribedC (go tm) cmp tac use_eq)
+
+  // Type stuff: leave alone
+  | Tac.Tv_Uvar _ _ | Tac.Tv_UInst _ _
+  | Tac.Tv_Arrow  _ _ | Tac.Tv_Type   _
+  | Tac.Tv_Refine _ _ | Tac.Tv_Unknown     -> t
+
+  | Tac.Tv_Unsupp -> fail ("cannot unpack unsupported term: " ^ Tac.term_to_string t) (Tac.range_of_term t) ["in preprocess tactic"]
+
+
+
+
+(*** Autolifter ***)
+
 (*** Internal stream combinators and inserted calls ***)
 
 type mode = | Stream | Static | ModeFun: mode -> explicit: bool -> mode -> mode
 
 let debug_print str: Tac.Tac unit =
-  Tac.print str
-  // ()
+  if Tac.ext_getv "pipit:lift:debug" <> ""
+  then Tac.print str
 
 noeq
-type env = { tac_env: Tac.env; mode_env: list (nat & mode); }
+type env = {
+  tac_env: Tac.env;
+  mode_env: list (nat & mode);
+  core_env: list (Ref.name & Ref.name);
+}
 
-let env_nil (): Tac.Tac env = { tac_env = Tac.top_env (); mode_env = []; }
+let env_core_mapping (tac_env: Tac.env) (core_fv: Ref.fv): Tac.Tac (option (Ref.name & Ref.name)) =
+  let core_nm = Tac.inspect_fv core_fv in
+  let core_se = Tac.lookup_typ tac_env core_nm in
+  let rec go (attrs: list Tac.term): Tac.Tac (option (Ref.name & Ref.name)) =
+    match attrs with
+    | [] -> None
+    | hd :: tl ->
+      let (hd,args) = Tac.collect_app hd in
+      if TermEq.term_eq hd (`of_source)
+      then (match args with
+        | [(arg,_)] ->
+          (match Tac.inspect arg with
+          | Tac.Tv_Const (Ref.C_String nm) -> Some (core_nm, Tac.explode_qn nm)
+          | _ -> fail
+            ("cannot parse attribute " ^ Tac.term_to_string hd)
+            (Tac.range_of_term arg)
+            ["in binding " ^ Ref.implode_qn core_nm])
+        | _ -> go tl)
+      else go tl
+  in
+  match core_se with
+  | Some se ->
+    let attrs = Ref.sigelt_attrs se in
+    go attrs
+  | None -> None
+
+let env_top (tac_env: Tac.env): Tac.Tac env =
+  let mode_env = [] in
+  let cores = Ref.lookup_attr (`core) tac_env in
+  let core_env = Tac.filter_map (env_core_mapping tac_env) cores in
+  { tac_env; mode_env; core_env; }
+
+let env_nil (): Tac.Tac env = env_top (Tac.top_env ())
 
 let env_push (b: Tac.binder) (m: mode) (e: env): env =
   { tac_env  = Ref.push_namedv e.tac_env (Ref.pack_namedv b);
-    mode_env = (b.uniq, m) :: e.mode_env }
+    mode_env = (b.uniq, m) :: e.mode_env;
+    core_env = e.core_env; }
 
-let env_get_mode (b: Tac.namedv) (e: env) (rng: Range.range): Tac.Tac mode =
-  match List.find (fun (uniq,m) -> uniq = b.uniq) e.mode_env with
-  | None ->
-    fail ("no such binder: b" ^ Tac.namedv_to_string b)
-      rng []
-  | Some (_, m) -> m
+(* Get mode (stream / non-stream) of local binding. We also get the de bruijn
+  index of the stream bindings, though this is currently unused. *)
+let env_get_mode (b: Tac.namedv) (e: env) (rng: Range.range): Tac.Tac (mode & nat) =
+  let rec go (bs: list (nat & mode)) (strm_ix: nat): Tac.Tac (mode & nat) =
+    match bs with
+    | [] ->
+      fail ("no such binder: b" ^ Tac.namedv_to_string b)
+        rng
+        ["(internal error)"]
+    | (uniq, m) :: bs ->
+      if uniq = b.uniq
+      then (m, strm_ix)
+      else if m = Stream
+      then go bs (strm_ix + 1)
+      else go bs strm_ix
+  in go e.mode_env 0
 
 let rec env_push_pat (p: Tac.pattern) (m: mode) (e: env): Tac.Tac env =
   match p with
@@ -131,7 +274,18 @@ let rec env_push_pat (p: Tac.pattern) (m: mode) (e: env): Tac.Tac env =
     env_push (Tac.namedv_to_binder v.v (Tac.unseal v.sort)) m e
   | Tac.Pat_Dot_Term _ -> e
 
+let env_get_core_of_source (fv: Ref.fv) (e: env): Ref.fv =
+  let nm = Tac.inspect_fv fv in
+  let rec go (bs: list (Ref.name & Ref.name)): Ref.fv =
+    match bs with
+    | [] -> fv
+    | (core,src) :: tl ->
+      if nm = src
+      then Tac.pack_fv core
+      else go tl
+  in go e.core_env
 
+// XXX: can we kill this?
 let assert_type_annotation (ty: Tac.term) (rng: Range.range) (ctx: list string): Tac.Tac unit =
   match Tac.inspect_unascribe ty with
   | Tac.Tv_Unknown ->
@@ -139,12 +293,13 @@ let assert_type_annotation (ty: Tac.term) (rng: Range.range) (ctx: list string):
   | _ -> ()
 
 let element_of_stream_ty (ty: Tac.term): Tac.Tac (option Tac.term) =
+  // TODO: unify / match?
   let (hd, args) = Tac.collect_app ty in
   match Tac.inspect_unascribe hd, args with
   | Tac.Tv_FVar fv, ((elty, _) :: _) ->
     let fv' = Tac.inspect_fv fv in
-    // TODO: check for @@stream_ctor_attr instead of by-name
-    if Tac.inspect_fv fv = ["Pipit"; "Sugar"; "Shallow"; "Base"; "stream" ]
+    // TODO: check for @@stream_ctor_attr instead of by-name?
+    if fv' = Ref.explode_qn (`%stream) // TermEq.term_eq hd (`stream)
     then Some elty
     else None
   | _ -> None
@@ -159,7 +314,9 @@ let rec mode_of_ty (ty: Tac.term): Tac.Tac mode =
     ModeFun (mode_of_ty arg.sort) (PTB.qual_is_explicit arg.qual) (mode_of_ty res)
   | None, Tac.Tv_Arrow arg (Tac.C_Lemma _ _ _) ->
     ModeFun (mode_of_ty arg.sort) (PTB.qual_is_explicit arg.qual) Static
-  | _ -> Static
+  | t ->
+    debug_print ("mode_of_ty: fallback: " ^ Tac.term_to_string (quote t));
+     Static
 
 let mode_join (rng: Range.range) (m1 m2: mode): Tac.Tac mode = match m1, m2 with
   | Stream, Static -> Stream
@@ -169,7 +326,7 @@ let mode_join (rng: Range.range) (m1 m2: mode): Tac.Tac mode = match m1, m2 with
 
 let mode_cast (m_expect: mode) (mt: mode & Tac.term): Tac.Tac (mode & Tac.term) =
   (match mt, m_expect with
-  | (Static, tm), Stream -> (Stream, (`const (`#tm)))
+  | (Static, tm), Stream -> (Stream, (`SugarBase.const (`#tm)))
   | (m, tm), _ -> (m, tm))
 
 let type_cast (ty: Tac.term) (mt: mode & Tac.term): Tac.Tac (mode & Tac.term) =
@@ -178,7 +335,7 @@ let type_cast (ty: Tac.term) (mt: mode & Tac.term): Tac.Tac (mode & Tac.term) =
     mt
   | _ ->
     (match mt, mode_of_ty ty with
-    | (Static, tm), Stream -> (Stream, (`const (`#tm)))
+    | (Static, tm), Stream -> (Stream, (`SugarBase.const (`#tm)))
     | _ -> mt)
 
 let joins_modes (rng: Range.range) (mts: list (mode & Tac.term)): Tac.Tac (mode & list Tac.term) =
@@ -189,7 +346,7 @@ let joins_modes (rng: Range.range) (mts: list (mode & Tac.term)): Tac.Tac (mode 
     (m, Tac.map (fun x -> snd (mode_cast m x)) mts)
   | [] -> (Static, [])
 
-let lift_prim (e: env) (prim: Tac.term): Tac.Tac (Tac.term & Tac.term) =
+let lift_prim (e: env) (prim: Tac.term): Tac.Tac (Tac.term & list Tac.term & Tac.term) =
   let ty = Tac.tc e.tac_env prim in
   let nm =
     match Tac.inspect_unascribe prim with
@@ -209,10 +366,12 @@ let lift_prim (e: env) (prim: Tac.term): Tac.Tac (Tac.term & Tac.term) =
     | Tac.Tv_Abs _ _ -> prim
     | _ -> PTB.eta_expand prim ty
   in
-  (`liftP'prim (ShallowPrim.mkPrim (`#nm) (`#ft) (`#prim))), res
+  (`liftP'prim (ShallowPrim.mkPrim (`#nm) (`#ft) (`#prim))), args, res
 
 let lift_stream_match (e: env) (scrut: Tac.term) (ret: option Tac.match_returns_ascription) (brs: list (Tac.pattern & Tac.term)): Tac.Tac Tac.term =
+  debug_print "+ tc scrut";
   let tscrut = Tac.tc e.tac_env scrut in
+  debug_print "- tc scrut";
   let tscrut = match element_of_stream_ty tscrut with
     | Some ety -> ety
     | None -> fail ("stream match: expected scrutinee to be stream; got " ^ Tac.term_to_string tscrut) (Ref.range_of_term scrut) []
@@ -247,84 +406,106 @@ let lift_stream_match (e: env) (scrut: Tac.term) (ret: option Tac.match_returns_
       go_app (`liftP'apply #(`#ty) (`#hd) (`#tm)) tms
   in
   let abs = go_abs xmatch (List.rev ((nscrut, tscrut) :: List.map (fun (nm,_,_) -> (nm, tret)) nbrs)) in
-  let abs, _ = lift_prim e abs in
+  let abs, _, _ = lift_prim e abs in
   let app = go_app abs ((scrut, tscrut) :: List.map (fun (_,_,tm) -> (tm, tret)) nbrs) in
   app
 
 (* get mode of type-annotated function body; requires type annotations
   This doesn't take an environment as it's used to compute the environment
   for the letrec subexpressions *)
-let rec mode_of_letrec (t: Tac.term): Tac.Tac mode =
-  match Tac.inspect t with
-  | Tac.Tv_Const (vc: Tac.vconst) ->
-    Static
+  // XXX: kill, not necessary?
+// let rec mode_of_letrec (t: Tac.term): Tac.Tac mode =
+//   match Tac.inspect t with
+//   | Tac.Tv_Const (vc: Tac.vconst) ->
+//     Static
 
-  | Tac.Tv_Abs bv tm ->
-    // abstractions need explicit binders
-    assert_type_annotation bv.sort (Ref.range_of_term t) ["abstraction " ^ Tac.binder_to_string bv; "in letrec (mode_of_letrec)"];
-    let m1 = mode_of_ty bv.sort in
-    let m2 = mode_of_letrec tm in
-    ModeFun m1 (PTB.qual_is_explicit bv.qual) m2
+//   | Tac.Tv_Abs bv tm ->
+//     // abstractions need explicit binders
+//     assert_type_annotation bv.sort (Ref.range_of_term t) ["abstraction " ^ Tac.binder_to_string bv; "in letrec (mode_of_letrec)"];
+//     let m1 = mode_of_ty bv.sort in
+//     let m2 = mode_of_letrec tm in
+//     ModeFun m1 (PTB.qual_is_explicit bv.qual) m2
 
-  | Tac.Tv_AscribedT (tm: Tac.term) (ty: Tac.term) tac use_eq ->
-    mode_of_ty ty
+//   | Tac.Tv_AscribedT (tm: Tac.term) (ty: Tac.term) tac use_eq ->
+//     mode_of_ty ty
 
-  | Tac.Tv_AscribedC (tm: Tac.term) (cmp: Tac.comp) tac use_eq ->
-    (match cmp with
-    | Tac.C_Total ty | Tac.C_GTotal ty ->
-      mode_of_ty ty
-    | Tac.C_Lemma _ _ _ -> Static
-    | Tac.C_Eff _ _ _ _ _ ->
-      fail ("unsupported effect: " ^ Tac.comp_to_string cmp) (Ref.range_of_term t) ["in letrec (mode_of_letrec)"])
-  | _ ->
-    fail "letrecs must have explicit type annotations"
-      (Ref.range_of_term t)
-      ["in letrec (mode_of_letrec)"]
+//   | Tac.Tv_AscribedC (tm: Tac.term) (cmp: Tac.comp) tac use_eq ->
+//     (match cmp with
+//     | Tac.C_Total ty | Tac.C_GTotal ty ->
+//       mode_of_ty ty
+//     | Tac.C_Lemma _ _ _ -> Static
+//     | Tac.C_Eff _ _ _ _ _ ->
+//       fail ("unsupported effect: " ^ Tac.comp_to_string cmp) (Ref.range_of_term t) ["in letrec (mode_of_letrec)"])
+//   | _ ->
+//     fail "letrecs must have explicit type annotations"
+//       (Ref.range_of_term t)
+//       ["in letrec (mode_of_letrec)"]
+
+let lift_ty: Tac.term -> Tac.Tac Tac.term =
+  let rec go (t: Tac.term): Tac.Tac Tac.term =
+    match Tac.inspect t with
+    | Tac.Tv_FVar fv ->
+      let fv' = Tac.inspect_fv fv in
+      if fv' = Ref.explode_qn (`%stream)
+      then (`Shallow.stream)
+      else t
+    | Tac.Tv_AscribedC e c topt use_eq ->
+      // F* bug: visit_tm does not descend into computations
+      let c = Tac.visit_comp go (Ref.pack_comp c) in
+      Tac.pack (Tac.Tv_AscribedC e (Ref.inspect_comp c) topt use_eq)
+    | _ -> t
+  in Tac.visit_tm go
 
 let rec descend (e: env) (t: Tac.term): Tac.Tac (mode & Tac.term) =
   let go_stream (e: env) (t: Tac.term) =
     let (m, t) = descend e t in
     match m with
-    | Static -> (`const (`#t))
+    | Static -> (`SugarBase.const (`#t))
     | Stream -> t
     | ModeFun _ _ _ ->
       fail ("cannot lift function to stream: " ^ Tac.term_to_string t)
         (Ref.range_of_term t)
         []
   in
+  let ti = Tac.inspect t in
+  debug_print ("descend: " ^ Tac.term_to_string (quote ti));
   match Tac.inspect t with
   | Tac.Tv_Var (v: Tac.namedv) ->
-    (env_get_mode v e (Ref.range_of_term t), t)
+    (fst (env_get_mode v e (Ref.range_of_term t)), t)
   | Tac.Tv_BVar (v: Tac.bv) ->
     fail
       ("unexpected bvar; expected named variables only " ^ Tac.term_to_string t)
       (Ref.range_of_term t) []
-  | Tac.Tv_FVar (v: Tac.fv) ->
-    (mode_of_ty (Tac.tc e.tac_env t), t)
+  | Tac.Tv_FVar _ | Tac.Tv_UInst _ _ ->
+    let ty = Tac.tc e.tac_env t in
+    let m  = mode_of_ty ty in
+    debug_print ("fvar: " ^ Tac.term_to_string t ^ " mode: " ^ Tac.term_to_string (quote m) ^ " ty: " ^  Tac.term_to_string ty);
+    (m, t)
   | Tac.Tv_Const (vc: Tac.vconst) ->
     (Static, t)
 
   | Tac.Tv_App (hd: Tac.term) (arg, aqual) ->
-    let rec go_lifts m hd args: Tac.Tac Tac.term = match m, args with
-      | ModeFun _ false m2, (_,Ref.Q_Explicit)::_ ->
-        go_lifts m2 hd args
+    let rec go_lifts m hd args argtys: Tac.Tac Tac.term = match m, args, argtys with
+      | ModeFun _ false m2, (_,Ref.Q_Explicit)::_, _ :: argtys ->
+        go_lifts m2 hd args argtys
 
-      | _, (arg,Ref.Q_Meta _) :: _
-      | _, (arg,Ref.Q_Implicit) :: _ ->
+      | _, (arg,Ref.Q_Meta _) :: _, _
+      | _, (arg,Ref.Q_Implicit) :: _, _ ->
         fail "not supported: cannot lift implicit / meta applications"
           (Ref.range_of_term arg) ["go_lifts"]
 
-      | ModeFun Static _  m2, (arg,_)::args ->
+      | ModeFun Static _  m2, (arg,_)::args, argty :: argtys ->
         let (ma, arg) = descend e arg in
         let (ma, arg) = mode_cast Stream (ma, arg) in
-        go_lifts m2 (`liftP'apply (`#hd) (`#arg)) args
+        go_lifts m2 (`liftP'apply #(`#argty) (`#hd) (`#arg)) args argtys
 
-      | Static, [] -> hd
-      | _, _ ->
+      | Static, [], [] -> hd
+      | _, _, _ ->
         fail ("cannot lift application! bad mode / args")
           (Ref.range_of_term t)
             ["mode: " ^ Tac.term_to_string (quote m);
             "args:"  ^ Tac.term_to_string (quote args);
+            "argtys:"  ^ Tac.term_to_string (quote argtys);
             "hd:"  ^ Tac.term_to_string hd;
             "go_lifts"]
     in
@@ -334,7 +515,7 @@ let rec descend (e: env) (t: Tac.term): Tac.Tac (mode & Tac.term) =
 
       | ModeFun m1 mq m2, (arg,aq)::args ->
         let (ma, arg) = descend e arg in
-        debug_print ("go_apps: arg: " ^ Tac.term_to_string (quote ma));
+        debug_print ("go_apps: arg: " ^ Tac.term_to_string (quote ma) ^ " : " ^ Tac.term_to_string arg);
         (match ma, m1 with
         | Stream, Static ->
           (match aq with
@@ -344,9 +525,13 @@ let rec descend (e: env) (t: Tac.term): Tac.Tac (mode & Tac.term) =
               (Ref.range_of_term arg)
               ["go_apps"]
             );
-          let prim, res = lift_prim e hd in
-          let apps = go_lifts m2 (`liftP'apply (`#prim) (`#arg)) args in
-          Stream, (`liftP'stream #(`#res) (`#apps))
+          let prim, argtys, res = lift_prim e hd in
+          (match argtys with
+          | argty :: argtys ->
+            let apps = go_lifts m2 (`liftP'apply #(`#argty) (`#prim) (`#arg)) args argtys in
+            Stream, (`liftP'stream #(`#res) (`#apps))
+          | [] -> fail "cannot apply primitive - type has no arguments" (Tac.range_of_term hd)
+            ["head: " ^ Tac.term_to_string hd; "arg: " ^ Tac.term_to_string arg])
         | _, _ ->
           let (ma, arg) = mode_cast m1 (ma, arg) in
           go_apps m2 (Tac.pack (Tac.Tv_App hd (arg, aq))) args)
@@ -354,12 +539,20 @@ let rec descend (e: env) (t: Tac.term): Tac.Tac (mode & Tac.term) =
       | _, (arg,_) :: _ ->
         fail "too many arguments for mode"
           (Ref.range_of_term arg)
-          ["go_apps"]
+          ["go_apps";
+          "arg: " ^ Tac.term_to_string arg;
+          "head: " ^ Tac.term_to_string hd;
+          "mode: " ^ Tac.term_to_string (quote m)]
       | _, [] -> (m, hd)
     in
     let (hd, args) = Tac.collect_app t in
     let (mh, hd) = descend e hd in
-    debug_print ("app: " ^ Tac.term_to_string (quote mh));
+    let hd = match Tac.inspect hd with
+      | Tac.Tv_FVar fv ->
+        Tac.pack (Tac.Tv_FVar (env_get_core_of_source fv e))
+      | _ -> hd
+    in
+    debug_print ("app hd: " ^ Tac.term_to_string hd ^ " mode: " ^ Tac.term_to_string (quote mh) ^ " ty: " ^  Tac.term_to_string (Tac.tc e.tac_env hd));
     // (static x) stops lifting of x, but if the result is applied to
     // another argument, we still want to lift that:
     // > lift ((static x) y) ==> x (lift y)
@@ -383,7 +576,7 @@ let rec descend (e: env) (t: Tac.term): Tac.Tac (mode & Tac.term) =
     (match Tac.inspect def with
     | Tac.Tv_Abs _ _ ->
       debug_print ("descending into fun-letrec: " ^ Tac.term_to_string def);
-      let mdef = mode_of_letrec def in
+      let mdef = mode_of_ty b.sort in
       let e = env_push b mdef e in
       let (_mdef, def) = descend e def in
       let (mb, body) = descend e body in
@@ -476,7 +669,6 @@ let rec descend (e: env) (t: Tac.term): Tac.Tac (mode & Tac.term) =
 
   // Type stuff: leave alone
   | Tac.Tv_Uvar _ _ -> (Static, t)
-  | Tac.Tv_UInst (v: Tac.fv) (us: Tac.universes) -> (Static, t)
   | Tac.Tv_Arrow  bv c -> (Static, t)
   | Tac.Tv_Type   u    -> (Static, t)
   | Tac.Tv_Refine b r  -> (Static, t)
@@ -487,11 +679,26 @@ let rec descend (e: env) (t: Tac.term): Tac.Tac (mode & Tac.term) =
       (Ref.range_of_term t) ["(unsupported term)"]
 
 
-let tac_lift (t: Tac.term): Tac.Tac Tac.term =
-  debug_print ("term is: " ^ Tac.term_to_string t);
+let autolift_bind1 (e: env) (nm nm_core: string): Tac.Tac Tac.sigelt =
+  let lb_src = PTB.lookup_lb_top e.tac_env (Ref.explode_qn nm) in
+
+  let (m, core_def) = descend e lb_src.lb_def in
+  let core_def = lift_ty core_def in
+  debug_print ("lifted is: " ^ Tac.term_to_string core_def);
+
+  // TODO: support recursive bindings
+  let lb_core: Tac.letbinding = {
+    lb_fv  = Tac.pack_fv (Ref.explode_qn nm_core);
+    lb_us  = lb_src.lb_us;
+    lb_typ = Tac.pack Tac.Tv_Unknown; // lift_ty e lb_src.lb_typ;
+    lb_def = core_def;
+  } in
+  let sv: Tac.sigelt_view = Tac.Sg_Let {isrec=false; lbs=[lb_core]} in
+  let se: Tac.sigelt = Tac.pack_sigelt sv in
+  let nm_src_const = Tac.pack (Tac.Tv_Const (Ref.C_String nm)) in
+  let attrs = [`core; `of_source (`#nm_src_const)] in
+  Ref.set_sigelt_attrs [] se
+
+let autolift_binds (nms: list string): Tac.Tac (list Tac.sigelt) =
   let e = env_nil () in
-  let (mm, t') = descend e t in
-  debug_print ("lifted is: " ^ Tac.term_to_string t');
-  // TC required to instantiate uvars?
-  // ignore (Tac.recover (fun () -> Tac.tc e.tac_env t'));
-  t'
+  Tac.map (fun nm -> autolift_bind1 e nm (nm ^ "_core")) nms

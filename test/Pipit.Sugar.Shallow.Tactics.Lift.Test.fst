@@ -1,17 +1,18 @@
 module Pipit.Sugar.Shallow.Tactics.Lift.Test
 
-module Lift = Pipit.Sugar.Shallow.Tactics.Lift
+open Pipit.Sugar.Shallow.Tactics.Lift
 
-open Pipit.Sugar.Shallow.Base
+module Shallow = Pipit.Sugar.Shallow.Base
 
 module List = FStar.List.Tot
 
 module Tac = FStar.Tactics
 
 #push-options "--print_implicits --print_bound_var_types"
+#push-options "--print_universes"
 // #push-options "--print_implicits --print_full_names --ugly --print_bound_var_types"
 
-instance has_stream_int: has_stream int = {
+instance has_stream_int: Shallow.has_stream int = {
   ty_id       = [`%Prims.int];
   val_default = 0;
 }
@@ -20,78 +21,152 @@ instance has_stream_int: has_stream int = {
 
 module Tbl = Pipit.Prim.Table
 
+#push-options "--ext pipit:lift:debug=1"
+(*
 
-
-[@@Tac.preprocess_with Lift.tac_lift]
-let eg_letincs (x: stream int): stream int =
+[@@source]
+let eg_letincs (x: stream int) =
   (x + x) + x
 
-[@@Tac.preprocess_with Lift.tac_lift]
+%splice[] (autolift_binds [`%eg_letincs])
+
+[@@source]
+let eg_letincs_ann (x: stream int): stream int =
+  (x + x) + x
+
+%splice[] (autolift_binds [`%eg_letincs_ann])
+
+[@@source]
 let eg_fby (x: stream int): stream int =
   0 `fby` x
 
-[@@Tac.preprocess_with Lift.tac_lift]
+%splice[] (autolift_binds [`%eg_fby])
+
+[@@source]
 let eg_fby_inc (x: stream int): stream int =
   0 `fby` x + 1
 
-// local function bindings require explicit type annotations
-[@@Tac.preprocess_with Lift.tac_lift]
+%splice[] (autolift_binds [`%eg_fby_inc])
+
+[@@source]
 let eg_letrecfun (x: int): int =
+  let rec count x = if x > 0 then count (x - 1) else 0 in
+  count 0
+
+%splice[] (autolift_binds [`%eg_letrecfun])
+
+[@@source]
+let eg_letrecfun_ann (x: int): int =
   let rec count (x: int): int = if x > 0 then count (x - 1) else 0 in
   count 0
 
-[@@Tac.preprocess_with Lift.tac_lift]
+%splice[] (autolift_binds [`%eg_letrecfun_ann])
+*)
+
+// TODO!
+// [@@Tac.preprocess_with preprocess; source]
+// let eg_let (x: stream int): stream int =
+  // let strm = x + 1 in
+  // strm
+// 
+// %splice[] (autolift_binds [`%eg_let])
+
+(*
+[@@Tac.preprocess_with preprocess; source]
+let eg_let_ann (x: stream int): stream int =
+  let strm: stream int = x + 1 in
+  strm
+
+%splice[] (autolift_binds [`%eg_let_ann])
+
+[@@Tac.preprocess_with preprocess; source]
 let eg_letrec (x: stream int): stream int =
   let rec count = 0 `fby` count + 1 in
-  let y = (0 <: stream int) in
-  (1 + y) + count + x
+  count
 
-[@@Tac.preprocess_with Lift.tac_lift]
+%splice[] (autolift_binds [`%eg_letrec])
+
+[@@Tac.preprocess_with preprocess; source]
+let eg_mixed_ann (x: stream int): stream int =
+  let rec count1 = 0 `fby` count1 + 1 in
+  let rec count2: stream int = 0 `fby` count2 + 1 in
+  let strm1: stream int = 0 in
+  let strm2 = 0 <: stream int in
+  let strm3 = count1 + strm1 in
+  let static1: int = 0 in
+  let static2 = 0 in
+  count1 + count2 + strm1 + strm2 + strm3 + static1 + static2
+
+%splice[] (autolift_binds [`%eg_mixed_ann])
+
 let eg_pairs (x: stream int) (y: stream bool): stream int =
   // TODO: this requires explicit annotations for now, but it shouldn't really
-  0 `fby` fst #int #bool (Mktuple2 #int #bool x y)
+  0 `fby` fst (Mktuple2 #int #bool x y)
+
+%splice[] (autolift_binds [`%eg_pairs])
 
 
 type ctor = | Ctor: x: int -> y: int -> ctor
-instance has_stream_ctor: has_stream ctor = {
+instance has_stream_ctor: Shallow.has_stream ctor = {
   ty_id       = [`%ctor];
-  val_default = Ctor val_default val_default;
+  val_default = Ctor Shallow.val_default Shallow.val_default;
 }
 
-[@@Tac.preprocess_with Lift.tac_lift]
+[@@Tac.preprocess_with preprocess]
 let eg_ctor (add: stream int): stream ctor =
   let rec rcd =
-    let x = 0 `fby` Ctor?.x rcd + add in
-    let y = 0 `fby` Ctor?.y rcd - add in
+    // TODO should not require type annotations
+    let x: stream int = 0 `fby` Ctor?.x rcd + add in
+    let y: stream int = 0 `fby` Ctor?.y rcd - add in
     Ctor x y
   in
   rcd
 
-[@@Tac.preprocess_with Lift.tac_lift]
+%splice[] (autolift_binds [`%eg_ctor])
+
+[@@Tac.preprocess_with preprocess]
 let eg_pairsrec (add: stream int): stream (int & int) =
   let rec xy =
-    let x = 0 `fby` fst #int #int xy + add in
-    let y = 0 `fby` snd #int #int xy - add in
+  // TODO rm ann
+    let x: stream int = 0 `fby` fst #int #int xy + add in
+    let y: stream int = 0 `fby` snd #int #int xy - add in
     Mktuple2 #int #int x y
   in
   xy
 
-[@@Tac.preprocess_with Lift.tac_lift]
-let eg_let (x: stream int): stream int =
-  let rec count (x: int): int = if x > 0 then count (x - 1) else x in
-  // TODO: rough edge: we need this separate definition because the application
-  // of count has an unknown type, despite the explicit annotation
-  let count': int -> int = count in
-  count' x
+%splice[] (autolift_binds [`%eg_pairsrec])
+
+type record = { x: int; y: int; }
+
+instance has_stream_record: Shallow.has_stream record = {
+  ty_id       = [`%record];
+  val_default = { x = 0; y = 0; };
+}
 
 
-// XXX: not working, why not?
-// [@@Tac.preprocess_with Lift.tac_lift]
+// XXX:TODO: preprocess breaks on records?
+// [@@Tac.preprocess_with preprocess]
+let eg_record (add: stream int): stream int =
+  // TODO rm ann
+  let x: stream int = 0 `fby` add in
+  let y: stream int = 1 `fby` add in
+  let xy: stream record = { x; y } in
+  xy.x
+
+%splice[] (autolift_binds [`%eg_record])
+
+*)
+
+// // XXX: not working, why not?
 // let eg_streaming_match (x: stream int): stream int =
-//   match x >= 0 with
-//     | true -> x
-//     | false -> -x
+//   if x >= 0 then x else -x
+//   // match x >= 0 with
+//   //   | true -> x
+//   //   | false -> -x
 
+// %splice[] (autolift_binds [`%eg_streaming_match])
+
+(*
 [@@Tac.preprocess_with Lift.tac_lift]
 let eg_streaming_match_lets (x: stream int): stream int =
   let cond: stream bool = x >= 0 in
@@ -155,14 +230,4 @@ let eg_instantiate_lemma (x y: stream int): stream int =
 //     | xr -> xr
 
 
-// fails: cannot typecheck record accessors?
-
-// type record = { x: int; y: int; }
-// [@@Tac.preprocess_with tac_lift]
-// let eg_record (add: stream int): stream int =
-//   let rec rcd =
-//     let x = 0 `fby` rcd.x + add in
-//     let y = 0 `fby` rcd.y - add in
-//     {x; y}
-//   in
-//   rcd
+*)

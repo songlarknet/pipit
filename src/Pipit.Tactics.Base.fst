@@ -49,3 +49,10 @@ let returns_of_comp (c: Tac.comp): Tac.term =
   | Tac.C_Eff _ _ t _ _ -> t
   | Tac.C_Lemma _ _ _ -> (`unit)
 
+let lookup_lb_top (e: Tac.env) (nm: Ref.name): Tac.Tac Tac.letbinding =
+  match Ref.lookup_typ e nm with
+  | None -> Tac.fail ("lookup_lb_top: no such top-level binding " ^ Ref.implode_qn nm)
+  | Some se ->
+    match Tac.inspect_sigelt se with
+    | Tac.Sg_Let {lbs} -> Tac.lookup_lb lbs nm
+    | _ -> Tac.fail ("lookup_lb_top: binding is not a let-binding: " ^ Ref.implode_qn nm)
