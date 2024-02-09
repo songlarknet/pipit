@@ -8,8 +8,8 @@ module List = FStar.List.Tot
 
 module Tac = FStar.Tactics
 
+#push-options "--ext pipit:lift:debug"
 #push-options "--print_implicits --print_bound_var_types"
-#push-options "--print_universes"
 // #push-options "--print_implicits --print_full_names --ugly --print_bound_var_types"
 
 instance has_stream_int: Shallow.has_stream int = {
@@ -18,11 +18,6 @@ instance has_stream_int: Shallow.has_stream int = {
 }
 
 (*** Examples / test cases ***)
-
-module Tbl = Pipit.Prim.Table
-
-#push-options "--ext pipit:lift:debug=1"
-(*
 
 [@@source]
 let eg_letincs (x: stream int) =
@@ -61,17 +56,15 @@ let eg_letrecfun_ann (x: int): int =
   count 0
 
 %splice[] (autolift_binds [`%eg_letrecfun_ann])
-*)
 
 // TODO!
-// [@@Tac.preprocess_with preprocess; source]
-// let eg_let (x: stream int): stream int =
-  // let strm = x + 1 in
-  // strm
-// 
-// %splice[] (autolift_binds [`%eg_let])
+[@@Tac.preprocess_with preprocess; source]
+let eg_let (x: stream int): stream int =
+  let strm = x + 1 in
+  strm
 
-(*
+%splice[] (autolift_binds [`%eg_let])
+
 [@@Tac.preprocess_with preprocess; source]
 let eg_let_ann (x: stream int): stream int =
   let strm: stream int = x + 1 in
@@ -115,9 +108,8 @@ instance has_stream_ctor: Shallow.has_stream ctor = {
 [@@Tac.preprocess_with preprocess]
 let eg_ctor (add: stream int): stream ctor =
   let rec rcd =
-    // TODO should not require type annotations
-    let x: stream int = 0 `fby` Ctor?.x rcd + add in
-    let y: stream int = 0 `fby` Ctor?.y rcd - add in
+    let x = 0 `fby` Ctor?.x rcd + add in
+    let y = 0 `fby` Ctor?.y rcd - add in
     Ctor x y
   in
   rcd
@@ -127,9 +119,8 @@ let eg_ctor (add: stream int): stream ctor =
 [@@Tac.preprocess_with preprocess]
 let eg_pairsrec (add: stream int): stream (int & int) =
   let rec xy =
-  // TODO rm ann
-    let x: stream int = 0 `fby` fst #int #int xy + add in
-    let y: stream int = 0 `fby` snd #int #int xy - add in
+    let x = 0 `fby` fst #int #int xy + add in
+    let y = 0 `fby` snd #int #int xy - add in
     Mktuple2 #int #int x y
   in
   xy
@@ -145,58 +136,45 @@ instance has_stream_record: Shallow.has_stream record = {
 
 
 // XXX:TODO: preprocess breaks on records?
-// [@@Tac.preprocess_with preprocess]
+// [@@Tac.preprocess_with (Tac.visit_tm (fun i -> i))]
 let eg_record (add: stream int): stream int =
-  // TODO rm ann
-  let x: stream int = 0 `fby` add in
-  let y: stream int = 1 `fby` add in
-  let xy: stream record = { x; y } in
+  let x = 0 `fby` add in
+  let y = 1 `fby` add in
+  let xy = { x; y } in
   xy.x
+
 
 %splice[] (autolift_binds [`%eg_record])
 
-*)
+let eg_streaming_if (x: stream int): stream int =
+  if x >= 0 then x else -x
 
-// // XXX: not working, why not?
-// let eg_streaming_match (x: stream int): stream int =
-//   if x >= 0 then x else -x
-//   // match x >= 0 with
-//   //   | true -> x
-//   //   | false -> -x
+%splice[] (autolift_binds [`%eg_streaming_if])
 
-// %splice[] (autolift_binds [`%eg_streaming_match])
-
-(*
-[@@Tac.preprocess_with Lift.tac_lift]
 let eg_streaming_match_lets (x: stream int): stream int =
-  let cond: stream bool = x >= 0 in
+  let cond = x >= 0 in
   let abs =
     match cond with
       | true -> x
       | false -> -x
   in abs
 
-// [@@Tac.preprocess_with Lift.tac_lift]
-// let eg_streaming_if (x: stream int): stream int =
-//   let abs =
-//     if x >= 0 then x else -x
-//   in abs
+%splice[] (autolift_binds [`%eg_streaming_match_lets])
 
-
-[@@Tac.preprocess_with Lift.tac_lift]
 let eg_static_match (consts: list int) (x: stream int): stream int =
   match consts with
   | [] -> 0
   | (c: int) :: _ -> c + x
 
+%splice[] (autolift_binds [`%eg_static_match])
 
 let lemma_nat_something (x: int) (y: int): Lemma (ensures x > y) = admit ()
 
-[@@Tac.preprocess_with Lift.tac_lift]
 let eg_instantiate_lemma (x y: stream int): stream int =
   lemma_nat_something x y;
   x + y
 
+%splice[] (autolift_binds [`%eg_instantiate_lemma])
 
 (*** Not supported examples ***)
 
@@ -221,13 +199,3 @@ let eg_instantiate_lemma (x y: stream int): stream int =
 // let eg_streaming_letmatch (xy: stream (int & int)): stream int =
 //   let (x, y) = xy in
 //   x + y
-
-// should work, but doesn't:
-// [@@Tac.preprocess_with tac_lift]
-// let eg_streaming_match_bool (x: stream int): stream bool =
-//   match x >= 0 with
-//     | true -> false
-//     | xr -> xr
-
-
-*)
