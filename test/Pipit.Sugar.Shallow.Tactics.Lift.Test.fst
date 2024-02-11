@@ -18,7 +18,6 @@ instance has_stream_int: Shallow.has_stream int = {
 }
 
 (*** Examples / test cases ***)
-(*
 [@@source]
 let eg_letincs (x: stream int) =
   (x + x) + x
@@ -43,7 +42,7 @@ let eg_fby_inc (x: stream int): stream int =
 
 %splice[] (autolift_binds [`%eg_fby_inc])
 
-[@@source]
+[@@Tac.preprocess_with preprocess; source]
 let eg_letrecfun (x: int): int =
   let rec count x = if x > 0 then count (x - 1) else 0 in
   count 0
@@ -91,8 +90,6 @@ let eg_mixed_ann (x: stream int): stream int =
 
 %splice[] (autolift_binds [`%eg_mixed_ann])
 
-*)
-
 let eg_pairs (x: stream int) (y: stream bool): stream int =
   0 `fby` fst (Mktuple2 x y)
 
@@ -122,7 +119,7 @@ let eg_pairsrec (add: stream int): stream (int & int) =
   let rec xy: stream (int & int) =
     let x = 0 `fby` fst xy + add in
     let y = 0 `fby` snd xy - add in
-    Mktuple2 x y
+    (x, y)
   in
   xy
 
@@ -137,7 +134,7 @@ instance has_stream_record: Shallow.has_stream record = {
 
 
 // XXX:TODO: preprocess breaks on records?
-// [@@Tac.preprocess_with (Tac.visit_tm (fun i -> i))]
+[@@Tac.preprocess_with preprocess; source]
 let eg_record (add: stream int): stream int =
   let x = 0 `fby` add in
   let y = 1 `fby` add in

@@ -91,6 +91,16 @@ let rec_impl (#a: eqtype) {| Shallow.has_stream a |} (f: Shallow.stream a -> Sha
 let fby_impl (#a: eqtype) {| Shallow.has_stream a |} (init: a) (strm: Shallow.stream a): Shallow.stream a = Shallow.fby init strm
 //TODO etc
 
+(* Check property: a property is a stream of booleans *)
+[@@core; of_source(`%check)]
+// private
+let check_impl (eprop: Shallow.stream bool): Shallow.stream unit = Shallow.check "" eprop
+
+(* Lift constant to stream *)
+[@@core; of_source(`%lift)]
+// private
+let lift_impl (#a: eqtype) {| Shallow.has_stream a |} (x: a): Shallow.stream a = Shallow.const x
+
 // private
 let liftP'prim
   (#ft: Table.funty ShallowPrim.shallow_type)
@@ -140,27 +150,39 @@ let fail (#a: Type) (msg: string) (rng: Range.range) (ctx: list string): Tac.Tac
   >   x
 
  *)
-let rec preprocess (t: Tac.term): Tac.Tac Tac.term =
-  let go = preprocess in
+let rec preprocess_go (t: Tac.term): Tac.Tac (option Tac.term) =
+  let progress (t: Tac.term) =
+    match preprocess_go t with
+    | None -> (t, false)
+    | Some t -> (t, true)
+  in
   match Tac.inspect t with
   | Tac.Tv_Var _ | Tac.Tv_BVar _ | Tac.Tv_FVar _
   | Tac.Tv_Const _ ->
-    t
+    None
 
   | Tac.Tv_App (hd: Tac.term) (arg, aqual) ->
-    // TODO: F* bug: preprocess cannot re-pack record applications, so maybe we should avoid re-packing here unless something changed. Type needs to change to (term -> option term).
-    Tac.pack (Tac.Tv_App (go hd) (go arg, aqual))
+    let (hd, hdp) = progress hd in
+    let (arg, argp) = progress arg in
+    if hdp || argp
+    then Some (Tac.pack (Tac.Tv_App hd (arg, aqual)))
+    else None
 
   | Tac.Tv_Abs bv tm ->
-    Tac.pack (Tac.Tv_Abs bv (go tm))
+    (match preprocess_go tm with
+    | Some tm -> Some (Tac.pack (Tac.Tv_Abs bv tm))
+    | None -> None)
 
   | Tac.Tv_Let true attrs b def body ->
     // Letrec: recursive streams do not have lambdas; recursive functions do
     (match Tac.inspect def with
     | Tac.Tv_Abs _ _ ->
-      let def = go def in
-      let body = go body in
-      Tac.pack (Tac.Tv_Let true attrs b def body)
+      let (def, defp) = progress def in
+      let (body, bodyp) = progress body in
+
+      if defp || bodyp
+      then Some (Tac.pack (Tac.Tv_Let true attrs b def body))
+      else None
     | ti ->
       // type annotations on letrecs are parsed as ascriptions, so pull them out
       let (body,ty) = match ti with
@@ -170,34 +192,50 @@ let rec preprocess (t: Tac.term): Tac.Tac Tac.term =
         | _ -> (body, b.sort)
       in
       let b = { b with sort = ty } in
-      let def = go def in
-      let body = go body in
+      let (def, _) = progress def in
+      let (body, _) = progress body in
       let defabs = Tac.pack (Tac.Tv_Abs b def) in
-      Tac.pack (Tac.Tv_Let false attrs b (`rec' (`#defabs)) body))
+      Some (Tac.pack (Tac.Tv_Let false attrs b (`rec' (`#defabs)) body)))
 
   | Tac.Tv_Let false attrs b def body ->
-    let def = go def in
-    let body = go body in
-    Tac.pack (Tac.Tv_Let false attrs b def body)
+    let (def, defp) = progress def in
+    let (body, bodyp) = progress body in
+    if defp || bodyp
+    then Some (Tac.pack (Tac.Tv_Let false attrs b def body))
+    else None
 
   | Tac.Tv_Match scrut ret brs ->
-    let scrut = go scrut in
-    let brs = Tac.map (fun (pat,br) -> (pat, go br)) brs in
-    Tac.pack (Tac.Tv_Match scrut ret brs)
+    let (scrut,p) = progress scrut in
+    let pref = Tac.alloc p in
+    let brs = Tac.map (fun (pat,br) ->
+      let (br, p') = progress br in
+      if p' then Tac.write pref true;
+      (pat, br)) brs in
+    if Tac.read pref
+    then Some (Tac.pack (Tac.Tv_Match scrut ret brs))
+    else None
 
   | Tac.Tv_AscribedT (tm: Tac.term) (ty: Tac.term) tac use_eq ->
-    Tac.pack (Tac.Tv_AscribedT (go tm) ty tac use_eq)
+    (match preprocess_go tm with
+    | Some tm -> Some (Tac.pack (Tac.Tv_AscribedT tm ty tac use_eq))
+    | None -> None)
 
   | Tac.Tv_AscribedC (tm: Tac.term) (cmp: Tac.comp) tac use_eq ->
-    Tac.pack (Tac.Tv_AscribedC (go tm) cmp tac use_eq)
+    (match preprocess_go tm with
+    | Some tm -> Some (Tac.pack (Tac.Tv_AscribedC tm cmp tac use_eq))
+    | None -> None)
 
   // Type stuff: leave alone
   | Tac.Tv_Uvar _ _ | Tac.Tv_UInst _ _
   | Tac.Tv_Arrow  _ _ | Tac.Tv_Type   _
-  | Tac.Tv_Refine _ _ | Tac.Tv_Unknown     -> t
+  | Tac.Tv_Refine _ _ | Tac.Tv_Unknown     -> None
 
   | Tac.Tv_Unsupp -> fail ("cannot unpack unsupported term: " ^ Tac.term_to_string t) (Tac.range_of_term t) ["in preprocess tactic"]
 
+let preprocess (t: Tac.term): Tac.Tac Tac.term =
+  match preprocess_go t with
+  | None -> t
+  | Some t -> t
 
 
 
@@ -381,7 +419,6 @@ let unwrap_prim (prim: Tac.term): Tac.Tac Tac.term =
   Tac.visit_tm go prim
 
 let lift_prim (e: env) (prim: Tac.term): Tac.Tac (Tac.term & list Tac.term & Tac.term) =
-  // TODO: unwrap prim: remove unwrap type arguments
   let prim = unwrap_prim prim in
   let ty = Tac.tc e.tac_env prim in
   let nm =
