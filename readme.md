@@ -45,11 +45,14 @@ opam update
 # Create a local opam switch with OCaml 4.14
 opam switch create . 4.14.1
 
+# Initialise git submodules (FStar and Karamel)
+git submodule update --init
+
 # Tell opam to use the development version of F* but don't install it yet
-opam pin add fstar git+https://github.com/songlarknet/FStar#pipit --no-action
+opam pin add fstar file://submodules/FStar --no-action
 
 # Tell opam where to find the local repo for Karamel and install it and F*
-opam pin add karamel git+https://github.com/songlarknet/karamel#pipit --yes
+opam pin add karamel file://submodules/karamel --yes
 ```
 #### Modern Linux (no Python 2.7)
 
@@ -74,8 +77,8 @@ The `--no-depexts` flag is important: it tells opam not to care that the `python
 cd $PIPIT
 opam update
 opam switch create . 4.14.1
-opam pin add fstar git+https://github.com/songlarknet/FStar#pipit --no-action
-opam pin add karamel git+https://github.com/songlarknet/karamel#pipit --yes
+opam pin add fstar file://submodules/FStar --no-action
+opam pin add karamel file://submodules/karamel --yes
 ```
 
 ### IDE configuration

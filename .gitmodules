@@ -1,0 +1,8 @@
+[submodule "submodules/FStar"]
+	path = submodules/FStar
+	url = git@github.com:songlarknet/FStar.git
+	branch = pipit
+[submodule "submodules/karamel"]
+	path = submodules/karamel
+	url = git@github.com:songlarknet/karamel.git
+	branch = pipit

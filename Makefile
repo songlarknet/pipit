@@ -125,8 +125,10 @@ dev-init:
 	@opam update
 	@echo "* Create a local opam switch with OCaml 4.14"
 	@opam switch create . 4.14.1
+	@echo "* Updating / initialising git submodules"
+	@git submodule update --init
 	@echo "* Pinning development version of F*"
-	@opam pin add fstar git+https://github.com/songlarknet/FStar#pipit --no-action
+	@opam pin add fstar file://submodules/FStar --no-action
 	@echo "* Pinning development version of karamel; building"
-	@opam pin add karamel git+https://github.com/songlarknet/karamel#pipit --yes --no-depexts
+	@opam pin add karamel file://submodules/karamel --yes --no-depexts
 # no-depexts is required for Linux without Python 2.7 apt package
