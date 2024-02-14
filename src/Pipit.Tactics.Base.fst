@@ -42,6 +42,17 @@ let unwrap_AscribeT (tm: Tac.term): Tac.Tac Tac.term =
   | Tac.Tv_AscribedT tm _ _ _ -> tm
   | _ -> tm
 
+(* Try to get the type of a term. If the term is a type ascription (tm <: ty) then
+  return the type ty as-is without bothering to check tm. *)
+let tc_unascribe (e: Tac.env) (tm: Tac.term): Tac.Tac Tac.term =
+  match Tac.inspect tm with
+  | Tac.Tv_AscribedT _ ty _ _
+  | Tac.Tv_AscribedC _ (Tac.C_Total ty) _ _ ->
+    ty
+  | _ ->
+    let ty = Tac.tc e tm in
+    ty
+
 let returns_of_comp (c: Tac.comp): Tac.term =
   match c with
   | Tac.C_Total t
