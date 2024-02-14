@@ -105,7 +105,7 @@ let modes
   let^ ref_ck      = Clocked.get_clock last_ref in
   let^ ref_master  = Clocked.map get_master last_ref in
   let^ ref_sof     = Clocked.map get_sof last_ref in
-  let^ cycle_index = Clocked.current_or_else (S32R.s32r' 0) (Clocked.map get_cycle_index last_ref) in
+  let^ cycle_index = Clocked.current_or_else (S32R.s32r 0) (Clocked.map get_cycle_index last_ref) in
 
   let^ cycle_time  = States.cycle_times mode ref_sof (get_local_time input) in
 

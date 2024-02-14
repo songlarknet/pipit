@@ -74,6 +74,10 @@ type stream (a: eqtype) {| Shallow.has_stream a |} = a
 assume val rec' (#a: eqtype) {| Shallow.has_stream a |} (f: stream a -> stream a): stream a
 (* Delayed streams *)
 assume val fby (#a: eqtype) {| Shallow.has_stream a |} (init: a) (strm: stream a): stream a
+(* Uninitialised delay. This is "unsafe" in that the first value is undefined. *)
+assume val pre (#a: eqtype) {| Shallow.has_stream a |} (strm: stream a): stream a
+(* Non-delayed "x then y" *)
+assume val (->^) (#a: eqtype) {| Shallow.has_stream a |} (x y: stream a): stream a
 (* Check property: a property is a stream of booleans *)
 assume val check (strm: stream bool): stream unit
 (* Lift constant to stream *)
@@ -92,7 +96,15 @@ let rec_impl (#a: eqtype) {| Shallow.has_stream a |} (f: Shallow.stream a -> Sha
 [@@core; of_source(`%fby)]
 // private
 let fby_impl (#a: eqtype) {| Shallow.has_stream a |} (init: a) (strm: Shallow.stream a): Shallow.stream a = Shallow.fby init strm
-//TODO etc
+
+[@@core; of_source(`%pre)]
+// private
+let pre_impl (#a: eqtype) {| Shallow.has_stream a |} (strm: Shallow.stream a): Shallow.stream a = Shallow.pre strm
+
+[@@core; of_source(`%op_Subtraction_Greater_Hat)]
+// private
+let arrow_impl (#a: eqtype) {| Shallow.has_stream a |} (x y: Shallow.stream a): Shallow.stream a = Shallow.(x ->^ y)
+
 
 (* Check property: a property is a stream of booleans *)
 [@@core; of_source(`%check)]
@@ -105,6 +117,7 @@ let check_impl (eprop: Shallow.stream bool): Shallow.stream unit = Shallow.check
 let lift_impl (#a: eqtype) {| Shallow.has_stream a |} (x: a): Shallow.stream a = Shallow.const x
 
 // private
+[@@"opaque_to_smt"]
 let liftP'prim
   (#ft: Table.funty ShallowPrim.shallow_type)
   (f: SugarBase.prim ShallowPrim.table ft):
@@ -112,6 +125,7 @@ let liftP'prim
   SugarBase.liftP'prim f
 
 // private
+[@@"opaque_to_smt"]
 let liftP'apply
   (#a: eqtype)
   {| Shallow.has_stream a |}
@@ -122,6 +136,7 @@ let liftP'apply
   SugarBase.liftP'apply f ea
 
 // private
+[@@"opaque_to_smt"]
 let liftP'stream
   (#a: eqtype)
   {| Shallow.has_stream a |}

@@ -77,13 +77,13 @@ let scheduling_error_1 (ref_ck: S.stream bool) (msc: S.stream (Clocked.t message
   let open S in
   let open S32R in
   let^ minimum = Clocked.stream_fold {
-      initial = s32r' 7;
+      initial = s32r 7;
       update  = (fun m1 m2 -> if_then_else (m1 < m2) m1 m2);
       clocked = msc;
       reset   = ref_ck;
     } in
   let^ maximum = Clocked.stream_fold {
-      initial = s32r' 0;
+      initial = s32r 0;
       update  = (fun m1 m2 -> if_then_else (m1 > m2) m1 m2);
       clocked = msc;
       reset   = ref_ck;
