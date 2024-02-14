@@ -146,79 +146,26 @@ let once (e: stream bool): stream bool =
 
 module Check = Pipit.Sugar.Check
 module T = Pipit.Tactics
+module Lift = Pipit.Sugar.Shallow.Tactics.Lift
 
-(* Convert proposition to boolean. This is an unsafe axiom in general, but we
-  use it here in a very restricted context, so that it is only used to state checks
-  which are logically propositions anyway.
-  This is a bit of a shame, but it's not easy to embed propositions in the term
-  language itself as we want decidable equality on values and primitives so the
-  CSE transform can run. The extraction also requires a default value for
-  recursive streams.
-  Maybe we want to introduce a separate set of types for runtime vs
-  specification.
-  Although the helper functions below use this unsafe axiom, they are really
-  only a syntactic convenience for stating and instantiating propositions.
+(** Propose a lemma instantiation with the given pattern.
 
-  AXIOM:ADMIT: restricted interface for embedding propositions *)
-private
-assume val unsafe_proposition_holds (p: prop): b: bool
- { p <==> b2t b }
+  It's currently difficult to instantiate lemmas explicitly, because they
+  live in prop, while our properties are restricted to booleans.
+  Previously I had an axiom for this, which converted the proposition to
+  a boolean, but it's not clear how sound that is.
 
-assume val lemma_unsafe_proposition_holds (b: bool)
-  : Lemma (unsafe_proposition_holds (b2t b) == b)
-    [SMTPat (unsafe_proposition_holds (b2t b))]
+  The version here doesn't require any axioms. To instantiate a lemma, we
+  need to define an opaque pattern function that takes the lemma arguments and
+  returns a unit. We then define the lemma with an [SMTPat p] so it triggers on
+  seeing the pattern p. We can then put the pattern itself into the program.
 
-(* Check that a 1-argument proposition holds *)
-let check1 {| has_stream 'a |} (p: 'a -> prop) (a: stream 'a): stream unit =
-  let p' (a: 'a): bool = unsafe_proposition_holds (p a) in
-  check "check1" (S.liftP1 (p'prim1 None p') a)
+  The implementation introduces a check that `p = ()`, because otherwise the
+  let-bound pattern can be removed as dead code.
 
-let check2 {| has_stream 'a |} {| has_stream 'b |} (p: 'a -> 'b -> prop) (a: stream 'a) (b: stream 'b): stream unit =
-  let p' a b: bool = unsafe_proposition_holds (p a b) in
-  check "check2" (S.liftP2 (p'prim2 None p') a b)
-
-let check3 {| has_stream 'a |} {| has_stream 'b |} {| has_stream 'c |} (p: 'a -> 'b -> 'c -> prop) (a: stream 'a) (b: stream 'b) (c: stream 'c): stream unit =
-  let p' a b c: bool = unsafe_proposition_holds (p a b c) in
-  check "check3" (S.liftP3 (p'prim3 None p') a b c)
-
-(* Use an existing proof *)
-let pose (p: prop) (prf: squash p): stream unit =
-  let e = Check.exp_of_stream0 (check1 (fun () -> p) (const ())) in
-  assert (Check.system_induct_k 0 e) by (T.norm_full []);
-  Check.stream_of_checked0 e
-
-(* Instantiate a forall proof with a stream *)
-let pose1_forall {| has_stream 'a |} (p: 'a -> prop) (prf: squash (forall (a: 'a). p a)): stream 'a -> stream unit =
-  let e = Check.exp_of_stream1 (check1 p) in
+*)
+[@@Lift.core; Lift.of_source(`%Lift.lemma_pattern)]
+let lemma_pattern: stream unit -> stream unit =
+  let e = Check.exp_of_stream1 (fun pat -> check "" (pat = const ())) in
   assert (Check.system_induct_k 0 e) by (T.norm_full []);
   Check.stream_of_checked1 e
-
-let pose2_forall {| has_stream 'a |} {| has_stream 'b |} (p: 'a -> 'b -> prop) (prf: squash (forall (a: 'a) (b: 'b). p a b)): stream 'a -> stream 'b -> stream unit =
-  let e = Check.exp_of_stream2 (check2 p) in
-  assert (Check.system_induct_k 0 e) by (T.norm_full []);
-  Check.stream_of_checked2 e
-
-let pose3_forall {| has_stream 'a |} {| has_stream 'b |} {| has_stream 'c |} (p: 'a -> 'b -> 'c -> prop) (prf: squash (forall (a: 'a) (b: 'b) (c: 'c). p a b c)): stream 'a -> stream 'b -> stream 'c -> stream unit =
-  let e = Check.exp_of_stream3 (check3 p) in
-  assert (Check.system_induct_k 0 e) by (T.norm_full []);
-  Check.stream_of_checked3 e
-
-(* Call a prop with a stream *)
-let pose1 {| has_stream 'a |} (p: 'a -> prop) (prf: (a: 'a) -> squash (p a)): stream 'a -> stream unit =
-  let e = Check.exp_of_stream1 (check1 p) in
-  introduce forall (a: 'a). p a with prf a;
-  assert (Check.system_induct_k 0 e) by (T.norm_full []);
-  Check.stream_of_checked1 e
-
-let pose2 {| has_stream 'a |} {| has_stream 'b |} (p: 'a -> 'b -> prop) (prf: (a: 'a) -> (b: 'b) -> squash (p a b)): stream 'a -> stream 'b -> stream unit =
-  let e = Check.exp_of_stream2 (check2 p) in
-  introduce forall (a: 'a) (b: 'b). p a b with prf a b;
-  assert (Check.system_induct_k 0 e) by (T.norm_full []);
-  Check.stream_of_checked2 e
-
-let pose3 {| has_stream 'a |} {| has_stream 'b |} {| has_stream 'c |} (p: 'a -> 'b -> 'c -> prop) (prf: (a: 'a) -> (b: 'b) -> (c: 'c) -> squash (p a b c)): stream 'a -> stream 'b -> stream 'c -> stream unit =
-  let e = Check.exp_of_stream3 (check3 p) in
-  introduce forall (a: 'a) (b: 'b) (c: 'c). p a b c with prf a b c;
-  assert (Check.system_induct_k 0 e) by (T.norm_full []);
-  Check.stream_of_checked3 e
-
