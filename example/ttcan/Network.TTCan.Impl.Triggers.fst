@@ -11,22 +11,23 @@ open Network.TTCan.Types
 module SugarBase = Pipit.Sugar.Base
 module SugarTac  = Pipit.Sugar.Shallow.Tactics
 
+open Pipit.Sugar.Shallow.Tactics.Lift
+
 module UInt8 = FStar.UInt8
 module UInt64= FStar.UInt64
 module Cast  = FStar.Int.Cast
 
 (***** Non-streaming helper functions ****)
-let trigger_check_enabled' (cycle_index: cycle_index) (trigger: trigger): bool =
+let trigger_check_enabled (cycle_index: cycle_index) (trigger: trigger): bool =
   let mask    = S32R.pow2_minus_one trigger.repeat_factor in
-  let mask8   = S32R.s32r_to_u8' mask in
-  let index8  = S32R.s32r_to_u8' cycle_index in
-  let offset8 = S32R.s32r_to_u8' trigger.cycle_offset in
+  let mask8   = S32R.s32r_to_u8 mask in
+  let index8  = S32R.s32r_to_u8 cycle_index in
+  let offset8 = S32R.s32r_to_u8 trigger.cycle_offset in
   UInt8.logand mask8 index8 = offset8
 
-// XXX: TODO: cfg is implicit so not lifted to stream by SugarTac.lift_prim. however, it's not included in primitive name. should be an explicit argument, but anonymous primitive
-let trigger_compute_expiry' (#cfg: config) (ix: trigger_index) (trigger: trigger): ntu =
+let trigger_compute_expiry (cfg: config) (ix: trigger_index) (trigger: trigger): ntu =
   let open UInt64 in
-  let tm = S32R.s32r_to_u64' trigger.time_mark in
+  let tm = S32R.s32r_to_u64 trigger.time_mark in
   (* We keep trying to send Tx_Ref_Triggers until they're pre-empted by the next trigger, so their expiry is very large.
     We keep trying to send Tx_Triggers for Tx_Enable_Window ntus.
     We don't need to keep trying Rx_Triggers or Watch_Triggers. *)
@@ -34,19 +35,19 @@ let trigger_compute_expiry' (#cfg: config) (ix: trigger_index) (trigger: trigger
   | Tx_Ref_Trigger ->
     tm +^ 65535uL
   | Tx_Trigger ->
-    tm +^ S32R.s32r_to_u64' cfg.tx_enable_window
+    tm +^ S32R.s32r_to_u64 cfg.tx_enable_window
   | _ ->
     tm
 
 
-let trigger_load' (#cfg: config) (ix: trigger_index) (ref_trigger_offset: ref_offset): trigger =
+let trigger_load (cfg: config) (ix: trigger_index) (ref_trigger_offset: ref_offset): trigger =
   [@@no_inline_let] // do not inline index function into use-sites
   let base = cfg.trigger_index_fun ix in
   let time_mark =
     match base.trigger_type with
     | Tx_Ref_Trigger ->
       // use saturating addition to clamp to [0,65535]
-      S32R.add_sat' base.time_mark ref_trigger_offset
+      S32R.add_sat base.time_mark ref_trigger_offset
     | _ ->
       base.time_mark
   in
@@ -72,40 +73,20 @@ type fetch_result = {
   // True if trigger's end time <= now
   is_expired: bool;
   // Total enabled and disabled triggers seen this cycle
-  tx_count:   tx_count;
+  tx_count:   trigger_count;
 }
 
 
-(**** Streaming boilerplate: lifting above helper functions and record definitions. ****)
-%splice[trigger_check_enabled]  (SugarTac.lift_prim "trigger_check_enabled" (`trigger_check_enabled'))
-%splice[trigger_compute_expiry] (SugarTac.lift_prim "trigger_compute_expiry" (`trigger_compute_expiry'))
-%splice[trigger_load]           (SugarTac.lift_prim "trigger_load" (`trigger_load'))
-
+(**** Streaming instances for records ****)
 instance has_stream_prefetch_result: S.has_stream prefetch_result = {
   ty_id       = [`%prefetch_result];
   val_default = { enabled = S.val_default; index = S.val_default; expiry = S.val_default; trigger = S.val_default; };
 }
 
-%splice[prefetch_result_new] (SugarTac.lift_prim "prefetch_result_new" (`(fun (index: trigger_index) enabled expiry trigger -> { index; enabled; expiry; trigger })))
-%splice[get_index] (SugarTac.lift_prim "get_index" (`(fun (r: prefetch_result) -> r.index)))
-%splice[get_enabled] (SugarTac.lift_prim "get_enabled" (`(fun (r: prefetch_result) -> r.enabled)))
-%splice[get_expiry] (SugarTac.lift_prim "get_expiry" (`(fun (r: prefetch_result) -> r.expiry)))
-%splice[get_trigger] (SugarTac.lift_prim "get_trigger" (`(fun (r: prefetch_result) -> r.trigger)))
-
 instance has_stream_fetch_result: S.has_stream fetch_result = {
   ty_id       = [`%fetch_result];
   val_default = { current = S.val_default; is_new = S.val_default;  is_started = S.val_default; is_expired = S.val_default; tx_count = S.val_default; };
 }
-
-
-%splice[fetch_result_new] (SugarTac.lift_prim "fetch_result_new" (`(fun (current: prefetch_result) is_new is_started is_expired tx_count -> { current; is_new; is_started; is_expired; tx_count; })))
-
-%splice[get_current] (SugarTac.lift_prim "get_current" (`(fun (r: fetch_result) -> r.current)))
-%splice[get_is_new] (SugarTac.lift_prim "get_is_new" (`(fun (r: fetch_result) -> r.is_new)))
-%splice[get_is_started] (SugarTac.lift_prim "get_is_started" (`(fun (r: fetch_result) -> r.is_started)))
-%splice[get_is_expired] (SugarTac.lift_prim "get_is_expired" (`(fun (r: fetch_result) -> r.is_expired)))
-%splice[get_tx_count] (SugarTac.lift_prim "get_tx_count" (`(fun (r: fetch_result) -> r.tx_count)))
-
 
 (*
   Pre-fetch the next enabled trigger.
@@ -122,25 +103,27 @@ instance has_stream_fetch_result: S.has_stream fetch_result = {
 *)
 let prefetch
   (cfg: config)
-  (reset_ck:           S.stream bool)
-  (cycle_time:         S.stream ntu)
-  (cycle_index:        S.stream cycle_index)
-  (ref_trigger_offset: S.stream ref_offset)
-    : S.stream prefetch_result =
-  let open S in
-  rec' (fun (fetch: S.stream prefetch_result) ->
-    let^ pre_index = S32R.s32r' 0 `fby` get_index fetch in
-    let^ advance = false `fby` (~ (get_enabled fetch) \/ U64.(S32R.s32r_to_u64 (get_time_mark (get_trigger fetch)) <= cycle_time)) in
-    let^ index =
-      if_then_else reset_ck
-        (S32R.s32r 0)
-        (if_then_else advance
-          (S32R.inc_sat pre_index)
-          pre_index) in
-    let^ trigger = trigger_load #cfg index ref_trigger_offset in
-    let^ enabled = trigger_check_enabled cycle_index trigger in
-    let^ expiry  = trigger_compute_expiry #cfg index trigger in
-    prefetch_result_new index enabled expiry trigger)
+  (reset_ck:           stream bool)
+  (cycle_time:         stream ntu)
+  // XXX: why #_ necessary?
+  (cycle_index:        stream cycle_index #_)
+  (ref_trigger_offset: stream ref_offset #_)
+    : stream prefetch_result #_ =
+  rec' (fun fetch ->
+    let pre_index = (S32R.s32r 0 <: trigger_index) `fby` fetch.index in
+    let advance = false `fby` (not fetch.enabled || U64.(S32R.s32r_to_u64 fetch.trigger.time_mark <= cycle_time)) in
+    let index =
+      if reset_ck
+      then S32R.s32r 0
+      else if advance
+      then S32R.inc_sat pre_index
+      else pre_index in
+    let trigger = trigger_load cfg index ref_trigger_offset in
+    let enabled = trigger_check_enabled cycle_index trigger in
+    let expiry  = trigger_compute_expiry cfg index trigger in
+    { index; enabled; expiry; trigger })
+
+%splice[] (autolift_binds [`%prefetch])
 
 (*^5.1 Tx_Count: each time a Tx_Trigger becomes active, Tx_Count is incremented. Tx_Count is not incremented beyond Expected_Tx_Trigger. *)
 (* CLARIFICATION: the definition of "active" is not entirely clear to me.
@@ -148,55 +131,54 @@ let prefetch
   I think it must be every time it's encountered by the loop, because otherwise we would underflow for a periodic trigger that doesn't transmit every cycle.
   *)
 let tx_counter
-  (reset_ck: S.stream bool)
-  (prefetch: S.stream prefetch_result)
-    : S.stream tx_count =
-  let open S in
+  (reset_ck: stream bool)
+  (prefetch: stream prefetch_result #_)
+    : stream trigger_count #_ =
   let open S32R in
   rec' (fun tx_count ->
-    let^ prev =
-      if_then_else reset_ck
-        (s32r 0)
-        (s32r' 0 `fby` tx_count) in
-    let^ incr =
-      Util.edge (get_index prefetch) /\
-      get_trigger_type (get_trigger prefetch) = const Tx_Trigger in
-    if_then_else incr (inc_sat prev) prev
-  )
+    let prev: trigger_count =
+      if reset_ck
+      then s32r 0
+      else s32r 0 `fby` tx_count in
+    let incr =
+      Util.edge #trigger_index prefetch.index &&
+      prefetch.trigger.trigger_type = Tx_Trigger in
+    if incr
+    then inc_sat prev
+    else prev)
+
+%splice[] (autolift_binds [`%tx_counter])
 
 (*
   Fetch the current trigger, or the next one if there is no current trigger.
 *)
 let fetch
   (cfg: config)
-  (reset_ck:   S.stream bool)
-  (cycle_time: S.stream ntu)
-  (cycle_index: S.stream cycle_index)
-  (ref_trigger_offset: S.stream ref_offset)
-    : S.stream fetch_result =
-  let open S in
-  let is_trigger_started (tr: S.stream trigger) =
-    U64.(S32R.s32r_to_u64 (get_time_mark tr) <= cycle_time) in
-  let^ next = prefetch cfg reset_ck cycle_time cycle_index ref_trigger_offset in
-  rec' (fun (fetch: S.stream fetch_result) ->
+  (reset_ck:    stream bool)
+  (cycle_time:  stream ntu)
+  (cycle_index: stream cycle_index #_)
+  (ref_trigger_offset: stream ref_offset #_)
+    : stream fetch_result #_ =
+  let is_trigger_started (tr: stream trigger #_): stream bool =
+    U64.(S32R.s32r_to_u64 tr.time_mark <= cycle_time) in
+  let next = prefetch cfg reset_ck cycle_time cycle_index ref_trigger_offset in
+  rec' (fun (fetch: stream fetch_result #_) ->
     // If the new trigger is enabled and is ready to start, then the new trigger has precedence. This case allows Watch_Triggers to pre-empt Tx_Ref_Triggers, as Tx_Ref_Triggers do not expire otherwise.
     // Otherwise, if the old trigger expired on the previous tick, then we the new trigger can be started. The delay here ensures that the caller gets a chance to handle the expired triggers.
-    let^ advance = reset_ck \/
-      (get_enabled next /\ is_trigger_started (get_trigger next)) \/
-      (false `fby` get_is_expired fetch)
+    let advance = reset_ck ||
+      (next.enabled && is_trigger_started next.trigger) ||
+      (false `fby` fetch.is_expired)
     in
-    let^ current =
-      next ->^ if_then_else advance next (pre (get_current fetch))
+    let current =
+      next ->^ (if advance then next else pre fetch.current)
     in
 
-    let^ index = get_index current in
-    let^ is_new = Util.edge index in
-    let^ is_started = is_trigger_started (get_trigger current) in
-    let^ is_expired = U64.(get_expiry current <= cycle_time) in
-    let^ tx_count = tx_counter reset_ck next in
-    fetch_result_new current is_new is_started is_expired tx_count
+    let index = current.index in
+    let is_new = Util.edge #trigger_index index in
+    let is_started = is_trigger_started current.trigger in
+    let is_expired = U64.(current.expiry <= cycle_time) in
+    let tx_count = tx_counter reset_ck next in
+    { current; is_new; is_started; is_expired; tx_count; }
   )
 
-
-let get_message_index (fet: S.stream fetch_result): S.stream app_message_index =
-  get_message_index (get_trigger (get_current fet))
+%splice[] (autolift_binds [`%fetch])
