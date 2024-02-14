@@ -5,11 +5,18 @@ module Pipit.Tactics
 
 module T = FStar.Tactics
 
+module Lift = Pipit.Sugar.Shallow.Tactics.Lift
+
 irreducible
 let norm_attr = ()
 
 // Evaluate anything inside Pipit, anything in F*, and anything marked with [@@norm_attr]
-let norm_delta_options (namespaces: list string) = [delta_namespace ("Pipit" :: "FStar.Pervasives" :: "FStar.List" :: "FStar.Option" :: "FStar.Seq" :: namespaces); delta_attr [`%norm_attr]; nbe; zeta; iota; primops]
+let norm_delta_options (namespaces: list string) = [
+  delta_namespace ("Pipit" :: "FStar.Pervasives" :: "FStar.List" :: "FStar.Option" :: "FStar.Seq" :: namespaces);
+  // Evaluate anything marked [@@norm_attr], explicit core expressions, and typeclass instances
+  delta_attr [`%norm_attr; `%Lift.core; `%FStar.Tactics.Typeclasses.tcinstance];
+  nbe; zeta; iota; primops
+]
 
 (* First stage of normalisation: normalise most things, but avoid unfolding
   any "delayed" applications of PipitRuntime.Prim.p'delay. These delays should
@@ -25,6 +32,7 @@ let norm_phase_pre (namespaces: list string) =
 (* Final stage of normalisation: unwrap the delayed applications and perform
   minimal normalisation. *)
 let norm_phase_post () =
+  // XXX: does this need zeta_full to force descending into matches?
   T.norm [delta_only [`%PipitRuntime.Prim.p'delay]]
 
 let norm_full (namespaces: list string) =
@@ -118,7 +126,7 @@ let rec tac_descend (break_binder: T.binder -> T.Tac unit) (norm: unit -> T.Tac 
     let b = T.forall_intro () in
     break_binder b;
     go ()
-  // Pulling the impliciation lhs into the environment is a bit annoying because
+  // Pulling the implication lhs into the environment is a bit annoying because
   // then subsequent calls to `norm` won't normalise it.
   // Disable for now
   // | T.Implies _ _ ->
