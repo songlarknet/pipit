@@ -134,8 +134,10 @@ let trigger_fetch
 
 
 let trigger_tx
+  (cfg:           config)
   (tx_status:     S.stream tx_status)
   (bus_status:    S.stream bus_status)
+  (cycle_time:    S.stream ntu)
   (fetch:         S.stream Triggers.fetch_result)
   (sync_state:    S.stream sync_mode)
   (error:         S.stream error_severity)
@@ -145,6 +147,8 @@ let trigger_tx
   let^ trigger_enabled = Triggers.get_enabled (Triggers.get_current fetch) in
   let^ trigger_msg     = get_message_index trigger in
   let^ trigger_type    = get_trigger_type  trigger in
+  let^ trigger_expiry  = Triggers.trigger_tx_ref_expiry #cfg (get_time_mark trigger) in
+  let^ trigger_expired = U64.(trigger_expiry < cycle_time) in
 
   let^ tx_enabled      = (sync_state = const In_Schedule) /\ trigger_enabled /\ (trigger_type = const Tx_Trigger) in
 
@@ -165,7 +169,7 @@ let trigger_tx
     let^ tx_pending = rec' (fun tx_pending ->
       if_then_else (Triggers.get_is_new fetch /\ tx_enabled)
         (const true)
-        (if_then_else (tx_success \/ (Triggers.get_is_expired fetch))
+        (if_then_else (tx_success \/ trigger_expired)
           (const false)
           (false `fby` tx_pending))) in
 
@@ -188,10 +192,11 @@ let trigger_rx
   let open S in
   let^ trigger         = Triggers.get_trigger (Triggers.get_current fetch) in
   let^ trigger_enabled = Triggers.get_enabled (Triggers.get_current fetch) in
-  let^ trigger_msg     = get_message_index trigger in
-  let^ trigger_type    = get_trigger_type  trigger in
+  let^ trigger_msg     = get_message_index      trigger in
+  let^ trigger_type    = get_trigger_type       trigger in
+  let^ trigger_started = Triggers.get_is_started fetch in
 
-  let^ rx_check        = if_then_else (trigger_enabled /\ trigger_type = const Rx_Trigger /\ Triggers.get_is_expired fetch)
+  let^ rx_check        = if_then_else (trigger_enabled /\ trigger_type = const Rx_Trigger /\ trigger_started)
     (Clocked.some trigger_msg)
     Clocked.none in
   let^ rx_check_ok     = MsgSt.rx_pendings rx_check rx_app in
@@ -327,5 +332,5 @@ let controller
   let open S in
   let^ tx_ref = trigger_ref cfg (get_local_time input) (get_tx_status input) (get_bus_status input) cycle_index cycle_time fetch sync_state error in
   let^ rx_msc_upd = trigger_rx (get_rx_app input) fetch in
-  let^ tx = trigger_tx (get_tx_status input) (get_bus_status input) fetch sync_state error in
+  let^ tx = trigger_tx cfg (get_tx_status input) (get_bus_status input) cycle_time fetch sync_state error in
   controller' cfg ref_ck mode cycle_time fetch sync_state error_CAN_Bus_Off error tx_ref (fst tx) (snd tx) rx_msc_upd

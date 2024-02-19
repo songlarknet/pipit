@@ -40,8 +40,6 @@ type cycle_index   = Subrange.t { min = 0; max = 63 }
 // power-of-two denoting how often to repeat
 type repeat_factor = Subrange.t { min = 0; max = 6 }
 
-type tx_count      = Subrange.t { min = 0; max = 65535 }
-
 type ref_message = {
   sof:         ntu;
   master:      master_index;
@@ -54,6 +52,10 @@ type message_status_counter = Subrange.t { min = 0; max = 7 }
 (* We are packing the 3-bit MSCs into 64-bits, so a node can only send/receive up to 64 application-specific message types *)
 let max_app_message_count = 63
 type app_message_index = Subrange.t { min = 0; max = max_app_message_count }
+
+type trigger_index = Subrange.t { min = 0; max = 63 }
+type trigger_count = Subrange.t { min = 0; max = 64 }
+
 
 type trigger = {
   trigger_type:  trigger_type;
@@ -74,11 +76,11 @@ type fault_bits = {
 
 let init_watch_trigger_time: ntu_config = Subrange.s32r' 65535
 
-(* The maximum cycle duration is 65ms / 65000µs; if we process a trigger every 10µs, then we can handle 6500 triggers.
-  Some limit is required to ensure we can index into the array without overflowing,
-  but in practice, we will have much fewer triggers. *)
-let max_trigger_index = 6500
-type trigger_index = Subrange.t { min = 0; max = max_trigger_index }
+noeq
+type triggers = {
+  trigger_index_fun: trigger_index -> trigger;
+  trigger_count: (count: trigger_count { Subrange.v count > 0 });
+}
 
 noeq
 type config = {
@@ -92,10 +94,13 @@ type config = {
   (* This requirement is somewhat vague and seems to introduce a potential deadlock if all masters had previously failed. I have implemented it by specifying a delay to stop transmissions after a severe failure occurs. *)
   severe_error_ref_cooldown: ntu_config;
 
-  trigger_index_fun: trigger_index -> trigger;
+  triggers: triggers;
   // TODO: trigger validity check: space between them;
 
-  expected_tx_triggers: tx_count;
+  expected_tx_triggers: trigger_count;
+
+  (* The TTCAN driver executes every N ntu ticks *)
+  ttcan_exec_period: ntu_config;
 }
 
 let config_master_enable (cfg: config): bool = Some? cfg.master_index
@@ -103,8 +108,6 @@ let config_master_index (cfg: config): master_index =
   match cfg.master_index with
   | None -> Subrange.s32r' 0
   | Some ix -> ix
-
-// let config_trigger_count (cfg: config): 
 
 (**** Pipit.Shallow stream instances:
   The following boilerplate is required to embed types in Pipit programs. The
