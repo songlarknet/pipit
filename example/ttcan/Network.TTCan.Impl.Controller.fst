@@ -143,7 +143,7 @@ let trigger_tx
   (error:         S.stream error_severity)
     : S.stream (Clocked.t app_message_index & Clocked.t bool) =
   let open S in
-  let^ trigger         = Triggers.get_trigger (Triggers.get_current fetch) in
+  let^ trigger         = Triggers.get_trigger fetch in
   let^ trigger_enabled = Triggers.get_enabled (Triggers.get_current fetch) in
   let^ trigger_msg     = get_message_index trigger in
   let^ trigger_type    = get_trigger_type  trigger in
@@ -190,7 +190,7 @@ let trigger_rx
   (fetch:         S.stream Triggers.fetch_result)
     : S.stream (Clocked.t bool) =
   let open S in
-  let^ trigger         = Triggers.get_trigger (Triggers.get_current fetch) in
+  let^ trigger         = Triggers.get_trigger fetch in
   let^ trigger_enabled = Triggers.get_enabled (Triggers.get_current fetch) in
   let^ trigger_msg     = get_message_index      trigger in
   let^ trigger_type    = get_trigger_type       trigger in
@@ -219,7 +219,7 @@ let trigger_ref
   (error:         S.stream error_severity)
     : S.stream (Clocked.t ref_message) =
   let open S in
-  let^ trigger         = Triggers.get_trigger (Triggers.get_current fetch) in
+  let^ trigger         = Triggers.get_trigger fetch in
   let^ trigger_enabled = Triggers.get_enabled (Triggers.get_current fetch) in
   let^ trigger_type    = get_trigger_type  trigger in
 
@@ -245,7 +245,7 @@ let controller'
   (rx_msc_upd:    S.stream (Clocked.t bool))
     : S.stream controller_result =
   let open S in
-  let^ trigger         = Triggers.get_trigger (Triggers.get_current fetch) in
+  let^ trigger         = Triggers.get_trigger fetch in
   let^ trigger_enabled = Triggers.get_enabled (Triggers.get_current fetch) in
   let^ trigger_msg     = get_message_index trigger in
   let^ trigger_type    = get_trigger_type  trigger in
@@ -276,17 +276,21 @@ let controller'
 
   let^ error_Tx_Underflow =
     // Check for underflow just before starting new cycle, reset if no underflow upon reaching next cycle
-    Errors.cycle_end_check {
-      reset = ref_ck;
-      set   = sync_state = const In_Schedule /\ S32R.(Triggers.get_tx_count fetch < const cfg.expected_tx_triggers);
-    } in
+    // TODO: disable tx_count for now: refactor to clear at start of MATRIX, when ref_ck and cycle_index = 0
+    const false in
+    // Errors.cycle_end_check {
+    //   reset = ref_ck;
+    //   set   = sync_state = const In_Schedule /\ S32R.(Triggers.get_tx_count fetch < const cfg.expected_tx_triggers);
+    // } in
 
   let^ error_Tx_Overflow =
     // Check for overflow any time, but only reset at new cycle if no overflows
-    Errors.transient {
-      reset = ref_ck;
-      set   = sync_state = const In_Schedule /\ S32R.(Triggers.get_tx_count fetch > const cfg.expected_tx_triggers);
-    } in
+    // TODO: disable tx_count for now: refactor to clear at start of MATRIX, when ref_ck and cycle_index = 0
+    const false in
+    // Errors.transient {
+    //   reset = ref_ck;
+    //   set   = sync_state = const In_Schedule /\ S32R.(Triggers.get_tx_count fetch > const cfg.expected_tx_triggers);
+    // } in
 
   // Update MSC min/max-per-cycle whenever we update MSC.
   // should it also update whenever we see a new trigger that we aren't going to update the MSC for?
