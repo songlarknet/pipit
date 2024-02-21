@@ -50,6 +50,7 @@ let tc_unascribe (e: Tac.env) (tm: Tac.term): Tac.Tac Tac.term =
   | Tac.Tv_AscribedC _ (Tac.C_Total ty) _ _ ->
     ty
   | _ ->
+    Tac.print ("tc_unascribe: " ^ Tac.term_to_string tm);
     let ty = Tac.tc e tm in
     ty
 

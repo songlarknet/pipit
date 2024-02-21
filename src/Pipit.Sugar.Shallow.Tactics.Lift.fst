@@ -44,6 +44,7 @@ module ShallowPrim = Pipit.Prim.Shallow
 module Shallow = Pipit.Sugar.Shallow.Base
 module SugarBase = Pipit.Sugar.Base
 module PTB = Pipit.Tactics.Base
+module PTC = Pipit.Tactics.Cse
 
 module Ref = FStar.Reflection.V2
 module Tac = FStar.Tactics.V2
@@ -743,6 +744,15 @@ let rec lift_tm (e: env) (t: Tac.term): Tac.Tac (mode & Tac.term) =
 
 let autolift_bind1 (e: env) (nm nm_core: string): Tac.Tac Tac.sigelt =
   let lb_src = PTB.lookup_lb_top e.tac_env (Ref.explode_qn nm) in
+
+  // let lb_cse = PTC.cse lb_src.lb_def in
+  // let (tct, issues)  = Tac.tc_term e.tac_env lb_cse in
+  // let lb_elab = match tct with
+  //   | Some (elab, (_, _)) -> elab
+  //   | _ ->
+  //     Tac.log_issues issues;
+  //     fail "oops" (Tac.range_of_term lb_cse) ["cannot typecheck"]
+  // in
 
   let (m, core_def) = lift_tm e lb_src.lb_def in
   debug_print (fun () -> "lifted is: " ^ Tac.term_to_string core_def);

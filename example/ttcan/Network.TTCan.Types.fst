@@ -76,12 +76,13 @@ let max_trigger_index = 63
 type trigger_index = Subrange.t { min = 0; max = max_trigger_index }
 type trigger_count = Subrange.t { min = 0; max = max_trigger_index + 1 }
 
+type tx_enable_window = Subrange.t { min = 1; max = 16 } // spec says upper limit is 16 - why 16?
 
 noeq
 type config = {
   initial_ref_offset: ref_offset;
   master_index: option master_index;
-  tx_enable_window: Subrange.t { min = 1; max = 16 }; // spec says upper limit is 16 - why 16?
+  tx_enable_window: tx_enable_window; // spec says upper limit is 16 - why 16?
   cycle_count_max: cycle_index;
 
 
@@ -109,6 +110,21 @@ let config_master_index (cfg: config): master_index =
   field accessor functions. This is a bit of a pain! We can automate this with
   a tactic later.
 *)
+
+instance has_stream_ntu_config: Sugar.has_stream ntu_config = Subrange.has_stream_S32R _
+instance has_stream_ref_offset: Sugar.has_stream ref_offset = Subrange.has_stream_S32R _
+instance has_stream_master_index: Sugar.has_stream master_index = Subrange.has_stream_S32R _
+instance has_stream_cycle_index: Sugar.has_stream cycle_index = Subrange.has_stream_S32R _
+instance has_stream_repeat_factor: Sugar.has_stream repeat_factor = Subrange.has_stream_S32R _
+
+instance has_stream_message_status_counter: Sugar.has_stream message_status_counter = Subrange.has_stream_S32R _
+
+instance has_stream_can_id: Sugar.has_stream can_id = Subrange.has_stream_S32R _
+
+instance has_stream_trigger_index: Sugar.has_stream trigger_index = Subrange.has_stream_S32R _
+instance has_stream_trigger_count: Sugar.has_stream trigger_count = Subrange.has_stream_S32R _
+
+instance has_stream_tx_enable_window: Sugar.has_stream tx_enable_window = Subrange.has_stream_S32R _
 
 instance has_stream_mode: Sugar.has_stream mode = {
   ty_id       = [`%mode];
