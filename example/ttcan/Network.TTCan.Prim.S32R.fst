@@ -25,10 +25,12 @@ let v (#b: bounds) (r: t b): i: int { b.min <= i /\ i <= b.max } =
 let s32r (#b: bounds) (x: int { b.min <= x /\ x <= b.max }): t b =
   { repr = REPR.int_to_t x }
 
+// disable instance: each instance should instantiate itself
 instance has_stream_S32R (b: bounds): Sugar.has_stream (t b) = {
   ty_id = [`%t; string_of_int b.min; string_of_int b.max];
   val_default = s32r b.min;
 }
+
 
 
 let inc_sat (#b: bounds) (x: t b): t b =
