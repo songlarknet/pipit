@@ -9,7 +9,7 @@ module List = FStar.List.Tot
 module Tac = FStar.Tactics
 
 #push-options "--ext pipit:lift:debug"
-#push-options "--print_implicits --print_bound_var_types"
+// #push-options "--print_implicits --print_bound_var_types --print_full_names"
 // #push-options "--print_implicits --print_full_names --ugly --print_bound_var_types"
 
 instance has_stream_int: Shallow.has_stream int = {
@@ -166,14 +166,6 @@ let eg_static_match (consts: list int) (x: stream int): stream int =
 
 %splice[] (autolift_binds [`%eg_static_match])
 
-let lemma_nat_something (x: int) (y: int): Lemma (ensures x > y) = admit ()
-
-let eg_instantiate_lemma (x y: stream int): stream int =
-  lemma_nat_something x y;
-  x + y
-
-%splice[] (autolift_binds [`%eg_instantiate_lemma])
-
 (*** Not supported examples ***)
 
 
@@ -197,3 +189,12 @@ let eg_instantiate_lemma (x y: stream int): stream int =
 // let eg_streaming_letmatch (xy: stream (int & int)): stream int =
 //   let (x, y) = xy in
 //   x + y
+
+// Lemma instantiation not supported; use a pattern instead
+// let lemma_nat_something (x: int) (y: int): Lemma (ensures x > y) = admit ()
+
+// let eg_instantiate_lemma (x y: stream int): stream int =
+//   lemma_nat_something x y;
+//   x + y
+
+// %splice[] (autolift_binds [`%eg_instantiate_lemma])

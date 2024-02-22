@@ -90,7 +90,6 @@ instance has_stream_fetch_result: S.has_stream fetch_result = {
 }
 
 #push-options "--ext pipit:lift:debug"
-#push-options "--ext pipit:cse:debug"
 
 (*
   Pre-fetch the next enabled trigger.
@@ -128,9 +127,9 @@ let prefetch
     let expiry  = trigger_compute_expiry cfg index trigger in
     { index; enabled; expiry; trigger })
   
-%splice[prefetch_cse] (Cse.cse_binds [`%prefetch])
+// %splice[prefetch_cse] (Cse.cse_binds [`%prefetch])
 
-%splice[prefetch_cse_core] (autolift_binds [`%prefetch_cse])
+%splice[prefetch_core] (autolift_binds [`%prefetch])
 
 (*^5.1 Tx_Count: each time a Tx_Trigger becomes active, Tx_Count is incremented. Tx_Count is not incremented beyond Expected_Tx_Trigger. *)
 (* CLARIFICATION: the definition of "active" is not entirely clear to me.
@@ -154,8 +153,8 @@ let tx_counter
     then inc_sat prev
     else prev)
 
-%splice[tx_counter_cse] (Cse.cse_binds [`%tx_counter])
-%splice[tx_counter_cse_core] (autolift_binds [`%tx_counter_cse])
+// %splice[tx_counter_cse] (Cse.cse_binds [`%tx_counter])
+%splice[tx_counter_core] (autolift_binds [`%tx_counter])
 
 (*
   Fetch the current trigger, or the next one if there is no current trigger.
@@ -169,7 +168,7 @@ let fetch
     : stream fetch_result #_ =
   let is_trigger_started (tr: stream trigger #_): stream bool =
     U64.(S32R.s32r_to_u64 tr.time_mark <= cycle_time) in
-  let next = prefetch_cse cfg reset_ck cycle_time cycle_index ref_trigger_offset in
+  let next = prefetch cfg reset_ck cycle_time cycle_index ref_trigger_offset in
   rec' (fun (fetch: stream fetch_result #_) ->
     // If the new trigger is enabled and is ready to start, then the new trigger has precedence. This case allows Watch_Triggers to pre-empt Tx_Ref_Triggers, as Tx_Ref_Triggers do not expire otherwise.
     // Otherwise, if the old trigger expired on the previous tick, then we the new trigger can be started. The delay here ensures that the caller gets a chance to handle the expired triggers.
@@ -185,10 +184,10 @@ let fetch
     let is_new = Util.edge #trigger_index index in
     let is_started = is_trigger_started current.trigger in
     let is_expired = U64.(current.expiry <= cycle_time) in
-    let tx_count = tx_counter_cse reset_ck next in
+    let tx_count = tx_counter reset_ck next in
     { current; is_new; is_started; is_expired; tx_count; }
   )
 
 
-%splice[fetch_cse] (Cse.cse_binds [`%fetch])
-%splice[fetch_cse_core] (autolift_binds [`%fetch_cse])
+// %splice[fetch_cse] (Cse.cse_binds [`%fetch])
+%splice[fetch_core] (autolift_binds [`%fetch])
