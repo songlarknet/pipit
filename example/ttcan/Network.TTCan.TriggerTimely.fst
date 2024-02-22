@@ -131,7 +131,7 @@ let count_when (max: nat) (inc: stream bool): stream int =
 %splice[count_when_core] (autolift_binds [`%count_when])
 
 
-[@@core; of_source(`%count_when)]
+[@@lifted; of_source(`%count_when)]
 let count_when_checked (max: nat): S.stream bool -> S.stream int =
   let e = Check.exp_of_stream1 (count_when_core max) in
   assert (Check.system_induct_k1 e) by (T.pipit_simplify []);
@@ -180,7 +180,7 @@ let trigger_fetch_guar (cfg: config) (c: cycle) (index: stream int) (now: stream
 // and then implement it and check it below
 assume val trigger_fetch (cfg: config) (c: cycle): stream int -> stream index
 
-[@@core; of_source(`%trigger_fetch)]
+[@@lifted; of_source(`%trigger_fetch)]
 let trigger_fetch_checked (cfg: config) (c: cycle): S.stream int -> S.stream index =
   let open S in
   let c = Contract.contract_of_stream1 {

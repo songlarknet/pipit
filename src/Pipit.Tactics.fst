@@ -14,7 +14,7 @@ let norm_attr = ()
 let norm_delta_options (namespaces: list string) = [
   delta_namespace ("Pipit" :: "FStar.Pervasives" :: "FStar.List" :: "FStar.Option" :: "FStar.Seq" :: namespaces);
   // Evaluate anything marked [@@norm_attr], explicit core expressions, and typeclass instances
-  delta_attr [`%norm_attr; `%Lift.core; `%FStar.Tactics.Typeclasses.tcinstance];
+  delta_attr [`%norm_attr; `%Lift.lifted; `%Lift.lifted_prim; `%FStar.Tactics.Typeclasses.tcinstance];
   nbe; zeta; iota; primops
 ]
 
