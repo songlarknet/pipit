@@ -93,6 +93,7 @@ assume val lemma_pattern: stream unit -> stream unit
 (* Do not lift *)
 let static (#a: Type) (x: a): a = x
 
+
 (*** Implementations of stubs ***)
 [@@lifted; of_source(`%rec')]
 // private
@@ -534,12 +535,12 @@ let lift_prim_gen (e: env) (prim: Tac.term): Tac.Tac Tac.term =
     args
   in
   // eta expand primitives, if necessary: this is necessary for treating lemmas as unit prims.
-  // it also helps deal with an old, now-fixed, bug in F* normaliser where un-eta'd primops got bad types
-  // DISABLED: F* bug fixed, lemmas not supported?
-  // let prim = match Tac.inspect_unascribe prim with
-  //   | Tac.Tv_Abs _ _ -> prim
-  //   | _ -> PTB.eta_expand prim ty
-  // in
+  // it also helps deal with an old, now-fixed, bug in F* normaliser where un-eta'd primops got bad types.
+  // for some reason, properties don't seem to verify without this
+  let prim = match Tac.inspect_unascribe prim with
+    | Tac.Tv_Abs _ _ -> prim
+    | _ -> PTB.eta_expand prim ty
+  in
   let prim = (`liftP'prim (ShallowPrim.mkPrim (`#nm_tm) (`#ft) (`#prim))) in
   // TODO: deal with implicit args
   let lift = List.fold_left
@@ -817,6 +818,8 @@ let autolift_bind1 (e: env) (nm nm_core: string): Tac.Tac Tac.sigelt =
   let _, se = core_sigelt [`lifted] (Some nm) (Some nm_core) tm in
   se
 
+// TODO: it would be nice to make this a plugin, but the local letrecs mess up the extraction
+// [@@plugin]
 let autolift_binds (nms: list string): Tac.Tac (list Tac.sigelt) =
   let e = env_nil () in
   let elts = Tac.map (fun nm -> autolift_bind1 e nm (nm ^ "_core")) nms in

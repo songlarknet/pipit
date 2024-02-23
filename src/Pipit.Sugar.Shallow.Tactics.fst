@@ -86,7 +86,7 @@ let rec lift_prim_go (args: list Tac.binder) (ret: Tac.comp) (app: Ref.term): Ta
       // let wit_uvar = Tac.uvar_env (Tac.top_env ()) (Some strm_wit_sort) in
       // Tac.unshelve wit_uvar;
       // Tactics.Typeclasses.tcresolve ();
-      let sort = (`SSB.stream (`#bv.sort)) in
+      let sort = (`SSB.stream (`#bv.sort) #_) in
       let bvv  = {bv with sort = sort } in // ; uniq = Tac.fresh () } in
       // let bvv  = {bv with sort = sort; uniq = Tac.fresh () } in
       let arg = Tac.pack (Tv_Var bvv) in

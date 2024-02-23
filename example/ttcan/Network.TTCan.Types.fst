@@ -111,19 +111,17 @@ let config_master_index (cfg: config): master_index =
   a tactic later.
 *)
 
+(* These subrange instances aren't strictly necessary, but they speed up the typeclass
+  inference a fair bit. *)
 instance has_stream_ntu_config: Sugar.has_stream ntu_config = Subrange.has_stream_S32R _
 instance has_stream_ref_offset: Sugar.has_stream ref_offset = Subrange.has_stream_S32R _
 instance has_stream_master_index: Sugar.has_stream master_index = Subrange.has_stream_S32R _
 instance has_stream_cycle_index: Sugar.has_stream cycle_index = Subrange.has_stream_S32R _
 instance has_stream_repeat_factor: Sugar.has_stream repeat_factor = Subrange.has_stream_S32R _
-
 instance has_stream_message_status_counter: Sugar.has_stream message_status_counter = Subrange.has_stream_S32R _
-
 instance has_stream_can_id: Sugar.has_stream can_id = Subrange.has_stream_S32R _
-
 instance has_stream_trigger_index: Sugar.has_stream trigger_index = Subrange.has_stream_S32R _
 instance has_stream_trigger_count: Sugar.has_stream trigger_count = Subrange.has_stream_S32R _
-
 instance has_stream_tx_enable_window: Sugar.has_stream tx_enable_window = Subrange.has_stream_S32R _
 
 instance has_stream_mode: Sugar.has_stream mode = {

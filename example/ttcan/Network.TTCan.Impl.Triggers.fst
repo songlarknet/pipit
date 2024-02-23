@@ -126,8 +126,6 @@ let prefetch
     let enabled = trigger_check_enabled cycle_index trigger in
     let expiry  = trigger_compute_expiry cfg index trigger in
     { index; enabled; expiry; trigger })
-  
-// %splice[prefetch_cse] (Cse.cse_binds [`%prefetch])
 
 %splice[prefetch_core] (autolift_binds [`%prefetch])
 
@@ -153,7 +151,6 @@ let tx_counter
     then inc_sat prev
     else prev)
 
-// %splice[tx_counter_cse] (Cse.cse_binds [`%tx_counter])
 %splice[tx_counter_core] (autolift_binds [`%tx_counter])
 
 (*
@@ -188,6 +185,4 @@ let fetch
     { current; is_new; is_started; is_expired; tx_count; }
   )
 
-
-// %splice[fetch_cse] (Cse.cse_binds [`%fetch])
 %splice[fetch_core] (autolift_binds [`%fetch])
