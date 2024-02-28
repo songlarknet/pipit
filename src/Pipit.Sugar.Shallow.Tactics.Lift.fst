@@ -288,12 +288,22 @@ let debug_print (str: unit -> Tac.Tac string): Tac.Tac unit =
     Tac.print (Tac.term_to_string (quote ms) ^ ": " ^ str ())
   )
 
-let core_sigelt (attrs: list Tac.term) (nm_src nm_core: option string) (tm: Tac.term): Tac.Tac (Tac.name & Tac.sigelt) =
+noeq
+type env = {
+  tac_env: Tac.env;
+  mode_env: list (nat & mode);
+  lifted_env: list (Ref.name & Ref.name);
+  extra_sigelts: Tac.tref (list Tac.sigelt);
+  prim_env: Tac.tref (list (Ref.name & Ref.name));
+  name_prefix: string;
+}
+
+let core_sigelt (e: env) (attrs: list Tac.term) (nm_src nm_core: option string) (tm: Tac.term): Tac.Tac (Tac.name & Tac.sigelt) =
   let nm_def = match nm_core with
     | Some n -> Ref.explode_qn n
     | None ->
       let u = Tac.fresh () in
-      List.(Tac.cur_module () @ ["_core_def_" ^ string_of_int u])
+      Ref.explode_qn (e.name_prefix ^ "__prim_" ^ string_of_int u)
   in
 
   let ty = Tac.pack Tac.Tv_Unknown in
@@ -312,15 +322,6 @@ let core_sigelt (attrs: list Tac.term) (nm_src nm_core: option string) (tm: Tac.
   debug_print (fun () -> "core_sigelt: " ^ Ref.implode_qn nm_def);
   debug_print (fun () -> "core_sigelt: " ^ Tac.term_to_string tm);
   nm_def, Ref.set_sigelt_attrs attrs se
-
-noeq
-type env = {
-  tac_env: Tac.env;
-  mode_env: list (nat & mode);
-  lifted_env: list (Ref.name & Ref.name);
-  extra_sigelts: Tac.tref (list Tac.sigelt);
-  prim_env: Tac.tref (list (Ref.name & Ref.name));
-}
 
 let env_lifted_mapping (tac_env: Tac.env) (lift_fv: Ref.fv): Tac.Tac (option (Ref.name & Ref.name)) =
   let lift_nm = Tac.inspect_fv lift_fv in
@@ -348,17 +349,27 @@ let env_lifted_mapping (tac_env: Tac.env) (lift_fv: Ref.fv): Tac.Tac (option (Re
     go attrs
   | None -> None
 
-let env_top (tac_env: Tac.env): Tac.Tac env =
+let env_core_nm (nm: string): string =
+  nm ^ "_core"
+
+let env_top (tac_env: Tac.env) (extra_lifteds: list (Ref.name & Ref.name)) (name_prefix: string): Tac.Tac env =
   let mode_env = [] in
   let lifts = Ref.lookup_attr (`lifted) tac_env in
   let prims = Ref.lookup_attr (`lifted_prim) tac_env in
   let lifted_env = Tac.filter_map (env_lifted_mapping tac_env) lifts in
+  let lifted_env = List.(lifted_env @ extra_lifteds) in
   let prim_env = Tac.filter_map (env_lifted_mapping tac_env) prims in
   let prim_env = Tac.alloc prim_env in
   let extra_sigelts = Tac.alloc [] in
-  { tac_env; mode_env; lifted_env; prim_env; extra_sigelts; }
+  { tac_env; mode_env; lifted_env; prim_env; extra_sigelts; name_prefix }
 
-let env_nil (): Tac.Tac env = env_top (Tac.top_env ())
+let env_nil (nms: list string): Tac.Tac env =
+  let prefix = match nms with
+    | [] -> "_autolift_default_"
+    | nm :: _ -> nm
+  in
+  let extras = List.map (fun nm -> (Tac.explode_qn (env_core_nm nm), Tac.explode_qn nm)) nms in
+  env_top (Tac.top_env ()) extras prefix
 
 let env_push (b: Tac.binder) (m: mode) (e: env): env =
   { e with
@@ -567,7 +578,7 @@ let lift_prim (e: env) (prim: Tac.term): Tac.Tac Tac.term =
     | None ->
       let nm = Tac.inspect_fv fv in
       let prim = lift_prim_gen e prim in
-      let nm_def, sigelt = core_sigelt [`lifted_prim] (Some (Tac.implode_qn nm)) None prim in
+      let nm_def, sigelt = core_sigelt e [`lifted_prim] (Some (Tac.implode_qn nm)) None prim in
       Tac.write e.prim_env ((nm_def, nm) :: Tac.read e.prim_env);
       Tac.write e.extra_sigelts (sigelt :: Tac.read e.extra_sigelts);
       (Tac.pack (Tac.Tv_FVar (Tac.pack_fv nm_def))))
@@ -810,17 +821,15 @@ let rec lift_tm (e: env) (t: Tac.term): Tac.Tac (mode & Tac.term) =
       (Ref.range_of_term t) ["(unsupported term)"]
 
 
-let autolift_bind1 (e: env) (nm nm_core: string): Tac.Tac Tac.sigelt =
+let autolift_bind1 (e: env) (nm: string): Tac.Tac Tac.sigelt =
   let lb_src = PTB.lookup_lb_top e.tac_env (Ref.explode_qn nm) in
-
   let _, tm = lift_tm e lb_src.lb_def in
-
-  let _, se = core_sigelt [`lifted] (Some nm) (Some nm_core) tm in
+  let _, se = core_sigelt e [`lifted] (Some nm) (Some (env_core_nm nm)) tm in
   se
 
 // TODO: it would be nice to make this a plugin, but the local letrecs mess up the extraction
 // [@@plugin]
 let autolift_binds (nms: list string): Tac.Tac (list Tac.sigelt) =
-  let e = env_nil () in
-  let elts = Tac.map (fun nm -> autolift_bind1 e nm (nm ^ "_core")) nms in
+  let e = env_nil nms in
+  let elts = Tac.map (fun nm -> autolift_bind1 e nm) nms in
   List.(Tac.read e.extra_sigelts @ elts)

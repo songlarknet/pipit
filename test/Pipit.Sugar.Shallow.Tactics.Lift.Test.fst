@@ -8,9 +8,12 @@ module List = FStar.List.Tot
 
 module Tac = FStar.Tactics
 
-#push-options "--ext pipit:lift:debug"
+// Don't warn on local let-recs; they're only for testing
+#push-options "--warn_error -242"
+
+// Useful for testing:
+// #push-options "--ext pipit:lift:debug"
 // #push-options "--print_implicits --print_bound_var_types --print_full_names"
-// #push-options "--print_implicits --print_full_names --ugly --print_bound_var_types"
 
 instance has_stream_int: Shallow.has_stream int = {
   ty_id       = [`%Prims.int];

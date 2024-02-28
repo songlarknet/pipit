@@ -34,19 +34,20 @@ let falling_edge
 *)
 type latch_args = { set: bool; reset: bool }
 
-instance has_stream_t (a: eqtype) {| S.has_stream a |}: S.has_stream latch_args = {
+instance has_stream_latch_args: S.has_stream latch_args = {
   ty_id = [`%latch_args];
   val_default = { set = false; reset = false; };
 }
 
 [@@FStar.Tactics.preprocess_with preprocess]
-let latch (args: latch_args): stream bool =
-  rec' (fun latch ->
+let latch (args: stream latch_args): stream bool =
+  let rec latch =
     if args.set
     then true
     else if args.reset
     then false
-    else (false `fby` latch))
+    else (false `fby` latch)
+  in latch
 
 
 let time_ascending (local_time: stream ntu): stream bool =

@@ -49,15 +49,15 @@ type ref_message = {
 
 type message_status_counter = Subrange.t { min = 0; max = 7 }
 
-let max_can_id = 65535
-type can_id = Subrange.t { min = 0; max = max_can_id }
+let max_can_buffer_id = 63
+type can_buffer_id = Subrange.t { min = 0; max = max_can_buffer_id }
 
 type trigger = {
   trigger_type:  trigger_type;
   time_mark:     ntu_config;
   cycle_offset:  cycle_index;
   repeat_factor: repeat_factor;
-  message_index: can_id;
+  message_index: can_buffer_id;
 }
 
 type fault_bits = {
@@ -79,6 +79,13 @@ type trigger_count = Subrange.t { min = 0; max = max_trigger_index + 1 }
 type tx_enable_window = Subrange.t { min = 1; max = 16 } // spec says upper limit is 16 - why 16?
 
 noeq
+type triggers = {
+  trigger_index_fun: trigger_index -> trigger;
+  trigger_count: (count: trigger_count { Subrange.v count > 0 });
+  // TODO: properties like adequate spacing
+}
+
+noeq
 type config = {
   initial_ref_offset: ref_offset;
   master_index: option master_index;
@@ -90,11 +97,13 @@ type config = {
   (* This requirement is somewhat vague and seems to introduce a potential deadlock if all masters had previously failed. I have implemented it by specifying a delay to stop transmissions after a severe failure occurs. *)
   severe_error_ref_cooldown: ntu_config;
 
-  trigger_index_fun: trigger_index -> trigger;
+  triggers: triggers;
   // TODO: trigger validity check: space between them;
 
   expected_tx_triggers: trigger_count;
   trigger_count: trigger_count;
+
+  ttcan_exec_period: ntu_config;
 }
 
 let config_master_enable (cfg: config): bool = Some? cfg.master_index
@@ -119,7 +128,7 @@ instance has_stream_master_index: Sugar.has_stream master_index = Subrange.has_s
 instance has_stream_cycle_index: Sugar.has_stream cycle_index = Subrange.has_stream_S32R _
 instance has_stream_repeat_factor: Sugar.has_stream repeat_factor = Subrange.has_stream_S32R _
 instance has_stream_message_status_counter: Sugar.has_stream message_status_counter = Subrange.has_stream_S32R _
-instance has_stream_can_id: Sugar.has_stream can_id = Subrange.has_stream_S32R _
+instance has_stream_can_buffer_id: Sugar.has_stream can_buffer_id = Subrange.has_stream_S32R _
 instance has_stream_trigger_index: Sugar.has_stream trigger_index = Subrange.has_stream_S32R _
 instance has_stream_trigger_count: Sugar.has_stream trigger_count = Subrange.has_stream_S32R _
 instance has_stream_tx_enable_window: Sugar.has_stream tx_enable_window = Subrange.has_stream_S32R _
