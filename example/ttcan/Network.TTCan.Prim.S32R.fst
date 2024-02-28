@@ -26,7 +26,7 @@ let s32r (#b: bounds) (x: int { b.min <= x /\ x <= b.max }): t b =
   { repr = REPR.int_to_t x }
 
 // disable instance: each instance should instantiate itself
-instance has_stream_S32R (b: bounds): Sugar.has_stream (t b) = {
+let has_stream_S32R (b: bounds): Sugar.has_stream (t b) = {
   ty_id = [`%t; string_of_int b.min; string_of_int b.max];
   val_default = s32r b.min;
 }
@@ -92,6 +92,12 @@ let rem_underspec (#b: bounds { b.min == 0 }) (x y: t b): t b  =
   end else
     { repr = 0l }
 
+
+let min (#b: bounds) (x y: t b): t b =
+  if REPR.lt x.repr y.repr then x else y
+
+let max (#b: bounds) (x y: t b): t b =
+  if REPR.lt x.repr y.repr then y else x
 
 #push-options "--split_queries always --fuel 1 --ifuel 0"
 

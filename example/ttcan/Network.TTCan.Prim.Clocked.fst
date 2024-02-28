@@ -17,6 +17,12 @@ instance has_stream_t (a: eqtype) {| Sugar.has_stream a |}: Sugar.has_stream (t 
   val_default = None;
 }
 
+let get_clock (#a: eqtype) (v: t a): bool = Some? v
+let get_value (#a: eqtype) {| Sugar.has_stream a |} (v: t a): a =
+  match v with
+  | Some v -> v
+  | None -> Sugar.val_default
+
 (* Pattern matching on a single clocked value *)
 let fold (#a #b: eqtype)
   (zero: b)

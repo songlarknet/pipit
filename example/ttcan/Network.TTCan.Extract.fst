@@ -29,7 +29,7 @@ let tac_opt = ["Network.TTCan"]
   do not want the expression in the generated C code. *)
 [@@(Tac.postprocess_with (XL.tac_normalize_pure tac_opt))]
 noextract
-let modes_expr = SugarBase.exp_of_stream3 (Ctrl.modes cfg)
+let modes_expr = SugarBase.exp_of_stream3 (Ctrl.modes_core cfg)
 
 (* Define the state type for mode controller *)
 [@@(Tac.postprocess_with (XL.tac_normalize_pure tac_opt))]
@@ -60,7 +60,7 @@ let modes_step
 
 [@@(Tac.postprocess_with (XL.tac_normalize_pure tac_opt))]
 noextract
-let trigger_fetch_expr = SugarBase.exp_of_stream4 (Ctrl.trigger_fetch cfg)
+let trigger_fetch_expr = SugarBase.exp_of_stream4 (Ctrl.trigger_fetch_core cfg)
 
 [@@(Tac.postprocess_with (XL.tac_normalize_pure tac_opt))]
 type trigger_fetch_state = XX.state_of_exp trigger_fetch_expr
@@ -88,7 +88,7 @@ let trigger_fetch_step
 
 [@@(Tac.postprocess_with (XL.tac_normalize_pure tac_opt))]
 noextract
-let controller_expr = SugarBase.exp_of_stream9 (Ctrl.controller cfg)
+let controller_expr = SugarBase.exp_of_stream9 (Ctrl.controller_core cfg)
 
 [@@(Tac.postprocess_with (XL.tac_normalize_pure tac_opt))]
 type controller_state = XX.state_of_exp controller_expr

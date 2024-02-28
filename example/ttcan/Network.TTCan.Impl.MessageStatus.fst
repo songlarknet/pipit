@@ -20,40 +20,58 @@ module UInt8 = FStar.UInt8
 module UInt64= FStar.UInt64
 module Cast  = FStar.Int.Cast
 
+open Pipit.Sugar.Shallow.Tactics.Lift
+module Tac = FStar.Tactics
+
 type status_update = Clocked.t bool
-let increment: status_update = Clocked.some' true
-let decrement: status_update = Clocked.some' false
-let nothing:   status_update = Clocked.none'
 
+let increment: status_update = Some true
+let decrement: status_update = Some false
+let nothing:   status_update = None
+
+[@@Tac.preprocess_with preprocess]
 let message_status_counters
-  (message_id: S.stream app_message_index)
-  (update: S.stream (Clocked.t bool))
-    : S.stream message_status_counter =
-  let open S in
-  let^ array = rec' (fun array ->
-    let^ pre_array = MSC64.zero `fby` array in
-    Clocked.fold pre_array (fun inc ->
-      let^ msc = MSC64.index pre_array message_id in
-      let^ msc = if_then_else inc (S32R.inc_sat msc) (S32R.dec_sat msc) in
-      MSC64.update pre_array message_id msc) update) in
-  MSC64.index array message_id
+  (message_id: stream can_buffer_id)
+  (update: stream (Clocked.t bool))
+    : stream message_status_counter =
+  let rec array =
+    let pre_array = MSC64.zero `fby` array in
+    if Clocked.get_clock update
+    then
+      let inc = Clocked.get_value update in
+      let msc = MSC64.index pre_array message_id in
+      let msc = if inc then S32R.inc_sat msc else S32R.dec_sat msc in
+      MSC64.update pre_array message_id msc
+    else
+      pre_array
+  in MSC64.index array message_id
 
+%splice[] (autolift_binds [`%message_status_counters])
+
+[@@Tac.preprocess_with preprocess]
 let rx_pendings
-  (chk: S.stream (Clocked.t app_message_index))
-  (rx:  S.stream (Clocked.t app_message_index))
-    : S.stream bool =
-  let open S in
-  let^ array = rec' (fun array ->
-    let^ pre_array = BV64I.zero `fby` array in
+  (chk: stream (Clocked.t can_buffer_id))
+  (rx:  stream (Clocked.t can_buffer_id))
+    : stream bool =
+  let rec array =
+    let pre_array = BV64I.zero `fby` array in
     // first clear rx from previous check
-    let^ clear_check = Clocked.fold pre_array (fun chk_ix ->
-        BV64I.clear pre_array (S32R.extend chk_ix)
-      ) (Clocked.none' `fby` chk) in
+    let pre_chk = None `fby` chk in
+    let clear_check =
+      if Clocked.get_clock pre_chk
+      then BV64I.clear pre_array (Clocked.get_value pre_chk)
+      else pre_array
+    in
     // next update with newest receive
-    let^ rx_array = Clocked.fold pre_array (fun rx_ix ->
-        BV64I.set clear_check (S32R.extend rx_ix)
-      ) rx in
+    let rx_array =
+      if Clocked.get_clock rx
+      then BV64I.set clear_check (Clocked.get_value rx)
+      else clear_check
+    in
     rx_array
-  ) in
-  Clocked.fold (const true)
-    (fun chk_ix -> BV64I.index array (S32R.extend chk_ix)) chk
+  in
+  if Clocked.get_clock chk
+  then BV64I.index array (Clocked.get_value chk)
+  else true
+
+%splice[] (autolift_binds [`%rx_pendings])
