@@ -1,5 +1,7 @@
 (* Under-specified uint64 primitives for use in Pipit;
-  Pipit doesn't support preconditions on primitives yet. *)
+  Pipit doesn't support preconditions on primitives yet.
+  TODO: This should be renamed to something like UInt64Underspec
+  *)
 module Network.TTCan.Prim.U64
 
 module Sugar     = Pipit.Sugar.Shallow
