@@ -21,6 +21,8 @@ module Check     = Pipit.Sugar.Check
 module Contract  = Pipit.Sugar.Contract
 module T = Pipit.Tactics
 
+(* Integer streaming instance: this is convenient for proofs, but cannot be
+  extracted to machine-int C code correctly. *)
 instance has_stream_int: S.has_stream int = {
   ty_id = [`%int];
   val_default = 0;

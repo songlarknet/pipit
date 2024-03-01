@@ -43,7 +43,7 @@ type controller_result = {
 
   tx_ref:        Clocked.t ref_message;
   tx_app:        Clocked.t can_buffer_id;
-  tx_delay:      ntu; // note: when tx_ref.ck or tx_app.ck
+  tx_time_mark:  ntu; // note: when tx_ref.ck or tx_app.ck
 
   // TODO: add other fields:
   // mode:          mode;
@@ -75,7 +75,7 @@ instance has_stream_driver_input: S.has_stream driver_input = {
 
 instance has_stream_controller_result: S.has_stream controller_result = {
   ty_id       = [`%controller_result];
-  val_default = { error = S.val_default; driver_enable_acks = S.val_default; tx_ref = S.val_default; tx_app = S.val_default; tx_delay = S.val_default; } <: controller_result;
+  val_default = { error = S.val_default; driver_enable_acks = S.val_default; tx_ref = S.val_default; tx_app = S.val_default; tx_time_mark = S.val_default; } <: controller_result;
 }
 
 instance has_stream_modes_result: S.has_stream modes_result = {
@@ -231,6 +231,7 @@ let trigger_ref
 
 let controller'
   (cfg:           config)
+  (input:         stream driver_input)
   (ref_ck:        stream bool)
   (mode:          stream mode)
   (cycle_time:    stream ntu)
@@ -252,7 +253,7 @@ let controller'
   let msc_upd         = Clocked.or_else tx_msc_upd rx_msc_upd in
   let msc             = MsgSt.message_status_counters trigger_msg msc_upd in
 
-  let tx_delay = Triggers.trigger_delay cycle_time fetch in
+  let tx_time_mark    = Triggers.trigger_absolute_time input.local_time cycle_time fetch.current.time_mark in
 
   let watch_trigger =
     trigger_type = Watch_Trigger &&
@@ -309,7 +310,7 @@ let controller'
   let error = Errors.summary fault_bits in
   let driver_enable_acks = (sync_state <> Sync_Off) && (error <> S3_Severe) in
 
-  { error; driver_enable_acks; tx_ref; tx_app; tx_delay; }
+  { error; driver_enable_acks; tx_ref; tx_app; tx_time_mark; }
 
 %splice[] (autolift_binds [`%controller'])
 
@@ -329,6 +330,6 @@ let controller
   let tx_ref = trigger_ref cfg input.local_time input.tx_status input.bus_status cycle_index cycle_time fetch sync_state error in
   let rx_msc_upd = trigger_rx input.rx_app cycle_time fetch in
   let tx = trigger_tx cfg input.tx_status input.bus_status cycle_time fetch sync_state error in
-  controller' cfg ref_ck mode cycle_time fetch sync_state error_CAN_Bus_Off error tx_ref (fst tx) (snd tx) rx_msc_upd
+  controller' cfg input ref_ck mode cycle_time fetch sync_state error_CAN_Bus_Off error tx_ref (fst tx) (snd tx) rx_msc_upd
 
 %splice[] (autolift_binds [`%controller])
