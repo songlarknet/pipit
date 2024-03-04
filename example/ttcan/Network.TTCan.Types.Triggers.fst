@@ -81,7 +81,7 @@ type triggers = {
   time_mark_reachable_all: squash (time_mark_reachable_all trigger_read ttcan_exec_period);
 }
 
-(* Compute the index of the next active trigger (specification only).
+(* Compute the index of the next active trigger after this one (specification only).
   This should be equivalent to the index with the minimum start time of all
   future enabled triggers. If no such triggers exist, it returns
   max_trigger_count (one past the end of the array).
@@ -94,47 +94,59 @@ type triggers = {
   but Pipit doesn't support ghost code yet.
   *)
 noextract
-let rec active_next_after_index (trigger_read: trigger_index_fun) (cycle_index: cycle_index) (time: nat) (index: nat { 0 <= index /\ index <= max_trigger_count })
+let rec trigger_next (trigger_read: trigger_index_fun) (cycle_index: cycle_index) (index: trigger_index)
   : Tot
-    (n: nat { index <= n /\ n <= max_trigger_count })
-    (decreases (max_trigger_count - index)) =
-  if index >= max_trigger_count
-  then max_trigger_count
+    (option (n: trigger_index {
+      Subrange.v index <= Subrange.v n /\
+      trigger_check_enabled cycle_index (trigger_read n)
+    }))
+    (decreases (max_trigger_count - Subrange.v index)) =
+  let tr = trigger_read index in
+  if trigger_check_enabled cycle_index tr
+  then Some (Subrange.shrink index)
+  else if Subrange.v index = max_trigger_index
+  then None
   else
-    let tr = trigger_read (Subrange.s32r index) in
-    if Subrange.v tr.time_mark > time && trigger_check_enabled cycle_index tr
-    then index
-    else active_next_after_index trigger_read cycle_index time (index + 1)
+    let nxt = trigger_next trigger_read cycle_index (Subrange.inc_sat index) in
+    match nxt with
+    | Some n -> Some n
+    | None   -> None
 
-(* Index of the next active trigger (specification only) *)
-noextract
-let active_next_after (trigger_read: trigger_index_fun) (cycle_index: cycle_index) (time: nat)
-  : (n: nat { 0 <= n /\ n <= max_trigger_count }) =
-  active_next_after_index trigger_read cycle_index time 0
 
-(* Compute the index of the most-recent active trigger (specification only).
-  This should be equivalent to the index with the maximum start time of all
-  triggers whose start time is now or in the past. If no such triggers exist,
-  it returns zero.
+(* Compute the currently-active index for given time (specification only).
+  We want to find the last index that has actually occurred. To do this, we
+  find the next index, and check if that's in the future.
+
+  This function isn't immediately correct on its own. We really
+  need to prove something about it, like that it computes:
+  > maximum i. enabled i /\ (for n in next i. enabled n /\ time_mark n > time)
 *)
 noextract
-let rec active_now_index (trigger_read: trigger_index_fun) (cycle_index: cycle_index) (time: nat) (index: nat { index < max_trigger_count })
-  : Tot
-    (n: nat { 0 <= n /\ n < max_trigger_count })
-    (decreases index) =
-  if index = 0
-  then 0
-  else
-    let tr = trigger_read (Subrange.s32r index) in
-    if Subrange.v tr.time_mark <= time && trigger_check_enabled cycle_index tr
-    then index
-    else active_now_index trigger_read cycle_index time (index - 1)
+let rec trigger_current_index (trigger_read: trigger_index_fun) (cycle_index: cycle_index) (time: ntu) (index: trigger_index)
+  : Tot (option trigger_index)
+    (decreases (max_trigger_count - Subrange.v index)) =
+  let inc = Subrange.inc_sat index in
+  let nxt =
+    if Subrange.v index < max_trigger_index
+    then trigger_next trigger_read cycle_index inc
+    else None in
+  let nxt_future =
+    match nxt with
+    | Some nxt ->
+      Subrange.v (trigger_read (Subrange.shrink nxt)).time_mark > UInt64.v time
+    | None -> true
+  in
+  if trigger_check_enabled cycle_index (trigger_read index) && nxt_future
+  then Some index
+  else if Subrange.v index < max_trigger_index
+  then trigger_current_index trigger_read cycle_index time inc
+  else None
 
-(* Index of the most-recent active trigger *)
+(* Compute the currently-active trigger for given time (specification only) *)
 noextract
-let active_now (trigger_read: trigger_index_fun) (cycle_index: cycle_index) (time: nat)
-  : (n: nat { 0 <= n /\ n < max_trigger_count }) =
-  active_now_index trigger_read cycle_index time max_trigger_index
+let trigger_current (trigger_read: trigger_index_fun) (cycle_index: cycle_index) (time: ntu)
+  : option trigger_index =
+  trigger_current_index trigger_read cycle_index time (Subrange.s32r 0)
 
 
 (* True if trigger will start before the end of this frame, or has already started *)
@@ -147,20 +159,43 @@ noextract
 let trigger_impending (triggers: triggers) (cycle_time: nat) (time_mark: nat): bool =
   cycle_time < time_mark && time_mark <= cycle_time + Subrange.v triggers.ttcan_exec_period
 
+// noextract
+// let triggers_offsets (trigger_read: trigger_index_fun) (ref_trigger_offset: ref_offset): trigger_index_fun =
+//   let trigger_read i = trigger_offset ref_trigger_offset (trigger_read i) in
+//   trigger_read
 
-irreducible
-let lemma_adequate_spacing_next_inc_pattern (triggers: triggers) (c: cycle_index) (time: ntu) (i: trigger_index) = ()
+let trigger_prefetch_invariant (triggers: triggers) (c: cycle_index) (time: ntu) (index: trigger_index): bool =
+  match trigger_next triggers.trigger_read c index with
+  | Some n ->
+    let tr = triggers.trigger_read n in
+    (Subrange.v n - Subrange.v index) * Subrange.v triggers.ttcan_exec_period <= Subrange.v tr.time_mark - UInt64.v time
+  | None ->
+    true
 
-let lemma_adequate_spacing_next_inc
-  (triggers: triggers) (c: cycle_index) (time: ntu) (i: trigger_index)
-  : Lemma
-    (ensures (
-       let n = active_next_after_index triggers.trigger_read c (UInt64.v time) (Subrange.v i) in
-       n < max_trigger_count ==>
-       adequate_spacing triggers.trigger_read triggers.ttcan_exec_period i (Subrange.s32r n) c
-    ))
-    [SMTPat (lemma_adequate_spacing_next_inc_pattern triggers c time i)]
-    = ()
+// let lemma_prefetch_invariant_reset
+//   (triggers: triggers) (c: cycle_index) (time: nat)
+//   : Lemma
+//     (ensures (
+//        time < Subrange.v triggers.ttcan_exec_period ==>
+//        trigger_prefetch_invariant triggers c time 0
+//     ))
+//     // [SMTPat (lemma_adequate_spacing_next_inc_pattern triggers c time i)]
+//     = ()
+
+
+// irreducible
+// let lemma_adequate_spacing_next_inc_pattern (triggers: triggers) (c: cycle_index) (time: ntu) (i: trigger_index) = ()
+
+// let lemma_adequate_spacing_next_inc
+//   (triggers: triggers) (c: cycle_index) (time: ntu) (i: trigger_index)
+//   : Lemma
+//     (ensures (
+//        let n = active_next_after_index triggers.trigger_read c (UInt64.v time) (Subrange.v i) in
+//        n < max_trigger_count ==>
+//        adequate_spacing triggers.trigger_read triggers.ttcan_exec_period i (Subrange.s32r n) c
+//     ))
+//     [SMTPat (lemma_adequate_spacing_next_inc_pattern triggers c time i)]
+//     = ()
 
 // let trigger_index_invariant (cfg: config) (c: cycle) (now: time) (index: index): bool =
 //   match next cfg.triggers index c with
