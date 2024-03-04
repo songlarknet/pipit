@@ -46,6 +46,9 @@ let dec_sat (#b: bounds) (x: t b): t b =
 let extend (#b: bounds) (#b': bounds { b'.min <= b.min /\ b.max <= b'.max }) (x: t b): t b' =
   { repr = x.repr }
 
+let shrink (#b: bounds) (#b': bounds) (x: t b { b'.min <= v x /\ v x <= b'.max }): t b' =
+  { repr = x.repr }
+
 let s32r_to_u64 (#b: bounds { 0 <= b.min }) (x: t b): U64.t =
   let r = Cast.int32_to_uint64 x.repr in
   assert (U64.v r == v x);
