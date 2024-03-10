@@ -46,6 +46,15 @@ let trigger_min_time_mark (trigger: trigger): ntu_config =
 let trigger_max_time_mark (trigger: trigger): ntu_config =
   trigger_offset_time_mark trigger (Subrange.s32r 127)
 
+let lemma_trigger_offset_time_mark_range (trigger: trigger) (ref_trigger_offset: ref_offset)
+  : Lemma (ensures (
+    Subrange.v (trigger_min_time_mark trigger) <=
+    Subrange.v (trigger_offset_time_mark trigger ref_trigger_offset) /\
+    Subrange.v (trigger_offset_time_mark trigger ref_trigger_offset) <=
+    Subrange.v (trigger_max_time_mark trigger)
+  )) =
+  ()
+
 // let trigger_offsets (trigger_read: trigger_index_fun) (ref_trigger_offset: ref_offset): trigger_index_fun =
 //   fun i ->
 //     let trigger = trigger_read i in
@@ -71,10 +80,15 @@ let adequate_spacing_all (trigger_read: trigger_index_fun) (ttcan_exec_period: n
   forall (c: cycle_index). forall (i j: trigger_index).
     adequate_spacing trigger_read ttcan_exec_period c i j
 
-(* Adequate time gap from start of array to trigger *)
+(* Adequate time gap from start of array to trigger:
+  a trigger at index `i` must start after the `i`th frame
+ *)
+let time_mark_reachable (trigger_read: trigger_index_fun) (ttcan_exec_period: ntu_config) (i: trigger_index): prop =
+    Subrange.v i * Subrange.v ttcan_exec_period + Subrange.v ttcan_exec_period <= Subrange.v (trigger_min_time_mark (trigger_read i))
+
 let time_mark_reachable_all (trigger_read: trigger_index_fun) (ttcan_exec_period: ntu_config): prop =
   forall (i: trigger_index).
-    Subrange.v i * Subrange.v ttcan_exec_period <= Subrange.v (trigger_min_time_mark (trigger_read i))
+    time_mark_reachable trigger_read ttcan_exec_period i
 
 (* Trigger configuration: the array as an index function, the period of
   execution frequency (eg once per 10µs), as well as the proofs that the array
@@ -88,6 +102,18 @@ type triggers = {
   adequate_spacing_all: squash (adequate_spacing_all trigger_read ttcan_exec_period);
   time_mark_reachable_all: squash (time_mark_reachable_all trigger_read ttcan_exec_period);
 }
+
+(* True if trigger's time-mark would start before the end of this frame, or has
+  already started. Does not check whether trigger is enabled or not.  *)
+noextract
+let trigger_mark_started (triggers: triggers) (cycle_time: ntu) (offset_time_mark: ntu_config): bool =
+  Subrange.v offset_time_mark <= UInt64.v cycle_time + Subrange.v triggers.ttcan_exec_period
+
+(* True if trigger's time-mark would start in this frame. Does not check
+  whether trigger is enabled or not. *)
+noextract
+let trigger_mark_impending (triggers: triggers) (cycle_time: ntu) (offset_time_mark: ntu_config): bool =
+  UInt64.v cycle_time < Subrange.v offset_time_mark && Subrange.v offset_time_mark <= UInt64.v cycle_time + Subrange.v triggers.ttcan_exec_period
 
 (* Compute the index of the next active trigger after this one (specification only).
   This should be equivalent to the index with the minimum start time of all
@@ -104,22 +130,30 @@ type triggers = {
 noextract
 let rec trigger_next (trigger_read: trigger_index_fun) (cycle_index: cycle_index) (index: trigger_index)
   : Tot
-    (option (n: trigger_index {
-      Subrange.v index <= Subrange.v n /\
-      trigger_check_enabled cycle_index (trigger_read n)
-    }))
+    (n: option trigger_index {
+      Some? n ==>
+        (Subrange.v index <= Subrange.v (Some?.v n) /\
+        trigger_check_enabled cycle_index (trigger_read (Some?.v n)))
+    })
     (decreases (max_trigger_count - Subrange.v index)) =
   let tr = trigger_read index in
   if trigger_check_enabled cycle_index tr
   then Some (Subrange.shrink index)
   else if Subrange.v index = max_trigger_index
   then None
-  else
-    let nxt = trigger_next trigger_read cycle_index (Subrange.inc_sat index) in
-    match nxt with
-    | Some n -> Some n
-    | None   -> None
+  else trigger_next trigger_read cycle_index (Subrange.inc_sat index)
 
+
+(* Check if trigger is enabled and started -- that is, its time-mark is on or before this frame *)
+let trigger_enabled_started (triggers: triggers) (cycle_index: cycle_index) (ref_trigger_offset: ref_offset) (time: ntu) (cur: trigger_index): bool =
+  let tr = triggers.trigger_read cur in
+  trigger_check_enabled cycle_index tr &&
+  trigger_mark_started triggers time (trigger_offset_time_mark tr ref_trigger_offset)
+
+(* Check that there are no active triggers after this one *)
+let trigger_none_later (triggers: triggers) (cycle_index: cycle_index) (ref_trigger_offset: ref_offset) (time: ntu) (cur: trigger_index): prop =
+  (forall (i: trigger_index { Subrange.v cur < Subrange.v i}).
+    not (trigger_enabled_started triggers cycle_index ref_trigger_offset time i))
 
 (* Compute the currently-active index for given time (specification only).
   We want to find the last index that has actually occurred. To do this, we
@@ -130,45 +164,44 @@ let rec trigger_next (trigger_read: trigger_index_fun) (cycle_index: cycle_index
   > maximum i. enabled i /\ (for n in next i. enabled n /\ time_mark n > time)
 *)
 noextract
-let rec trigger_current_index (trigger_read: trigger_index_fun) (cycle_index: cycle_index) (ref_trigger_offset: ref_offset) (time: ntu) (index: trigger_index)
+let rec trigger_current_index (triggers: triggers) (cycle_index: cycle_index) (ref_trigger_offset: ref_offset) (time: ntu)
+  (index: trigger_index { trigger_none_later triggers cycle_index ref_trigger_offset time index })
   : Tot
-    (option (cur: trigger_index {
-      trigger_offset_time_mark (trigger_read cur) ref_trigger_offset <= time
-    }))
-    (decreases (max_trigger_count - Subrange.v index)) =
-  let inc = Subrange.inc_sat index in
-  let nxt =
-    if Subrange.v index < max_trigger_index
-    then trigger_next trigger_read cycle_index inc
-    else None in
-  let nxt_future =
-    match nxt with
-    | Some nxt ->
-      Subrange.v (trigger_offset_time_mark (trigger_read (Subrange.shrink nxt)) ref_trigger_offset) > UInt64.v time
-    | None -> true
-  in
-  if trigger_check_enabled cycle_index (trigger_read index) && nxt_future
+    (cur: option trigger_index {
+      Some? cur ==>
+        (trigger_enabled_started triggers cycle_index ref_trigger_offset time (Some?.v cur) /\
+        trigger_none_later triggers cycle_index ref_trigger_offset time (Some?.v cur))
+    })
+    (decreases (Subrange.v index)) =
+  if trigger_enabled_started triggers cycle_index ref_trigger_offset time index
   then Some index
-  else if Subrange.v index < max_trigger_index
-  then trigger_current_index trigger_read cycle_index ref_trigger_offset time inc
+  else if Subrange.v index > 0
+  then begin
+    let dec = Subrange.s32r (Subrange.v index - 1) in
+    introduce forall (i: trigger_index { Subrange.v dec < Subrange.v i }). not (trigger_enabled_started triggers cycle_index ref_trigger_offset time i)
+      with (
+        if i = index
+        then ()
+        else (
+          eliminate forall (i: trigger_index { Subrange.v index < Subrange.v i }). not (trigger_enabled_started triggers cycle_index ref_trigger_offset time i)
+          with i
+        )
+      );
+
+    trigger_current_index triggers cycle_index ref_trigger_offset time dec
+  end
   else None
 
 (* Compute the currently-active trigger for given time (specification only) *)
 noextract
-let trigger_current (trigger_read: trigger_index_fun) (cycle_index: cycle_index) (ref_trigger_offset: ref_offset) (time: ntu)
-  : option trigger_index =
-  trigger_current_index trigger_read cycle_index ref_trigger_offset time (Subrange.s32r 0)
+let trigger_current (triggers: triggers) (cycle_index: cycle_index) (ref_trigger_offset: ref_offset) (time: ntu)
+  : (cur: option trigger_index {
+      Some? cur ==>
+        (trigger_enabled_started triggers cycle_index ref_trigger_offset time (Some?.v cur) /\
+        trigger_none_later triggers cycle_index ref_trigger_offset time (Some?.v cur))
+    }) =
+  trigger_current_index triggers cycle_index ref_trigger_offset time (Subrange.s32r max_trigger_index)
 
-
-(* True if trigger will start before the end of this frame, or has already started *)
-noextract
-let trigger_started (triggers: triggers) (cycle_time: nat) (offset_time_mark: nat): bool =
-  offset_time_mark <= cycle_time + Subrange.v triggers.ttcan_exec_period
-
-(* True if trigger starts in this frame *)
-noextract
-let trigger_impending (triggers: triggers) (cycle_time: nat) (offset_time_mark: nat): bool =
-  cycle_time < offset_time_mark && offset_time_mark <= cycle_time + Subrange.v triggers.ttcan_exec_period
 
 (**** Prefetch invariant ****)
 
@@ -188,7 +221,7 @@ let trigger_prefetch_invariant_can_reach_next (triggers: triggers) (c: cycle_ind
 
 let trigger_prefetch_invariant (triggers: triggers) (c: cycle_index) (rto: ref_offset) (time: ntu) (index: trigger_index): bool =
   let cur: trigger_index =
-    match trigger_current triggers.trigger_read c rto time with
+    match trigger_current triggers c rto time with
     | Some cur -> cur
     | _        -> Subrange.s32r 0 in
   let next_opt =
@@ -200,18 +233,48 @@ let trigger_prefetch_invariant (triggers: triggers) (c: cycle_index) (rto: ref_o
       trigger_prefetch_invariant_can_reach_next triggers c rto time index nxt
     | _        -> true)
 
-// let lemma_current_reset
-//   (triggers: triggers) (c: cycle_index) (rto: ref_offset) (time: ntu)
-//   : Lemma
-//     (requires (
-//        UInt64.v time < Subrange.v triggers.ttcan_exec_period
-//     ))
-//     (ensures (
-//        let cur = trigger_current triggers.trigger_read c rto time in
-//        cur == None \/ cur == Some (Subrange.s32r 0)
-//     ))
-//     // [SMTPat (lemma_adequate_spacing_next_inc_pattern triggers c time i)]
-//     = ()
+#push-options "--split_queries always --fuel 1 --ifuel 1"
+
+let lemma_lt_period_mul (period: nat) (cur: nat) (time: nat)
+  : Lemma
+    (requires (
+      time < period /\
+      cur * period <= time
+    ))
+    (ensures (
+      cur == 0
+    ))
+  = ()
+
+let lemma_current_reset
+  (triggers: triggers) (c: cycle_index) (rto: ref_offset) (time: ntu)
+  : Lemma
+    (requires (
+       UInt64.v time < Subrange.v triggers.ttcan_exec_period
+    ))
+    (ensures (
+       let cur = trigger_current triggers c rto time in
+       cur == None \/ cur == Some (Subrange.s32r 0)
+    )) =
+  match trigger_current triggers c rto time with
+    | Some cur ->
+      let tr = triggers.trigger_read cur in
+      lemma_trigger_offset_time_mark_range tr rto;
+      let tm = trigger_offset_time_mark tr rto in
+      assert (time_mark_reachable triggers.trigger_read triggers.ttcan_exec_period cur);
+      assert (trigger_enabled_started triggers c rto time cur);
+      assert (trigger_mark_started triggers time tm);
+      // assert ((Subrange.v cur + 1) * Subrange.v triggers.ttcan_exec_period <= Subrange.v (trigger_min_time_mark tr));
+      // assert (Subrange.v (trigger_min_time_mark tr) <= UInt64.v time + Subrange.v triggers.ttcan_exec_period);
+      // assert (Subrange.v cur * Subrange.v triggers.ttcan_exec_period + Subrange.v triggers.ttcan_exec_period <= Subrange.v (trigger_min_time_mark tr));
+      // assert (Subrange.v cur * Subrange.v triggers.ttcan_exec_period + Subrange.v triggers.ttcan_exec_period <= UInt64.v time + Subrange.v triggers.ttcan_exec_period);
+      // assert (Subrange.v cur * Subrange.v triggers.ttcan_exec_period <= UInt64.v time);
+      lemma_lt_period_mul (Subrange.v triggers.ttcan_exec_period) (Subrange.v cur) (UInt64.v time);
+      // assert (Subrange.v cur < 1);
+      // assert (Subrange.v cur == 0);
+      ()
+    | None ->
+      ()
 
 // let lemma_prefetch_invariant_reset
 //   (triggers: triggers) (c: cycle_index) (rto: ref_offset) (time: ntu)
