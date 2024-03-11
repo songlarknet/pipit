@@ -150,10 +150,17 @@ let trigger_enabled_started (triggers: triggers) (cycle_index: cycle_index) (ref
   trigger_check_enabled cycle_index tr &&
   trigger_mark_started triggers time (trigger_offset_time_mark tr ref_trigger_offset)
 
-(* Check that there are no active triggers after this one *)
+(* Check that there are no started and enabled triggers after this one *)
 let trigger_none_later (triggers: triggers) (cycle_index: cycle_index) (ref_trigger_offset: ref_offset) (time: ntu) (cur: trigger_index): prop =
   (forall (i: trigger_index { Subrange.v cur < Subrange.v i}).
     not (trigger_enabled_started triggers cycle_index ref_trigger_offset time i))
+
+(* Check that all enabled triggers before this one have started *)
+let trigger_all_before (triggers: triggers) (cycle_index: cycle_index) (ref_trigger_offset: ref_offset) (time: ntu) (cur: trigger_index): prop =
+  (forall (i: trigger_index { Subrange.v i < Subrange.v cur }).
+    let tr = triggers.trigger_read i in
+    trigger_check_enabled cycle_index tr ==>
+      trigger_mark_started triggers time (trigger_offset_time_mark tr ref_trigger_offset)
 
 (* Compute the currently-active index for given time (specification only).
   We want to find the last index that has actually occurred. To do this, we
@@ -164,7 +171,7 @@ let trigger_none_later (triggers: triggers) (cycle_index: cycle_index) (ref_trig
   > maximum i. enabled i /\ (for n in next i. enabled n /\ time_mark n > time)
 *)
 noextract
-let rec trigger_current_index (triggers: triggers) (cycle_index: cycle_index) (ref_trigger_offset: ref_offset) (time: ntu)
+let rec trigger_last_before (triggers: triggers) (cycle_index: cycle_index) (ref_trigger_offset: ref_offset) (time: ntu)
   (index: trigger_index { trigger_none_later triggers cycle_index ref_trigger_offset time index })
   : Tot
     (cur: option trigger_index {
@@ -188,7 +195,38 @@ let rec trigger_current_index (triggers: triggers) (cycle_index: cycle_index) (r
         )
       );
 
-    trigger_current_index triggers cycle_index ref_trigger_offset time dec
+    trigger_last_before triggers cycle_index ref_trigger_offset time dec
+  end
+  else None
+
+noextract
+let rec trigger_first_after (triggers: triggers) (cycle_index: cycle_index) (ref_trigger_offset: ref_offset) (time: ntu)
+  (index: trigger_index { trigger_none_later triggers cycle_index ref_trigger_offset time index })
+  : Tot
+    (cur: option trigger_index {
+      Some? cur ==>
+        (trigger_check_enabled cycle_index (triggers.trigger_read (Some?.v cur)) /\
+        ~ (trigger_mark_started triggers time (trigger_offset_time_mark (triggers.trigger_read (Some?.v cur)) ref_trigger_offset)) /\
+        trigger_none_later triggers cycle_index ref_trigger_offset time (Some?.v cur))
+    })
+    (decreases (max_trigger_count - Subrange.v index)) =
+  let tr = triggers.trigger_read index in
+  if trigger_check_enabled cycle_index tr && not (trigger_mark_started triggers time (trigger_offset_time_mark tr ref_trigger_offset))
+  then Some index
+  else if Subrange.v index < max_trigger_index
+  then begin
+    let inc = Subrange.s32r (Subrange.v index + 1) in
+    // introduce forall (i: trigger_index { Subrange.v i < Subrange.v inc }). not (trigger_enabled_started triggers cycle_index ref_trigger_offset time i)
+    //   with (
+    //     if i = index
+    //     then ()
+    //     else (
+    //       eliminate forall (i: trigger_index { Subrange.v index < Subrange.v i }). not (trigger_enabled_started triggers cycle_index ref_trigger_offset time i)
+    //       with i
+    //     )
+    //   );
+
+    trigger_first_after triggers cycle_index ref_trigger_offset time inc
   end
   else None
 
@@ -200,7 +238,7 @@ let trigger_current (triggers: triggers) (cycle_index: cycle_index) (ref_trigger
         (trigger_enabled_started triggers cycle_index ref_trigger_offset time (Some?.v cur) /\
         trigger_none_later triggers cycle_index ref_trigger_offset time (Some?.v cur))
     }) =
-  trigger_current_index triggers cycle_index ref_trigger_offset time (Subrange.s32r max_trigger_index)
+  trigger_last_before triggers cycle_index ref_trigger_offset time (Subrange.s32r max_trigger_index)
 
 noextract
 let trigger_current_or_zero (triggers: triggers) (cycle_index: cycle_index) (ref_trigger_offset: ref_offset) (time: ntu)
