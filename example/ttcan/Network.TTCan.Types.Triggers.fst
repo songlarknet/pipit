@@ -128,20 +128,20 @@ let trigger_mark_impending (triggers: triggers) (cycle_time: ntu) (offset_time_m
   but Pipit doesn't support ghost code yet.
   *)
 noextract
-let rec trigger_next (trigger_read: trigger_index_fun) (cycle_index: cycle_index) (index: trigger_index)
+let rec trigger_next (triggers: triggers) (cycle_index: cycle_index) (index: trigger_index)
   : Tot
     (n: option trigger_index {
       Some? n ==>
         (Subrange.v index <= Subrange.v (Some?.v n) /\
-        trigger_check_enabled cycle_index (trigger_read (Some?.v n)))
+        trigger_check_enabled cycle_index (triggers.trigger_read (Some?.v n)))
     })
     (decreases (max_trigger_count - Subrange.v index)) =
-  let tr = trigger_read index in
+  let tr = triggers.trigger_read index in
   if trigger_check_enabled cycle_index tr
-  then Some (Subrange.shrink index)
+  then Some index
   else if Subrange.v index = max_trigger_index
   then None
-  else trigger_next trigger_read cycle_index (Subrange.inc_sat index)
+  else trigger_next triggers cycle_index (Subrange.inc_sat index)
 
 
 (* Check if trigger is enabled and started -- that is, its time-mark is on or before this frame *)
@@ -202,6 +202,31 @@ let trigger_current (triggers: triggers) (cycle_index: cycle_index) (ref_trigger
     }) =
   trigger_current_index triggers cycle_index ref_trigger_offset time (Subrange.s32r max_trigger_index)
 
+noextract
+let trigger_current_or_zero (triggers: triggers) (cycle_index: cycle_index) (ref_trigger_offset: ref_offset) (time: ntu)
+  : trigger_index =
+  match trigger_current triggers cycle_index ref_trigger_offset time with
+  | Some cur -> cur
+  | None     -> Subrange.s32r 0
+
+noextract
+let trigger_current_inc_or_zero (triggers: triggers) (cycle_index: cycle_index) (ref_trigger_offset: ref_offset) (time: ntu)
+  : trigger_index =
+  match trigger_current triggers cycle_index ref_trigger_offset time with
+  | Some cur -> Subrange.inc_sat cur
+  | None     -> Subrange.s32r 0
+
+
+(* Compute the next-active trigger for given time (specification only) *)
+noextract
+let trigger_next_by_time (triggers: triggers) (cycle_index: cycle_index) (ref_trigger_offset: ref_offset) (time: ntu)
+  : (nxt: option trigger_index {
+      Some? nxt ==>
+        trigger_check_enabled cycle_index (triggers.trigger_read (Some?.v nxt))
+    }) =
+  let cur = trigger_current_inc_or_zero triggers cycle_index ref_trigger_offset time in
+  trigger_next triggers cycle_index cur
+
 
 (**** Prefetch invariant ****)
 
@@ -220,26 +245,17 @@ let trigger_prefetch_invariant_can_reach_next (triggers: triggers) (c: cycle_ind
   *)
 
 let trigger_prefetch_invariant (triggers: triggers) (c: cycle_index) (rto: ref_offset) (time: ntu) (index: trigger_index): bool =
-  let cur: trigger_index =
-    match trigger_current triggers c rto time with
-    | Some cur -> cur
-    | _        -> Subrange.s32r 0 in
-  let next_opt =
-    trigger_next triggers.trigger_read c cur in
-  Subrange.v cur <= Subrange.v index &&
-  (match next_opt with
+  Subrange.v (trigger_current_inc_or_zero triggers c rto time) <= Subrange.v index &&
+  (match trigger_next_by_time triggers c rto time with
     | Some nxt ->
       Subrange.v index <= Subrange.v nxt &&
       trigger_prefetch_invariant_can_reach_next triggers c rto time index nxt
     | _        -> true)
 
-#push-options "--split_queries always --fuel 1 --ifuel 1"
-
 let lemma_lt_period_mul (period: nat) (cur: nat) (time: nat)
   : Lemma
     (requires (
-      time < period /\
-      cur * period <= time
+      time < period /\ cur * period <= time
     ))
     (ensures (
       cur == 0
@@ -253,8 +269,7 @@ let lemma_current_reset
        UInt64.v time < Subrange.v triggers.ttcan_exec_period
     ))
     (ensures (
-       let cur = trigger_current triggers c rto time in
-       cur == None \/ cur == Some (Subrange.s32r 0)
+       Subrange.v (trigger_current_inc_or_zero triggers c rto time) == 0
     )) =
   match trigger_current triggers c rto time with
     | Some cur ->
@@ -264,27 +279,145 @@ let lemma_current_reset
       assert (time_mark_reachable triggers.trigger_read triggers.ttcan_exec_period cur);
       assert (trigger_enabled_started triggers c rto time cur);
       assert (trigger_mark_started triggers time tm);
-      // assert ((Subrange.v cur + 1) * Subrange.v triggers.ttcan_exec_period <= Subrange.v (trigger_min_time_mark tr));
-      // assert (Subrange.v (trigger_min_time_mark tr) <= UInt64.v time + Subrange.v triggers.ttcan_exec_period);
-      // assert (Subrange.v cur * Subrange.v triggers.ttcan_exec_period + Subrange.v triggers.ttcan_exec_period <= Subrange.v (trigger_min_time_mark tr));
-      // assert (Subrange.v cur * Subrange.v triggers.ttcan_exec_period + Subrange.v triggers.ttcan_exec_period <= UInt64.v time + Subrange.v triggers.ttcan_exec_period);
-      // assert (Subrange.v cur * Subrange.v triggers.ttcan_exec_period <= UInt64.v time);
       lemma_lt_period_mul (Subrange.v triggers.ttcan_exec_period) (Subrange.v cur) (UInt64.v time);
-      // assert (Subrange.v cur < 1);
-      // assert (Subrange.v cur == 0);
       ()
     | None ->
       ()
 
-// let lemma_prefetch_invariant_reset
-//   (triggers: triggers) (c: cycle_index) (rto: ref_offset) (time: ntu)
+let lemma_prefetch_invariant_can_reach_next_reset
+  (triggers: triggers) (c: cycle_index) (rto: ref_offset) (time: ntu) (next: trigger_index)
+  : Lemma
+    (requires (
+       UInt64.v time < Subrange.v triggers.ttcan_exec_period
+    ))
+    (ensures (
+      trigger_prefetch_invariant_can_reach_next triggers c rto time (Subrange.s32r 0) next
+    )) =
+  // let ix_zero: trigger_index = Subrange.s32r 0 in
+  let tr = triggers.trigger_read next in
+  // let tm = trigger_offset_time_mark tr rto in
+  lemma_trigger_offset_time_mark_range tr rto;
+  // assert (time_mark_reachable triggers.trigger_read triggers.ttcan_exec_period next);
+  // assert (Subrange.v next == (Subrange.v next - Subrange.v ix_zero));
+  // assert (Subrange.v next * Subrange.v triggers.ttcan_exec_period + Subrange.v triggers.ttcan_exec_period <= Subrange.v (trigger_min_time_mark (triggers.trigger_read next)));
+  // assert (Subrange.v next * Subrange.v triggers.ttcan_exec_period <= Subrange.v tm - UInt64.v time);
+  // assert ((Subrange.v next - Subrange.v ix_zero) * Subrange.v triggers.ttcan_exec_period <= Subrange.v tm - UInt64.v time);
+  ()
+
+irreducible
+let lemma_prefetch_invariant_reset_pattern
+  (triggers: triggers) (c: cycle_index) (rto: ref_offset) (time: ntu)
+  = ()
+
+let lemma_prefetch_invariant_reset
+  (triggers: triggers) (c: cycle_index) (rto: ref_offset) (time: ntu)
+  : Lemma
+    (requires (
+       UInt64.v time < Subrange.v triggers.ttcan_exec_period
+    ))
+    (ensures (
+       trigger_prefetch_invariant triggers c rto time (Subrange.s32r 0)
+    ))
+    [SMTPat (lemma_prefetch_invariant_reset_pattern triggers c rto time)]
+    =
+  lemma_current_reset triggers c rto time;
+  match trigger_next triggers c (Subrange.s32r 0) with
+    | Some nxt ->
+      lemma_prefetch_invariant_can_reach_next_reset triggers c rto time nxt
+    | None ->
+      ()
+
+let rec lemma_trigger_next_is_index
+  (triggers: triggers) (c: cycle_index) (rto: ref_offset) (time: ntu) (start index next: trigger_index)
+  : Lemma
+    (requires (
+      let tr = triggers.trigger_read index in
+      // trigger_prefetch_invariant triggers c rto time index /\
+      trigger_next triggers c start == Some next /\
+      Subrange.v start <= Subrange.v index /\
+      Subrange.v index <= Subrange.v next /\
+      trigger_check_enabled c tr // /\
+      // ~ (trigger_mark_started triggers time (trigger_offset_time_mark tr rto)) /\
+      // trigger_none_later triggers c rto time start
+    ))
+    (ensures (
+       next == index
+    ))
+    (decreases (max_trigger_count - Subrange.v start))
+    =
+  let trs = triggers.trigger_read start in
+  if trigger_check_enabled c trs
+  then begin
+    assert (trigger_next triggers c start == Some start);
+    assert (next == start);
+    assert (Subrange.v start <= Subrange.v index);
+    assert (Subrange.v index <= Subrange.v start);
+    assert (Subrange.v start == Subrange.v index);
+    assert (next == index);
+    ()
+  end
+  else if Subrange.v start = max_trigger_index
+  then begin
+    assert (Subrange.v index <= max_trigger_index);
+    false_elim ()
+  end
+  else begin
+    assert (Subrange.v start < Subrange.v index);
+    assert (trigger_next triggers c (Subrange.inc_sat start) == Some next);
+    lemma_trigger_next_is_index triggers c rto time (Subrange.inc_sat start) index next
+  end
+
+// let lemma_trigger_next_by_time_is_index
+//   (triggers: triggers) (c: cycle_index) (rto: ref_offset) (time: ntu) (index: trigger_index)
 //   : Lemma
-//     (ensures (
-//        UInt64.v time < Subrange.v triggers.ttcan_exec_period ==>
-//        trigger_prefetch_invariant triggers c rto time (Subrange.s32r 0)
+//     (requires (
+//       let tr = triggers.trigger_read index in
+//       trigger_prefetch_invariant triggers c rto time index /\
+//       trigger_check_enabled c tr /\
+//       ~ (trigger_mark_started triggers time (trigger_offset_time_mark (triggers.trigger_read index) rto))
 //     ))
-//     // [SMTPat (lemma_adequate_spacing_next_inc_pattern triggers c time i)]
-//     = ()
+//     (ensures (
+//        trigger_next_by_time triggers c rto time == Some index
+//     ))
+//     =
+//     assert (Subrange.v (trigger_current_inc_or_zero triggers c rto time) <= Subrange.v index);
+//     match trigger_next_by_time triggers c rto time with
+//     | Some next ->
+//       assert (Subrange.v index <= Subrange.v next);
+//     | None ->
+
+//     ()
+
+// let lemma_prefetch_invariant_next_stay
+//   (triggers: triggers) (c: cycle_index) (rto: ref_offset) (time time': ntu) (index: trigger_index)
+//   : Lemma
+//     (requires (
+//       let tr = triggers.trigger_read index in
+//       UInt64.v time < UInt64.v time' /\
+//       UInt64.v time' <= UInt64.v time + Subrange.v triggers.ttcan_exec_period /\
+//       trigger_prefetch_invariant triggers c rto time index /\
+//       trigger_check_enabled c tr /\
+//       ~ (trigger_mark_started triggers time' (trigger_offset_time_mark (triggers.trigger_read index) rto))
+//     ))
+//     (ensures (
+//        trigger_prefetch_invariant triggers c rto time' index
+//     ))
+//     // [SMTPat (lemma_prefetch_invariant_reset_pattern triggers c rto time)]
+//     =
+//   assert (~ (trigger_mark_started triggers time (trigger_offset_time_mark (triggers.trigger_read index) rto)));
+//   let tr = triggers.trigger_read index in
+//   let cur = match trigger_current triggers c rto time with
+//     | Some cur -> cur
+//     | _ -> Subrange.s32r 0 in
+//   match trigger_next triggers c cur with
+//   | Some next ->
+//     // assert (next == index);
+//     // assert (trigger_current triggers c rto time == trigger_current triggers c rto time');
+//     // lemma_trigger_offset_time_mark_range tr rto;
+//     admit ()
+//   | None ->
+//     // false_elim ()
+//     admit ()
 
 
 // irreducible
