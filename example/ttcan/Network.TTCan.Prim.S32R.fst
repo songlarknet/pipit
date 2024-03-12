@@ -22,7 +22,8 @@ type t (b: bounds) = { repr: s32: REPR.t { b.min <= REPR.v s32 /\ REPR.v s32 <= 
 let v (#b: bounds) (r: t b): i: int { b.min <= i /\ i <= b.max } =
   REPR.v r.repr
 
-let s32r (#b: bounds) (x: int { b.min <= x /\ x <= b.max }): t b =
+let s32r (#b: bounds) (x: int { b.min <= x /\ x <= b.max })
+  : s: t b { v s == x } =
   { repr = REPR.int_to_t x }
 
 // disable instance: each instance should instantiate itself
@@ -33,25 +34,34 @@ let has_stream_S32R (b: bounds): Sugar.has_stream (t b) = {
 
 
 
-let inc_sat (#b: bounds) (x: t b): t b =
+let inc_sat (#b: bounds) (x: t b)
+  : s: t b { v s >= v x /\ v s <= v x + 1 /\ (v s < b.max ==> v s = v x + 1) } =
   if x.repr `REPR.lt` REPR.int_to_t b.max
   then { repr = REPR.add x.repr 1l }
   else x
 
-let dec_sat (#b: bounds) (x: t b): t b =
+let dec_sat (#b: bounds) (x: t b)
+  : s: t b { v s <= v x /\ v s >= v x - 1 /\ (v s > b.min ==> v s = v x - 1)} =
   if x.repr `REPR.gt` REPR.int_to_t b.min
   then { repr = REPR.sub x.repr 1l }
   else x
 
-let extend (#b: bounds) (#b': bounds { b'.min <= b.min /\ b.max <= b'.max }) (x: t b): t b' =
+let extend (#b: bounds) (#b': bounds { b'.min <= b.min /\ b.max <= b'.max }) (x: t b)
+  : s: t b' { v s == v x } =
   { repr = x.repr }
 
-let s32r_to_u64 (#b: bounds { 0 <= b.min }) (x: t b): U64.t =
+let shrink (#b: bounds) (#b': bounds) (x: t b { b'.min <= v x /\ v x <= b'.max })
+  : s: t b' { v s == v x } =
+  { repr = x.repr }
+
+let s32r_to_u64 (#b: bounds { 0 <= b.min }) (x: t b)
+  : r: U64.t { U64.v r == v x } =
   let r = Cast.int32_to_uint64 x.repr in
   assert (U64.v r == v x);
   r
 
-let s32r_to_u8 (#b: bounds { 0 <= b.min /\ b.max <= 255 }) (x: t b): U8.t =
+let s32r_to_u8 (#b: bounds { 0 <= b.min /\ b.max <= 255 }) (x: t b)
+  : r: U8.t { U8.v r == v x } =
   let r = Cast.int32_to_uint8 x.repr in
   assert (U8.v r == v x);
   r
