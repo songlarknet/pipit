@@ -103,6 +103,11 @@ type triggers = {
   time_mark_reachable_all: squash (time_mark_reachable_all trigger_read ttcan_exec_period);
 }
 
+noextract
+let time_within_one_step (triggers: triggers) (time time': ntu): bool =
+  UInt64.v time < UInt64.v time' &&
+  UInt64.v time' <= UInt64.v time + Subrange.v triggers.ttcan_exec_period
+
 (* True if trigger's time-mark would start before the end of this frame, or has
   already started. Does not check whether trigger is enabled or not.  *)
 noextract
@@ -255,12 +260,10 @@ let trigger_prefetch_invariant_can_reach_next (triggers: triggers) (c: cycle_ind
   *)
 
 let trigger_prefetch_invariant (triggers: triggers) (c: cycle_index) (rto: ref_offset) (time: ntu) (index: trigger_index): bool =
-  // (match trigger_current triggers c rto time with
-  //   | Some cur ->
-  //     Subrange.v cur <= Subrange.v index
-  //   | _        -> true) &&
-  trigger_all_before triggers c rto time index &&
-  trigger_none_later triggers c rto time index &&
+  (match trigger_current triggers c rto time with
+    | Some cur ->
+      Subrange.v cur <= Subrange.v index
+    | _        -> true) &&
   (match trigger_next triggers c rto time with
     | Some nxt ->
       Subrange.v index <= Subrange.v nxt &&
@@ -348,14 +351,12 @@ let rec lemma_trigger_first_after_find
   : Lemma
     (requires (
       let tr = triggers.trigger_read index in
-      // trigger_prefetch_invariant triggers c rto time index /\
       trigger_all_before triggers c rto time start /\
       trigger_first_after triggers c rto time start == Some next /\
       Subrange.v start <= Subrange.v index /\
       Subrange.v index <= Subrange.v next /\
       trigger_check_enabled c tr /\
       ~ (trigger_mark_started triggers time (trigger_offset_time_mark tr rto))
-      // trigger_none_later triggers c rto time start
     ))
     (ensures (
        next == index
@@ -373,33 +374,34 @@ let rec lemma_trigger_first_after_find
     assert (next == index);
     ()
   end
-  else if Subrange.v start = max_trigger_index
+  else if Subrange.v start < max_trigger_index
   then begin
-    assert (Subrange.v index <= max_trigger_index);
-    false_elim ()
-  end
-  else begin
     assert (Subrange.v start < Subrange.v index);
     assert (trigger_first_after triggers c rto time (Subrange.inc_sat start) == Some next);
     lemma_trigger_first_after_find triggers c rto time (Subrange.inc_sat start) index next
+  end
+  else begin
+    assert (Subrange.v index <= max_trigger_index);
+    false_elim ()
   end
 
 let rec lemma_trigger_first_after_time_increase
-  (triggers: triggers) (c: cycle_index) (rto: ref_offset) (time: ntu) (start index next: trigger_index)
+  (triggers: triggers) (c: cycle_index) (rto: ref_offset) (time time': ntu) (start next: trigger_index)
   : Lemma
     (requires (
-      let tr = triggers.trigger_read index in
+      let tr = triggers.trigger_read next in
       // trigger_prefetch_invariant triggers c rto time index /\
+      time_within_one_step triggers time time' /\
+
       trigger_all_before triggers c rto time start /\
       trigger_first_after triggers c rto time start == Some next /\
-      Subrange.v start <= Subrange.v index /\
-      Subrange.v index <= Subrange.v next /\
-      trigger_check_enabled c tr /\
-      ~ (trigger_mark_started triggers time (trigger_offset_time_mark tr rto))
-      // trigger_none_later triggers c rto time start
+
+      Subrange.v start <= Subrange.v next /\
+
+      ~ (trigger_mark_started triggers time' (trigger_offset_time_mark tr rto))
     ))
     (ensures (
-       next == index
+      trigger_first_after triggers c rto time' start == Some next
     ))
     (decreases (max_trigger_count - Subrange.v start))
     =
@@ -407,23 +409,128 @@ let rec lemma_trigger_first_after_time_increase
   if trigger_check_enabled c trs && not (trigger_mark_started triggers time (trigger_offset_time_mark trs rto))
   then begin
     assert (trigger_first_after triggers c rto time start == Some start);
-    assert (next == start);
-    assert (Subrange.v start <= Subrange.v index);
-    assert (Subrange.v index <= Subrange.v start);
-    assert (Subrange.v start == Subrange.v index);
-    assert (next == index);
+    assert (trigger_first_after triggers c rto time' start == Some start);
     ()
   end
-  else if Subrange.v start = max_trigger_index
+  else if Subrange.v start < max_trigger_index
   then begin
-    assert (Subrange.v index <= max_trigger_index);
-    false_elim ()
+    assert (Subrange.v start < Subrange.v next);
+    assert (trigger_first_after triggers c rto time (Subrange.inc_sat start) == Some next);
+    lemma_trigger_first_after_time_increase triggers c rto time time' (Subrange.inc_sat start) next
   end
   else begin
-    assert (Subrange.v start < Subrange.v index);
-    assert (trigger_first_after triggers c rto time (Subrange.inc_sat start) == Some next);
-    lemma_trigger_first_after_find triggers c rto time (Subrange.inc_sat start) index next
+    false_elim ()
   end
+
+let lemma_trigger_index_lt_ge_dec_eq (cur mid: trigger_index)
+  : Lemma
+    (requires (
+      Subrange.v cur <  Subrange.v mid /\
+      Subrange.v cur >= Subrange.v mid - 1
+    ))
+    (ensures (
+      Subrange.v cur == Subrange.v mid - 1
+    ))
+  = ()
+
+#push-options "--split_queries always"
+
+let rec lemma_trigger_last_before_time_increase_blank
+  (triggers: triggers) (c: cycle_index) (rto: ref_offset) (time time': ntu) (cur mid next: trigger_index)
+  : Lemma
+    (requires (
+      time_within_one_step triggers time time' /\
+
+      trigger_none_later triggers c rto time  cur  /\
+      trigger_none_later triggers c rto time' mid  /\
+      trigger_all_before triggers c rto time  next /\
+
+      Subrange.v cur < Subrange.v mid  /\
+      Subrange.v mid < Subrange.v next /\
+
+      trigger_last_before triggers c rto time  cur  ==
+      trigger_last_before triggers c rto time' cur
+    ))
+    (ensures (
+      // trigger_none_later triggers c rto time' mid /\
+      trigger_last_before triggers c rto time  mid  ==
+      trigger_last_before triggers c rto time' mid
+    ))
+    (decreases (Subrange.v mid))
+    =
+  let tr = triggers.trigger_read mid in
+  let tm = trigger_offset_time_mark tr rto in
+  if trigger_check_enabled c tr
+  then begin
+    // by trigger_all_before
+    assert (trigger_mark_started triggers time tm);
+    // by trigger_none_later
+    assert (~ (trigger_enabled_started triggers c rto time mid));
+    assert (~ (trigger_mark_started triggers time tm));
+    false_elim ()
+  end
+  else if Subrange.v cur < Subrange.v mid - 1
+  then begin
+    lemma_trigger_last_before_time_increase_blank triggers c rto time time' cur (Subrange.dec_sat mid) next;
+    ()
+  end
+  else begin
+    lemma_trigger_index_lt_ge_dec_eq cur mid;
+    ()
+  end
+
+// let rec lemma_trigger_last_before_time_increase
+//   (triggers: triggers) (c: cycle_index) (rto: ref_offset) (time time': ntu) (start next cur: trigger_index)
+//   : Lemma
+//     (requires (
+//       let tr = triggers.trigger_read next in
+      // time_within_one_step triggers time time' /\
+
+//       trigger_none_later triggers c rto time' start /\
+//       // trigger_last_before triggers c rto time start == Some cur /\
+//       // consequence of trigger_last_before
+//       trigger_none_later triggers c rto time cur /\
+
+//       Subrange.v cur  <= Subrange.v next  /\
+//       Subrange.v next <= Subrange.v start /\
+
+//       trigger_next triggers c rto time  == Some next /\
+//       trigger_next triggers c rto time' == Some next /\
+//       // trigger_next triggers c rto time  == Some next /\
+//       // trigger_next triggers c rto time' == Some next /\
+//       // consequence of trigger_next
+//       // trigger_all_before triggers c rto time next /\
+//       // trigger_all_before triggers c rto time' next /\
+
+//       trigger_check_enabled c tr /\
+//       ~ (trigger_mark_started triggers time' (trigger_offset_time_mark tr rto))
+//     ))
+//     (ensures (
+//       trigger_none_later triggers c rto time' cur /\
+//       trigger_last_before triggers c rto time  start ==
+//       trigger_last_before triggers c rto time' start
+//     ))
+//     (decreases (Subrange.v start))
+//     =
+//     admit ()
+
+  // let trs = triggers.trigger_read start in
+  // if trigger_check_enabled c trs && not (trigger_mark_started triggers time (trigger_offset_time_mark trs rto))
+  // then begin
+  //   assert (trigger_first_after triggers c rto time start == Some start);
+  //   assert (trigger_first_after triggers c rto time' start == Some start);
+  //   ()
+  // end
+  // else if Subrange.v start < max_trigger_index
+  // then begin
+  //   assert (Subrange.v start < Subrange.v next);
+  //   assert (trigger_first_after triggers c rto time (Subrange.inc_sat start) == Some next);
+  //   lemma_trigger_first_after_time_increase triggers c rto time time' (Subrange.inc_sat start) next
+  // end
+  // else begin
+  //   false_elim ()
+  // end
+
 
 
 // let lemma_trigger_next_by_time_is_index
@@ -452,8 +559,7 @@ let rec lemma_trigger_first_after_time_increase
 //   : Lemma
 //     (requires (
 //       let tr = triggers.trigger_read index in
-//       UInt64.v time < UInt64.v time' /\
-//       UInt64.v time' <= UInt64.v time + Subrange.v triggers.ttcan_exec_period /\
+//              time_within_one_step triggers time time' /\
 //       trigger_prefetch_invariant triggers c rto time index /\
 //       trigger_check_enabled c tr /\
 //       ~ (trigger_mark_started triggers time' (trigger_offset_time_mark (triggers.trigger_read index) rto))
