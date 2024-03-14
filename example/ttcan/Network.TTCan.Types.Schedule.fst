@@ -92,6 +92,11 @@ let event_enabled_started (evs: events 'c) (c: 'c) (now: nat) (index: event_inde
   let ev = evs.read index in
   ev.enabled c && time_mark_started evs now (ev.time_mark c)
 
+(* Check that there are no enabled triggers inside the given range *)
+let none_enabled (evs: events 'c) (c: 'c) (now: nat) (begin_ end_: int): prop =
+  forall (i: event_index evs { begin_ <= i /\ i < end_ }).
+    not ((evs.read i).enabled c)
+
 (* Check that there are no started and enabled triggers inside the given range *)
 let none_started (evs: events 'c) (c: 'c) (now: nat) (begin_ end_: int): prop =
   forall (i: event_index evs { begin_ <= i /\ i < end_ }).
@@ -134,26 +139,32 @@ let lemma_none_started_after (evs: events_valid 'c) (c: 'c) (now: nat) (index: e
   assert (none_started evs c now index evs.count);
   ()
 
+let range_begin_of_option (#evs: events_valid 'c) (nxt: option (event_index evs)): event_count evs =
+  match nxt with
+  | Some nxt -> nxt + 1
+  | None     -> 0
+
+let range_end_of_option (#evs: events_valid 'c) (cur: option (event_index evs)): event_count evs =
+  match cur with
+  | Some cur -> cur
+  | None     -> evs.count
+
 
 let maximum_started_spec (evs: events_valid 'c) (c: 'c) (now: nat) (cur: option (event_index evs))
   : prop =
-  match cur with
-  | Some cur ->
-    all_started  evs c now   0 (cur + 1) /\
-    none_started evs c now (cur + 1) evs.count /\
-    (evs.read cur).enabled c
-  | None ->
-    none_started evs c now 0 evs.count
+  all_started  evs c now 0 (range_begin_of_option cur)           /\
+  none_started evs c now   (range_begin_of_option cur) evs.count /\
+  (match cur with
+  | Some cur -> (evs.read cur).enabled c
+  | None     -> true)
 
 let minimum_not_started_spec (evs: events_valid 'c) (c: 'c) (now: nat)  (cur: option (event_index evs))
   : prop =
-  match cur with
-  | Some cur ->
-    all_started  evs c now 0   cur /\
-    none_started evs c now cur evs.count /\
-    (evs.read cur).enabled c
-  | None ->
-    all_started evs c now 0 evs.count
+  all_started  evs c now 0 (range_end_of_option cur)           /\
+  none_started evs c now   (range_end_of_option cur) evs.count /\
+  (match cur with
+  | Some cur -> (evs.read cur).enabled c
+  | None     -> true)
 
 (* Compute the currently-active index for given time (specification only).
   We want to find the last index that has actually occurred. To do this, we
@@ -208,6 +219,17 @@ let current (evs: events_valid 'c) (c: 'c) (now: nat)
 let next (evs: events_valid 'c) (c: 'c) (now: nat)
   : option (event_index evs) =
   minimum_not_started evs c now 0
+
+let lemma_none_enabled_between
+  (evs: events_valid 'c) (c: 'c) (now: nat)
+  : Lemma
+    (ensures (
+      let begin_ = range_begin_of_option (current evs c now) in
+      let end_   = range_end_of_option   (next    evs c now) in
+      none_enabled evs c now begin_ end_
+    ))
+    =
+  ()
 
 let prefetch_invariant_can_reach_next (evs: events_valid 'c) (c: 'c) (now: nat) (index nxt: event_index evs): bool =
   let ev = evs.read nxt in
@@ -269,20 +291,33 @@ let lemma_prefetch_invariant_reset
   | None ->
     ()
 
+(*
+  When computing the next not-started event after index `start`, if:
+  (NXT) we find a result (next ... == Some `nxt`);
+  (EN) and we know that there is an index `index` that is enabled and not-started;
+  (BND) and the index `index` is bounded somewhere between `start` and `nxt`;
+  (IND) and some bookkeeping stuff;
+
+  then, the next index `nxt` must actually refer to `index`
+*)
 let rec lemma_minimum_not_started_find
-  (evs: events_valid 'c) (c: 'c) (now: nat) (start index next: event_index evs)
+  (evs: events_valid 'c) (c: 'c) (now: nat) (start index nxt: event_index evs)
   : Lemma
     (requires (
       let ev = evs.read index in
+      // (IND)
       all_started evs c now 0 start /\
-      minimum_not_started evs c now start == Some next /\
-      start <= index /\
-      index <= next /\
+      // (EN)
       ev.enabled c /\
-      ~ (time_mark_started evs now (ev.time_mark c))
+      ~ (time_mark_started evs now (ev.time_mark c)) /\
+      // (BND)
+      start <= index /\
+      index <= nxt /\
+      // (NXT)
+      minimum_not_started evs c now start == Some nxt
     ))
     (ensures (
-       next == index
+       nxt == index
     ))
     (decreases (evs.count - start))
     =
@@ -295,27 +330,38 @@ let rec lemma_minimum_not_started_find
   else if start < evs.count - 1
   then begin
     assert (start < index);
-    assert (minimum_not_started evs c now (start + 1) == Some next);
-    lemma_minimum_not_started_find evs c now (start + 1) index next
+    assert (minimum_not_started evs c now (start + 1) == Some nxt);
+    lemma_minimum_not_started_find evs c now (start + 1) index nxt
   end
   else begin
     false_elim ()
   end
 
+(*
+  When computing the next not-started event after index `start`, if:
+  (TIME) time progresses from now to now' at <=exec_period per tick
+  (NXT) we previously found the next event (next ... now == Some `nxt`);
+  (STARTED) and the event is still not started at the updated time now'
+  (BND) and some induction bookkeeping stuff;
+
+  then, the next index remains the same at the updated time now'
+*)
 let rec lemma_minimum_not_started_time_increase
-  (evs: events_valid 'c) (c: 'c) (now now': nat) (start next: event_index evs)
+  (evs: events_valid 'c) (c: 'c) (now now': nat) (start nxt: event_index evs)
   : Lemma
     (requires (
-      time_period_advances evs now now' /\
-
+      // (IND)
+      start <= nxt /\
       all_started evs c now 0 start /\
-      minimum_not_started evs c now start == Some next /\
-
-      start <= next /\
-      ~ (time_mark_started evs now' ((evs.read next).time_mark c))
+      // (TIME)
+      time_period_advances evs now now' /\
+      // (NXT)
+      minimum_not_started evs c now start == Some nxt /\
+      // (STARTED)
+      ~ (time_mark_started evs now' ((evs.read nxt).time_mark c))
     ))
     (ensures (
-      minimum_not_started evs c now' start == Some next
+      minimum_not_started evs c now' start == Some nxt
     ))
     (decreases (evs.count - start))
     =
@@ -325,22 +371,51 @@ let rec lemma_minimum_not_started_time_increase
     ()
   else if start < evs.count - 1
   then
-    lemma_minimum_not_started_time_increase evs c now now' (start + 1) next
+    lemma_minimum_not_started_time_increase evs c now now' (start + 1) nxt
   else
     false_elim ()
 
+// let rec lemma_maximum_started_time_increase_current
+//   (evs: events_valid 'c) (c: 'c) (now now': nat) (cur mid nxt: event_index evs)
+//   : Lemma
+//     (requires (
+//       time_period_advances evs now now' /\
+
+//       none_started evs c now  (cur + 1)  evs.count /\
+//       none_started evs c now' nxt  evs.count /\
+//       all_started  evs c now         0   nxt      /\
+
+//       cur < nxt /\
+//     ))
+//     (ensures (
+//       maximum_started evs c now  cur ==
+//       maximum_started evs c now' cur
+//     ))
+//     (decreases mid)
+//     =
+//   let ev = evs.read mid in
+//   if ev.enabled c
+//   then begin
+//     false_elim ()
+//   end
+//   else if cur < mid - 1
+//   then
+//     lemma_maximum_started_time_increase_blank evs c now now' cur (mid - 1) nxt
+//   else
+//     ()
+
 let rec lemma_maximum_started_time_increase_blank
-  (evs: events_valid 'c) (c: 'c) (now now': nat) (cur mid next: event_index evs)
+  (evs: events_valid 'c) (c: 'c) (now now': nat) (cur mid nxt: event_index evs)
   : Lemma
     (requires (
       time_period_advances evs now now' /\
 
       none_started evs c now  (cur + 1)  evs.count /\
       none_started evs c now' (mid + 1)  evs.count /\
-      all_started  evs c now         0   next      /\
+      all_started  evs c now         0   nxt      /\
 
       cur < mid  /\
-      mid < next /\
+      mid < nxt /\
 
       maximum_started evs c now  cur ==
       maximum_started evs c now' cur
@@ -358,6 +433,6 @@ let rec lemma_maximum_started_time_increase_blank
   end
   else if cur < mid - 1
   then
-    lemma_maximum_started_time_increase_blank evs c now now' cur (mid - 1) next
+    lemma_maximum_started_time_increase_blank evs c now now' cur (mid - 1) nxt
   else
     ()
