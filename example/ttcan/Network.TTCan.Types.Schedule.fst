@@ -292,147 +292,189 @@ let lemma_prefetch_invariant_reset
     ()
 
 (*
-  When computing the next not-started event after index `start`, if:
+  When computing the next not-started event, if:
   (NXT) we find a result (next ... == Some `nxt`);
   (EN) and we know that there is an index `index` that is enabled and not-started;
-  (BND) and the index `index` is bounded somewhere between `start` and `nxt`;
-  (IND) and some bookkeeping stuff;
+  (BND) and the index `index` is less than or equal to `nxt`;
 
   then, the next index `nxt` must actually refer to `index`
 *)
-let rec lemma_minimum_not_started_find
-  (evs: events_valid 'c) (c: 'c) (now: nat) (start index nxt: event_index evs)
+let lemma_next_find
+  (evs: events_valid 'c) (c: 'c) (now: nat) (index nxt: event_index evs)
   : Lemma
     (requires (
       let ev = evs.read index in
-      // (IND)
-      all_started evs c now 0 start /\
+      // (NXT)
+      next evs c now == Some nxt /\
       // (EN)
       ev.enabled c /\
       ~ (time_mark_started evs now (ev.time_mark c)) /\
       // (BND)
-      start <= index /\
-      index <= nxt /\
-      // (NXT)
-      minimum_not_started evs c now start == Some nxt
+      index <= nxt
     ))
     (ensures (
        nxt == index
     ))
-    (decreases (evs.count - start))
     =
-  let ev = evs.read start in
-  if ev.enabled c && not (time_mark_started evs now (ev.time_mark c))
-  then begin
-    assert (minimum_not_started evs c now start == Some start);
-    ()
-  end
-  else if start < evs.count - 1
-  then begin
-    assert (start < index);
-    assert (minimum_not_started evs c now (start + 1) == Some nxt);
-    lemma_minimum_not_started_find evs c now (start + 1) index nxt
-  end
-  else begin
-    false_elim ()
-  end
+  ()
+
 
 (*
-  When computing the next not-started event after index `start`, if:
+  When computing the next not-started event, if:
   (TIME) time progresses from now to now' at <=exec_period per tick
   (NXT) we previously found the next event (next ... now == Some `nxt`);
   (STARTED) and the event is still not started at the updated time now'
-  (BND) and some induction bookkeeping stuff;
 
   then, the next index remains the same at the updated time now'
 *)
-let rec lemma_minimum_not_started_time_increase
-  (evs: events_valid 'c) (c: 'c) (now now': nat) (start nxt: event_index evs)
+let lemma_next_time_increase
+  (evs: events_valid 'c) (c: 'c) (now now': nat) (nxt: event_index evs)
   : Lemma
     (requires (
-      // (IND)
-      start <= nxt /\
-      all_started evs c now 0 start /\
       // (TIME)
       time_period_advances evs now now' /\
       // (NXT)
-      minimum_not_started evs c now start == Some nxt /\
+      next evs c now == Some nxt /\
       // (STARTED)
       ~ (time_mark_started evs now' ((evs.read nxt).time_mark c))
     ))
     (ensures (
-      minimum_not_started evs c now' start == Some nxt
+      next evs c now' == Some nxt
     ))
-    (decreases (evs.count - start))
     =
-  let ev = evs.read start in
-  if ev.enabled c && not (time_mark_started evs now (ev.time_mark c))
-  then
+  ()
+
+(*
+  When computing the current started event, if:
+  (TIME) time moves forward from now to now';
+  (NXT) the next not-yet-started event has not changed;
+
+  then, the current index remains the same at the updated time now'
+*)
+let lemma_current_time_increase_next_same
+  (evs: events_valid 'c) (c: 'c) (now now': nat)
+  : Lemma
+    (requires (
+      // (TIME)
+      now <= now' /\
+      // (NXT)
+      next evs c now  ==
+      next evs c now'
+    ))
+    (ensures (
+      current evs c now  ==
+      current evs c now'
+    ))
+    =
+  ()
+
+let lemma_prefetch_invariant_stay
+  (evs: events_valid 'c) (c: 'c) (now now': nat) (index: event_index evs)
+  : Lemma
+    (requires (
+      let ev = evs.read index in
+      time_period_advances evs now now' /\
+
+      ev.enabled c /\
+      ~ (time_mark_started evs now' (ev.time_mark c)) /\
+
+      prefetch_invariant evs c now  index
+    ))
+    (ensures (
+      prefetch_invariant evs c now' index
+    ))
+  = ()
+
+let lemma_prefetch_invariant_next_time_increase
+  (evs: events_valid 'c) (c: 'c) (now now': nat) (index: event_index evs)
+  : Lemma
+    (requires (
+      time_period_advances evs now now' /\
+      not ((evs.read index).enabled c) /\
+      prefetch_invariant evs c now  index
+    ))
+    (ensures (
+      next evs c now == next evs c now'
+    ))
+    =
+  match next evs c now with
+  | Some nxt ->
+    let ev = evs.read nxt in
+    let tm = ev.time_mark c in
+    assert (prefetch_invariant_can_reach_next evs c now index nxt);
+    assert (index < nxt);
+    assert (~ (time_mark_started evs now  tm));
+    assert (now < tm);
+    // assert ((nxt - index) * evs.exec_period <= tm - now);
+    // assert ((nxt - (index + 1)) * evs.exec_period <= tm - (now + evs.exec_period));
+    // assert ((nxt - (index + 1)) * evs.exec_period <= tm - now');
+    // assert (now' < tm);
+    assert (~ (time_mark_started evs now' tm));
+    assert (next evs c now' == Some nxt);
     ()
-  else if start < evs.count - 1
-  then
-    lemma_minimum_not_started_time_increase evs c now now' (start + 1) nxt
-  else
-    false_elim ()
+  | None ->
+    ()
 
-// let rec lemma_maximum_started_time_increase_current
-//   (evs: events_valid 'c) (c: 'c) (now now': nat) (cur mid nxt: event_index evs)
-//   : Lemma
-//     (requires (
-//       time_period_advances evs now now' /\
+let lemma_prefetch_invariant_skip
+  (evs: events_valid 'c) (c: 'c) (now now': nat) (index: event_index evs)
+  : Lemma
+    (requires (
+      let ev = evs.read index in
+      time_period_advances evs now now' /\
 
-//       none_started evs c now  (cur + 1)  evs.count /\
-//       none_started evs c now' nxt  evs.count /\
-//       all_started  evs c now         0   nxt      /\
+      index < evs.count - 1 /\
+      not (ev.enabled c) /\
 
-//       cur < nxt /\
-//     ))
-//     (ensures (
-//       maximum_started evs c now  cur ==
-//       maximum_started evs c now' cur
-//     ))
-//     (decreases mid)
-//     =
-//   let ev = evs.read mid in
-//   if ev.enabled c
-//   then begin
-//     false_elim ()
-//   end
-//   else if cur < mid - 1
-//   then
-//     lemma_maximum_started_time_increase_blank evs c now now' cur (mid - 1) nxt
-//   else
-//     ()
+      prefetch_invariant evs c now  index
+    ))
+    (ensures (
+      prefetch_invariant evs c now' (index + 1)
+    ))
+  =
+  lemma_prefetch_invariant_next_time_increase evs c now now' index;
+  assert (next evs c now    == next evs c now');
+  assert (current evs c now == current evs c now');
+  // (match next evs c now with
+  //   | Some nxt ->
+  //     index <= nxt &&
+  //     prefetch_invariant_can_reach_next evs c now index nxt
+  //   | None     -> true);
+  ()
 
-let rec lemma_maximum_started_time_increase_blank
-  (evs: events_valid 'c) (c: 'c) (now now': nat) (cur mid nxt: event_index evs)
+
+let lemma_prefetch_invariant_done
+  (evs: events_valid 'c) (c: 'c) (now now': nat) (index: event_index evs)
+  : Lemma
+    (requires (
+      let ev = evs.read index in
+      time_period_advances evs now now' /\
+
+      index < evs.count - 1 /\
+      ev.enabled c /\
+      time_mark_started evs now' (ev.time_mark c) /\
+
+      prefetch_invariant evs c now  index
+    ))
+    (ensures (
+      prefetch_invariant evs c now' (index + 1)
+    ))
+  =
+  assume (next    evs c now  == Some index);
+  assume (current evs c now' == Some index);
+  admit ()
+
+let lemma_prefetch_invariant_end
+  (evs: events_valid 'c) (c: 'c) (now now': nat) (index: event_index evs)
   : Lemma
     (requires (
       time_period_advances evs now now' /\
 
-      none_started evs c now  (cur + 1)  evs.count /\
-      none_started evs c now' (mid + 1)  evs.count /\
-      all_started  evs c now         0   nxt      /\
+      index == evs.count - 1 /\
 
-      cur < mid  /\
-      mid < nxt /\
-
-      maximum_started evs c now  cur ==
-      maximum_started evs c now' cur
+      prefetch_invariant evs c now  index
     ))
     (ensures (
-      maximum_started evs c now  mid ==
-      maximum_started evs c now' mid
+      prefetch_invariant evs c now' index
     ))
-    (decreases mid)
-    =
-  let ev = evs.read mid in
-  if ev.enabled c
-  then begin
-    false_elim ()
-  end
-  else if cur < mid - 1
-  then
-    lemma_maximum_started_time_increase_blank evs c now now' cur (mid - 1) nxt
-  else
-    ()
+  =
+  ()
