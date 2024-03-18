@@ -55,7 +55,9 @@ let adequate_spacing_all (evs: events 'c): prop =
     adequate_spacing evs c i j
 
 (* Adequate time gap from start of array to trigger:
-  a trigger at index `i` must start after the `i`th frame
+  We must be able to reach a trigger `i` before it starts, so its time mark
+  must account for at least (i + 1) steps
+  > time_mark(i) : [ (i + 1) * pi, ...)
  *)
 let time_mark_reachable (evs: events 'c) (i: event_index evs): prop =
     i * evs.exec_period + evs.exec_period <= (evs.read i).time_mark_min
@@ -72,21 +74,27 @@ let events_valid_req (evs: events 'c): prop =
 
 type events_valid 'c = evs: events 'c { events_valid_req evs }
 
-(* we must execute at least once every exec_period - so the new time cannot skip too far *)
+(* we must execute at least once every exec_period - so the new time cannot skip too far
+  > time' : (time, time + pi]
+  *)
 let time_period_advances (evs: events 'c) (time time': nat): bool =
   time  <  time' &&
   time' <= time + evs.exec_period
 
 (* True if trigger's time-mark would start before the end of this frame, or has
-  already started. Does not check whether trigger is enabled or not.  *)
+  already started. Does not check whether trigger is enabled or not.
+  > started_period : [time_mark - pi, ...)
+  *)
 let time_mark_started (evs: events 'c) (now time_mark: nat): bool =
-  time_mark <= now + evs.exec_period
+  now >= time_mark // - evs.exec_period
 
 (* True if trigger's time-mark would start in this frame. Does not check
-  whether trigger is enabled or not. *)
+  whether trigger is enabled or not.
+  > impending_period : [time_mark - pi, time_mark)
+  *)
 let time_mark_impending (evs: events 'c) (now time_mark: nat): bool =
-  now < time_mark &&
-  time_mark <= now + evs.exec_period
+  now <  time_mark + evs.exec_period &&
+  now >= time_mark // - evs.exec_period
 
 let event_enabled_started (evs: events 'c) (c: 'c) (now: nat) (index: event_index evs): bool =
   let ev = evs.read index in
@@ -234,7 +242,11 @@ let lemma_none_enabled_between
 let prefetch_invariant_can_reach_next (evs: events_valid 'c) (c: 'c) (now: nat) (index nxt: event_index evs): bool =
   let ev = evs.read nxt in
   let tm = ev.time_mark c in
-  (nxt - index) * evs.exec_period <= tm - now
+  // need to arrive at time-mark a touch early
+  // let tm_early = tm - 1 in
+  // steps required to get from current index to next
+  // let steps = nxt - index in
+  (nxt - index) * evs.exec_period < tm - now
 
 let prefetch_invariant (evs: events_valid 'c) (c: 'c) (now: nat) (index: event_index evs): bool =
   (match current evs c now with
@@ -405,10 +417,6 @@ let lemma_prefetch_invariant_next_time_increase
     assert (index < nxt);
     assert (~ (time_mark_started evs now  tm));
     assert (now < tm);
-    // assert ((nxt - index) * evs.exec_period <= tm - now);
-    // assert ((nxt - (index + 1)) * evs.exec_period <= tm - (now + evs.exec_period));
-    // assert ((nxt - (index + 1)) * evs.exec_period <= tm - now');
-    // assert (now' < tm);
     assert (~ (time_mark_started evs now' tm));
     assert (next evs c now' == Some nxt);
     ()
@@ -441,6 +449,80 @@ let lemma_prefetch_invariant_skip
   //   | None     -> true);
   ()
 
+let lemma_enabled_time_lt
+  (evs: events_valid 'c) (c: 'c)
+  (index: event_index evs)
+  (i: event_index evs { index < i })
+  : Lemma
+    (requires (
+      (evs.read index).enabled c /\
+      (evs.read i).enabled c
+    ))
+    (ensures (
+      // forall (i: event_index evs { index < i}).
+      // (evs.read i).enabled c ==>
+      (evs.read index).time_mark c < (evs.read i).time_mark c
+    ))
+    =
+  assert (time_mark_sorted evs index i);
+  assert (adequate_spacing evs c index i);
+  ()
+
+let lemma_current_time_increase_start
+  (evs: events_valid 'c) (c: 'c) (now now': nat)
+  (index: event_index evs)
+  : Lemma
+    (requires (
+      let ev = evs.read index in
+      time_period_advances evs now now' /\
+      ev.enabled c /\
+      ~ (time_mark_started evs now (ev.time_mark c)) /\
+      time_mark_started evs now' (ev.time_mark c)
+    ))
+    (ensures (
+      current evs c now' == Some index
+    ))
+    =
+  let ev = evs.read index in
+  let tm = ev.time_mark c in
+  match current evs c now' with
+  | Some cur ->
+    assert (all_started evs c now' 0 cur);
+    assert (none_started evs c now' (cur + 1) evs.count);
+    assert (index <= cur);
+    assert (forall (i: event_index evs { index < i }). time_mark_sorted evs index i);
+    assert (forall (i: event_index evs { index < i }). adequate_spacing evs c index i);
+    assert (forall (i: event_index evs { index < i }). tm <= (evs.read i).time_mark c);
+    assert (forall (i: event_index evs { index < i }). (evs.read i).enabled c ==> tm < ((evs.read i).time_mark c));
+    assert (forall (i: event_index evs { index < i }). (evs.read i).enabled c ==> ~ (time_mark_started evs now' ((evs.read i).time_mark c)));
+    assert (cur == index)
+  | None ->
+    false_elim ()
+
+let lemma_prefetch_invariant_can_reach_next_time_increase
+  (evs: events_valid 'c) (c: 'c) (now now': nat)
+  (index nxt': event_index evs)
+  : Lemma
+    (requires (
+      let ev = evs.read index in
+      time_period_advances evs now now' /\
+      ev.enabled c /\
+      ~ (time_mark_started evs now (ev.time_mark c)) /\
+      time_mark_started evs now' (ev.time_mark c) /\
+      prefetch_invariant evs c now index /\
+      next evs c now' == Some nxt'
+    ))
+    (ensures (
+      prefetch_invariant_can_reach_next evs c now' (index + 1) nxt'
+    ))
+    =
+  let ei = evs.read index in
+  let en = evs.read nxt' in
+  assert (adequate_spacing evs c index nxt');
+  assert (ei.time_mark c < en.time_mark c);
+  assert ((en.time_mark c - ei.time_mark c) >= (nxt' - index) * evs.exec_period);
+  assert (prefetch_invariant_can_reach_next evs c now' (index + 1) nxt');
+  ()
 
 let lemma_prefetch_invariant_done
   (evs: events_valid 'c) (c: 'c) (now now': nat) (index: event_index evs)
@@ -451,6 +533,7 @@ let lemma_prefetch_invariant_done
 
       index < evs.count - 1 /\
       ev.enabled c /\
+      ~ (time_mark_started evs now (ev.time_mark c)) /\
       time_mark_started evs now' (ev.time_mark c) /\
 
       prefetch_invariant evs c now  index
@@ -459,9 +542,18 @@ let lemma_prefetch_invariant_done
       prefetch_invariant evs c now' (index + 1)
     ))
   =
-  assume (next    evs c now  == Some index);
-  assume (current evs c now' == Some index);
-  admit ()
+  assert (next    evs c now  == Some index);
+  lemma_current_time_increase_start evs c now now' index;
+  match next evs c now' with
+  | Some nxt' ->
+    lemma_prefetch_invariant_can_reach_next_time_increase evs c now now' index nxt';
+    assert (prefetch_invariant_can_reach_next evs c now' (index + 1) nxt');
+    assert (prefetch_invariant evs c now' (index + 1));
+    ()
+  | None ->
+    assert (prefetch_invariant evs c now' (index + 1));
+    ()
+
 
 let lemma_prefetch_invariant_end
   (evs: events_valid 'c) (c: 'c) (now now': nat) (index: event_index evs)
