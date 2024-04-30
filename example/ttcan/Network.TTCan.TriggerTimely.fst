@@ -125,10 +125,12 @@ let id (#a: Type) (x: a): a = x
 
 [@@source; FStar.Tactics.preprocess_with preprocess]
 let count_when (max: nat) (inc: stream bool): stream int =
-  rec' (fun count ->
-    check (0 <= count && count <= max);
+  let rec count =
     let count' = (0 `fby` count) + (if inc then 1 else 0) in
-    if count' > max then max else count')
+    if count' > max then max else count'
+  in
+  check (0 <= count && count <= max);
+  count
 
 %splice[count_when_core] (autolift_binds [`%count_when])
 
