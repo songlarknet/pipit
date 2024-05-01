@@ -1,5 +1,11 @@
-(* Abstract scheduler proofs *)
-module Network.TTCan.Types.Schedule
+(* Abstract scheduler and trigger event proofs
+  This file contains an abstract specification of the trigger event scheduler.
+  It leaves out some details of the concrete implementation such as machine-
+  width integer arithmetic, which makes certain proofs easier.  We instantiate
+  this specification to the concrete implementation in
+  Network.TTCan.Types.Triggers.
+*)
+module Network.TTCan.Abstract.Schedule
 
 module List       = FStar.List.Tot
 
@@ -247,13 +253,6 @@ let lemma_none_enabled_between
   ()
 
 let prefetch_invariant_can_reach_next (evs: events_valid 'c) (c: 'c) (now: nat) (index nxt: event_index_t evs): bool =
-  // let ev = evs.read nxt in
-  // let tm = ev.time_mark c in
-
-  // need to arrive at time-mark a touch early
-  // let tm_early = tm - 1 in
-  // steps required to get from current index to next
-  // let steps = nxt - index in
   (nxt - index) * evs.exec_period < (evs.read nxt).time_mark c - now
 
 let prefetch_invariant (evs: events_valid 'c) (c: 'c) (now: nat) (index: event_index_t evs): bool =
@@ -425,9 +424,6 @@ let lemma_prefetch_invariant_can_reach_next_skip_same
     ))
     (ensures (
       next evs c now' == Some nxt
-      // let ev = evs.read nxt in
-      // let tm = ev.time_mark c in
-      // ~ (time_mark_started evs now' tm)
     ))
   =
     let ev = evs.read nxt in
@@ -539,30 +535,8 @@ let lemma_current_time_increase_start
     introduce forall (i: event_index_t evs { index < i }). (evs.read i).enabled c ==> ~ (time_mark_started evs now' ((evs.read i).time_mark c))
     with begin
       lemma_time_mark_both_enabled_gap evs c now now' index i;
-      // assert (time_mark_sorted evs index i);
-      // assert (adequate_spacing evs c index i);
-      // assert (tm <= (evs.read i).time_mark c);
-      // assert ((evs.read i).enabled c ==> tm < ((evs.read i).time_mark c));
-      // assume ((evs.read i).enabled c ==> tm + evs.exec_period <= ((evs.read i).time_mark c));
-      // FLAKY
-      // assert (~ (now >= tm));
-      // assert ((now' >= tm));
-      // assert (~ (now >= (evs.read i).time_mark c));
-      // assert ((evs.read i).enabled c ==> (tm < (evs.read i).time_mark c));
-      // assert ((evs.read i).enabled c ==> ~ (now' >= (evs.read i).time_mark c));
-      // assert ((evs.read i).enabled c ==> ~ (time_mark_started evs now' ((evs.read i).time_mark c)));
       ()
     end;
-
-    // introduce forall (i: event_index_t evs { index < i }).
-    // assert (forall (i: event_index_t evs { index < i }). time_mark_sorted evs index i);
-    // assert (forall (i: event_index_t evs { index < i }). adequate_spacing evs c index i);
-    // assert (forall (i: event_index_t evs { index < i }). tm <= (evs.read i).time_mark c);
-    // assert (forall (i: event_index_t evs { index < i }). (evs.read i).enabled c ==> tm < ((evs.read i).time_mark c));
-    // // FLAKY
-    // assert (not (now >= tm));
-    // assert (forall (i: event_index_t evs { index < i }). (evs.read i).enabled c ==> (evs.read i).time_mark c > now);
-    // assume (forall (i: event_index_t evs { index < i }). (evs.read i).enabled c ==> ~ (time_mark_started evs now' ((evs.read i).time_mark c)));
     assert (cur == index)
   | None ->
     false_elim ()
@@ -598,11 +572,7 @@ let lemma_prefetch_invariant_can_reach_next_time_increase
   assert (tn - ti >= (nxt' - index) * evs.exec_period);
   assert (now < ti);
   assert (ti <= now');
-  // FLAKY
   assert ((nxt' - index) * evs.exec_period - evs.exec_period < tn - now');
-  // assert ((nxt' - index) * evs.exec_period < tn - now' + evs.exec_period);
-  // assert ((nxt' - (index + 1)) * evs.exec_period < tn - now');
-  // assert (prefetch_invariant_can_reach_next evs c now' (index + 1) nxt');
   ()
 
 let lemma_prefetch_invariant_done
