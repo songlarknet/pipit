@@ -2,6 +2,8 @@ module Network.TTCan.Types.Triggers
 
 open Network.TTCan.Types.Base
 
+module Schedule = Network.TTCan.Abstract.Schedule
+
 module U64        = Network.TTCan.Prim.U64
 module Subrange   = Network.TTCan.Prim.S32R
 
@@ -23,6 +25,7 @@ type trigger_index_fun = trigger_index -> trigger
 (***** Non-streaming helper functions ****)
 let trigger_check_enabled (cycle_index: cycle_index) (trigger: trigger): bool =
   let mask    = Subrange.pow2_minus_one trigger.repeat_factor in
+  assert_norm ((Int.pow2_n #8 6 - 1) <= 255);
   let mask8   = Subrange.s32r_to_u8 mask in
   let index8  = Subrange.s32r_to_u8 cycle_index in
   let offset8 = Subrange.s32r_to_u8 trigger.cycle_offset in
@@ -39,6 +42,17 @@ let trigger_offset_time_mark (trigger: trigger) (ref_trigger_offset: ref_offset)
     Subrange.add_sat trigger.time_mark ref_trigger_offset
   | _ ->
     trigger.time_mark
+
+type abstract_cycle = { cycle_index: cycle_index; ref_trigger_offset: ref_offset; }
+
+let abstract_trigger (trigger: trigger): Schedule.event_info abstract_cycle =
+  {
+    enabled = (fun c -> trigger_check_enabled c.cycle_index trigger);
+    time_mark = (fun c -> Subrange.v (trigger_offset_time_mark trigger c.ref_trigger_offset));
+    time_mark_min = Subrange.v (trigger_offset_time_mark trigger (Subrange.s32r (-127)));
+    time_mark_max = Subrange.v (trigger_offset_time_mark trigger (Subrange.s32r (127)));
+    ok = ();
+  }
 
 let trigger_min_time_mark (trigger: trigger): ntu_config =
   trigger_offset_time_mark trigger (Subrange.s32r (-127))
