@@ -3,8 +3,10 @@ module Network.TTCan.Impl.Triggers
 module S     = Pipit.Sugar.Shallow
 module U64   = Network.TTCan.Prim.U64
 module S32R  = Network.TTCan.Prim.S32R
-module Clocked= Network.TTCan.Prim.Clocked
 module Util  = Network.TTCan.Impl.Util
+
+module Clocked  = Network.TTCan.Prim.Clocked
+module Schedule = Network.TTCan.Abstract.Schedule
 
 open Network.TTCan.Types
 
@@ -22,10 +24,14 @@ module UInt64 = FStar.UInt64
 (* Cycle and time information required by fetch and prefetch *)
 type trigger_input = {
   reset_ck:           bool;
-  cycle_time:         ntu;
+  cycle_time:         ntu_config;
   cycle_index:        cycle_index;
   ref_trigger_offset: ref_offset;
 }
+
+(* The cycle-time is a 16-bit integer. Since we are interested in the time at
+  the end of the frame, we increase the range to 17-bits. *)
+type time_end_of_frame = S32R.t { min = 0; max = 13072; }
 
 (* Result of pre-fetch node *)
 type prefetch_result = {
@@ -60,49 +66,50 @@ instance has_stream_fetch_result: S.has_stream fetch_result = {
 }
 
 (**** Non-streaming helper functions ****)
+let trigger_load_raw (cfg: config) (ix: trigger_index): trigger =
+  cfg.triggers.trigger_read ix
+
 let trigger_load (cfg: config) (ix: trigger_index) (ref_trigger_offset: ref_offset): trigger =
   // do not inline index function into use-sites for extraction
   // XXX: this should not be necessary if we ensure extraction doesn't inline trigger_load / trigger_offset
   [@@no_inline_let]
-  let base = cfg.triggers.trigger_read ix in
-  trigger_offset ref_trigger_offset base
+  let base = trigger_load_raw cfg ix in
+  let tm   = trigger_offset_time_mark base ref_trigger_offset in
+  { base with time_mark = tm }
+
 
 (* True if trigger will start before the end of this frame or has already started:
   > time_mark in [0, T+period]
  *)
-let is_started (cfg: config) (cycle_time: ntu) (time_mark: ntu_config): bool =
+let is_started (now: time_end_of_frame) (time_mark: ntu_config): bool =
   let open UInt64 in
-  let time_mark = S32R.s32r_to_u64 time_mark in
-  let ttcan_exec_period = S32R.s32r_to_u64 cfg.triggers.ttcan_exec_period in
-  // TODO:OPT: because cycle_time: ntu uses full 64-bit, need to avoid overflow. cycle_time shouldn't need 64 bits.
-  if time_mark <^ ttcan_exec_period
-  then true
-  else time_mark -^ ttcan_exec_period <=^ cycle_time
+  S32R.s32r_to_u64 time_mark <=^ S32R.s32r_to_u64 now
 
-(* True if trigger will start in this frame:
-  > time_mark in (T, T+period] *)
-let is_impending (cfg: config) (cycle_time: ntu) (time_mark: ntu_config): bool =
-  let open UInt64 in
-  let time_mark = S32R.s32r_to_u64 time_mark in
-  let ttcan_exec_period = S32R.s32r_to_u64 cfg.triggers.ttcan_exec_period in
-  if time_mark <^ ttcan_exec_period
-  then cycle_time <^ time_mark
-  else cycle_time <^ time_mark && (time_mark -^ ttcan_exec_period <=^ cycle_time)
+// (* True if trigger will start in this frame:
+//   > time_mark in (T, T+period] *)
+// let is_impending (cfg: config) (cycle_time: ntu) (time_mark: ntu_config): bool =
+//   let open UInt64 in
+//   let time_mark = S32R.s32r_to_u64 time_mark in
+//   let ttcan_exec_period = S32R.s32r_to_u64 cfg.triggers.ttcan_exec_period in
+//   if time_mark <^ ttcan_exec_period
+//   then cycle_time <^ time_mark
+//   else cycle_time <^ time_mark && (time_mark -^ ttcan_exec_period <=^ cycle_time)
 
 (* Sanity checks for is_started and is_impending
   These could just be refinements on the above, but the autolift tactic
   doesn't yet support refinements -- whoops. *)
 let lemma_is_started (cfg: config) (cycle_time: ntu) (time_mark: ntu_config)
   : Lemma (ensures (
-      is_started cfg cycle_time time_mark ==
-      trigger_started cfg.triggers (UInt64.v cycle_time) (S32R.v time_mark)
+      is_started cycle_time time_mark ==
+      // Schedule.time_mark_started cfg.triggers (UInt64.v cycle_time) (S32R.v time_mark)
+      (S32R.v time_mark <= UInt64.v cycle_time)
   )) = ()
 
-let lemma_is_impending (cfg: config) (cycle_time: ntu) (time_mark: ntu_config)
-  : Lemma (ensures (
-      is_impending cfg cycle_time time_mark ==
-      trigger_impending cfg.triggers (UInt64.v cycle_time) (S32R.v time_mark)
-  )) = ()
+// let lemma_is_impending (cfg: config) (cycle_time: ntu) (time_mark: ntu_config)
+//   : Lemma (ensures (
+//       is_impending cfg cycle_time time_mark ==
+//       trigger_impending cfg.triggers (UInt64.v cycle_time) (S32R.v time_mark)
+//   )) = ()
 
 let trigger_absolute_time
   (local_time: ntu)

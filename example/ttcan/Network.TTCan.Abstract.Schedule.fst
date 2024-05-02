@@ -70,12 +70,17 @@ let adequate_spacing_all (evs: events 'c): prop =
     adequate_spacing evs c i j
 
 (* Adequate time gap from start of array to trigger:
-  We must be able to reach a trigger `i` before it starts, so its time mark
-  must account for at least (i + 1) steps
-  > time_mark(i) : [ (i + 1) * pi, ...)
+  We must be able to reach a trigger `i` before it starts, which puts a lower
+  bound on the trigger's time-mark. We also have to account for potential
+  delays between transmission and reception of messages. First, there may be a
+  delay between the leader sending a reference / reset message and the current
+  node processing it. Secondly, we need to enqueue transmissions before they
+  actually start. Together, both delays add up to two execution periods. For
+  example, the event at index 0 must occur at-or-after time (2 * evs.exec_period).
+  > time_mark(i) : [ (i + 2) * pi, ...)
  *)
 let time_mark_reachable (evs: events 'c) (i: event_index_t evs): prop =
-    i * evs.exec_period + evs.exec_period <= (evs.read i).time_mark_min
+    (i + 2) * evs.exec_period <= (evs.read i).time_mark_min
 
 let time_mark_reachable_all (evs: events 'c): prop =
   forall (i: event_index_t evs).
@@ -98,14 +103,14 @@ let time_period_advances (evs: events 'c) (time time': nat): bool =
 
 (* True if trigger's time-mark would start before the end of this frame, or has
   already started. Does not check whether trigger is enabled or not.
-  > started_period : [time_mark - pi, ...)
+  > started_period : [time_mark, ...)
   *)
 let time_mark_started (evs: events 'c) (now time_mark: nat): bool =
-  now >= time_mark // - evs.exec_period
+  time_mark <= now
 
 (* True if trigger's time-mark would start in this frame. Does not check
   whether trigger is enabled or not.
-  > impending_period : [time_mark - pi, time_mark)
+  > impending_period : [time_mark, time_mark, + pi)
   *)
 let time_mark_impending (evs: events 'c) (now time_mark: nat): bool =
   time_mark_started evs now time_mark &&
@@ -268,25 +273,19 @@ let prefetch_invariant (evs: events_valid 'c) (c: 'c) (now: nat) (index: event_i
 let lemma_current_reset (evs: events_valid 'c) (c: 'c) (now: nat)
   : Lemma
     (requires (
-      now < evs.exec_period
+      now < 2 * evs.exec_period
     ))
     (ensures (
-      match current evs c now with
-      | Some cur -> cur = 0
-      | None     -> true
+      current evs c now == None
     ))
     =
-  match current evs c now with
-  | Some cur ->
-    ()
-  | None ->
     ()
 
 let lemma_prefetch_invariant_can_reach_next_reset
   (evs: events_valid 'c) (c: 'c) (now: nat) (next: event_index_t evs)
   : Lemma
     (requires (
-       now < evs.exec_period
+       now < 2 * evs.exec_period
     ))
     (ensures (
       prefetch_invariant_can_reach_next evs c now 0 next
@@ -300,7 +299,7 @@ let lemma_prefetch_invariant_reset
   (evs: events_valid 'c) (c: 'c) (now: nat)
   : Lemma
     (requires (
-       now < evs.exec_period
+       now < 2 * evs.exec_period
     ))
     (ensures (
        prefetch_invariant evs c now 0

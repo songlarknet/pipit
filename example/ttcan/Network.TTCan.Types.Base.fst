@@ -29,6 +29,7 @@ type ntu = U64.t
 
 // configuration values can be statically limited to 16-bits
 type ntu_config = Subrange.t { min = 0; max = 65535 } // U16.t
+type ntu_config_pos = Subrange.t { min = 1; max = 65535 }
 
 (* @7.4.3 Ref_Trigger_Offset may only take values between -127 [sic] and 127. *)
 type ref_offset    = Subrange.t { min = -127; max = 127 }
