@@ -81,6 +81,14 @@ opam pin add fstar file://submodules/FStar --no-action
 opam pin add karamel file://submodules/karamel --yes
 ```
 
+#### MacOS
+
+To build on MacOS, you need to install these prerequisites:
+```
+brew install gmp
+brew install coreutils
+```
+
 ### IDE configuration
 
 When using an IDE (Emacs, VSCode), you probably need to specify the exact version of FStar and Z3 binaries to use.
