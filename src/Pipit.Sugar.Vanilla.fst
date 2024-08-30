@@ -116,8 +116,6 @@ let (+^) (#a: arithtype): stream a -> stream a -> stream a =
   S.liftP2 (P'A P'A'Add a)
 let (-^) (#a: arithtype): stream a -> stream a -> stream a =
   S.liftP2 (P'A P'A'Sub a)
-let (/^) (#a: arithtype): stream a -> stream a -> stream a =
-  S.liftP2 (P'A P'A'Div a)
 let ( *^ ) (#a: arithtype): stream a -> stream a -> stream a =
   S.liftP2 (P'A P'A'Mul a)
 
@@ -132,6 +130,9 @@ let (>^) (#a: arithtype): stream a -> stream a -> bools =
 
 let ( %^ ): stream TInt -> nonzero -> stream TInt =
   (fun a div -> S.liftP1 (P'I (P'I'ModConst div)) a)
+let ( /^ ): stream TInt -> nonzero -> stream TInt =
+  (fun a div -> S.liftP1 (P'I (P'I'DivConst div)) a)
+
 
 let tup (#a #b: valtype): stream a -> stream b -> stream (TPair a b) =
   S.liftP2 (P'T P'T'Pair a b)

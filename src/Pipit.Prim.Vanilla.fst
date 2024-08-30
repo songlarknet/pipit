@@ -38,12 +38,13 @@ type prim_bool =
  | P'B'Implies | P'B'Not
 
 type prim_arith =
- | P'A'Add | P'A'Sub | P'A'Div | P'A'Mul
+ | P'A'Add | P'A'Sub | P'A'Mul
  | P'A'Lt  | P'A'Le  | P'A'Gt  | P'A'Ge
  // negate? abs? trig? sqrt2?
 
 type prim_integral =
  | P'I'ModConst: nonzero -> prim_integral
+ | P'I'DivConst: nonzero -> prim_integral
 
 type prim_tup =
  | P'T'Pair | P'T'Fst | P'T'Snd
@@ -69,7 +70,7 @@ let prim_bool_ty (p: prim_bool): funty valtype = match p with
  | _       -> f2 TBool
 
 let prim_arith_ty (p: prim_arith) (at: arithtype): funty valtype = match p with
- | P'A'Add | P'A'Sub | P'A'Div | P'A'Mul -> f2 at
+ | P'A'Add | P'A'Sub | P'A'Mul -> f2 at
  | P'A'Lt  | P'A'Le  | P'A'Gt  | P'A'Ge  -> p2 at
 
 let prim_integral_ty (p: prim_integral): funty valtype = f1 TInt
@@ -102,7 +103,6 @@ let prim_arith_sem (p: prim_arith) (at: arithtype): funty_sem ty_sem (prim_arith
   (match p with
   | P'A'Add -> fun x y -> x + y
   | P'A'Sub -> fun x y -> x - y
-  | P'A'Div -> fun x y -> x / y
   | P'A'Mul -> fun x y -> Prims.op_Multiply x y
   | P'A'Lt  -> fun x y -> x <  y
   | P'A'Le  -> fun x y -> x <= y
@@ -112,7 +112,7 @@ let prim_arith_sem (p: prim_arith) (at: arithtype): funty_sem ty_sem (prim_arith
   R.(match p with
   | P'A'Add -> fun x y -> x +. y
   | P'A'Sub -> fun x y -> x -. y
-  | P'A'Div -> fun x y -> x /. y
+//   | P'A'Div -> fun x y -> x /. y
   | P'A'Mul -> fun x y -> x *. y
   | P'A'Lt  -> fun x y -> x <.  y
   | P'A'Le  -> fun x y -> x <=. y
@@ -121,7 +121,8 @@ let prim_arith_sem (p: prim_arith) (at: arithtype): funty_sem ty_sem (prim_arith
 
 let prim_integral_sem (p: prim_integral): funty_sem ty_sem (prim_integral_ty p) =
   (match p with
-   | P'I'ModConst div -> fun x -> x % div)
+   | P'I'ModConst div -> fun x -> x % div
+   | P'I'DivConst div -> fun x -> x / div)
 
 let prim_tup_sem (p: prim_tup) (a: valtype) (b: valtype): funty_sem ty_sem (prim_tup_ty p a b) = match p with
  | P'T'Pair -> fun (x: ty_sem a) (y: ty_sem b) -> x, y
