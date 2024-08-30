@@ -89,6 +89,12 @@ brew install gmp
 brew install coreutils
 ```
 
+I also needed to set Python3 to use an older version, as 3.12 removes a `distutils` module. I ran:
+```
+brew install pyenv
+pyenv global 3.9.15
+```
+
 ### IDE configuration
 
 When using an IDE (Emacs, VSCode), you probably need to specify the exact version of FStar and Z3 binaries to use.
