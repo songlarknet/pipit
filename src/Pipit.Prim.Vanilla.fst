@@ -8,19 +8,18 @@
 module Pipit.Prim.Vanilla
 
 open Pipit.Prim.Table
-module R = FStar.Real
 module PR = PipitRuntime.Prim
 module C  = Pipit.Context.Base
 
+(* We had TReal too, but this is no longer an eqtype (and extraction isn't sound anyway) *)
 type valtype =
  | TBool: valtype
  | TInt:  valtype
- | TReal: valtype
  | TPair: valtype -> valtype -> valtype
  | TUnit: valtype
 
 let is_arithtype (t: valtype) = match t with
- | TInt  | TReal             -> true
+ | TInt                      -> true
  | TBool | TPair _ _ | TUnit -> false
 
 let arithtype = t: valtype { is_arithtype t }
@@ -28,7 +27,6 @@ let arithtype = t: valtype { is_arithtype t }
 let rec ty_sem (t: valtype): eqtype = match t with
  | TBool -> bool
  | TInt  -> int
- | TReal -> R.real
  | TPair a b -> ty_sem a & ty_sem b
  | TUnit     -> unit
 
@@ -108,16 +106,6 @@ let prim_arith_sem (p: prim_arith) (at: arithtype): funty_sem ty_sem (prim_arith
   | P'A'Le  -> fun x y -> x <= y
   | P'A'Gt  -> fun x y -> x >  y
   | P'A'Ge  -> fun x y -> x >= y)
- | TReal ->
-  R.(match p with
-  | P'A'Add -> fun x y -> x +. y
-  | P'A'Sub -> fun x y -> x -. y
-//   | P'A'Div -> fun x y -> x /. y
-  | P'A'Mul -> fun x y -> x *. y
-  | P'A'Lt  -> fun x y -> x <.  y
-  | P'A'Le  -> fun x y -> x <=. y
-  | P'A'Gt  -> fun x y -> x >.  y
-  | P'A'Ge  -> fun x y -> x >=. y)
 
 let prim_integral_sem (p: prim_integral): funty_sem ty_sem (prim_integral_ty p) =
   (match p with
@@ -144,7 +132,6 @@ let prim_sem (p: prim): funty_sem ty_sem (prim_ty p) = match p with
 let rec val_default (t: valtype): ty_sem t = match t with
  | TBool     -> false
  | TInt      -> 0
- | TReal     -> R.zero
  | TPair a b -> (val_default a, val_default b)
  | TUnit     -> ()
 

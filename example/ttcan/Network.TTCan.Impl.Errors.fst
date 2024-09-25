@@ -5,6 +5,8 @@ module U64   = Network.TTCan.Prim.U64
 module S32R  = Network.TTCan.Prim.S32R
 module Clocked= Network.TTCan.Prim.Clocked
 
+module Prim  = PipitRuntime.Prim
+
 open Network.TTCan.Types
 open Network.TTCan.Impl.Util
 

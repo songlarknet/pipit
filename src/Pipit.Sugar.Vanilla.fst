@@ -10,8 +10,6 @@ open Pipit.Prim.Vanilla
 
 module S = Pipit.Sugar.Base
 
-module R = FStar.Real
-
 let table = table
 
 type valtype = valtype
@@ -21,7 +19,6 @@ type stream (a: valtype)  = S.stream table a
 
 type bools = stream TBool
 type ints  = stream TInt
-type reals = stream TReal
 type units = stream TUnit
 
 let const (#a: valtype) (v: table.ty_sem a): stream a = S.const #table #a v
@@ -88,13 +85,8 @@ let z (i: int): ints = const i
 let z0 = z 0
 let z1 = z 1
 
-let r (r: R.real): reals = const r
-let r0 = r 0.0R
-let r1 = r 1.0R
-
 let zero (#a: arithtype): stream a = match a with
  | TInt  -> z0
- | TReal -> const R.zero
 
 (* Working with booleans *)
 let (/\): bools -> bools -> bools = S.liftP2 (P'B P'B'And)

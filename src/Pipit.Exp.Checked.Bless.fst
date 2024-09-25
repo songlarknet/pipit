@@ -17,6 +17,8 @@ module List = FStar.List.Tot
 
 open FStar.Squash
 
+#set-options "--fuel 1 --ifuel 1 --split_queries always"
+
 (*** Bindings and substitution ***)
 let rec lemma_bless_distributes_lift (#t: table) (#c: context t) (#t1: t.ty)
   (e1: exp t c t1)

@@ -4,7 +4,8 @@ module Pipit.Context.Base
 module List = FStar.List.Tot
 
 
-type var (#ty: Type) (t: ty) =
+(* Specify universe to ensure type injectivity *)
+type var (#ty: Type u#a) (t: ty): Type u#a =
   (* Keep constructor so "var int" is different from "var string" *)
   | Var: (v: nat) -> var t
 
