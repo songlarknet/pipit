@@ -5,6 +5,8 @@ module U64   = Network.TTCan.Prim.U64
 module S32R  = Network.TTCan.Prim.S32R
 module Clocked= Network.TTCan.Prim.Clocked
 
+module Prim  = PipitRuntime.Prim
+
 open Network.TTCan.Types
 open Network.TTCan.Impl.Util
 
@@ -16,9 +18,9 @@ let no_error (error: S.stream error_severity): S.stream bool =
 
 // This is a little painful in current Pipit syntax, so write as pure function then lift
 let summary' (fault: fault_bits): error_severity =
-  if fault.can_bus_off || fault.watch_trigger_reached then S3_Severe
-  else if fault.scheduling_error_2 || fault.tx_overflow then S2_Error
-  else if fault.scheduling_error_1 || fault.tx_underflow then S1_Warning
+  if fault.can_bus_off `Prim.p'b'or` fault.watch_trigger_reached then S3_Severe
+  else if fault.scheduling_error_2 `Prim.p'b'or` fault.tx_overflow then S2_Error
+  else if fault.scheduling_error_1 `Prim.p'b'or` fault.tx_underflow then S1_Warning
   else S0_No_Error
 
 %splice[summary] (SugarTac.lift_prim "summary" (`summary'))

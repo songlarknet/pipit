@@ -25,7 +25,7 @@ let norm_phase_pre (namespaces: list string) =
 (* Final stage of normalisation: unwrap the delayed applications and perform
   minimal normalisation. *)
 let norm_phase_post () =
-  T.norm [delta_only [`%PipitRuntime.Prim.p'delay]]
+  T.norm [delta_only [`%PipitRuntime.Prim.p'delay; `%PipitRuntime.Prim.p'let]]
 
 let norm_full (namespaces: list string) =
   norm_phase_pre namespaces;

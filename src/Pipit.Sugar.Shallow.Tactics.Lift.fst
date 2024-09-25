@@ -47,7 +47,7 @@ module PTB = Pipit.Tactics.Base
 
 module Ref = FStar.Reflection.V2
 module Tac = FStar.Tactics.V2
-module TermEq = FStar.Reflection.V2.TermEq
+module TermEq = FStar.Reflection.TermEq.Simple
 
 module Range = FStar.Range
 
@@ -301,7 +301,7 @@ let env_get_mode (b: Tac.namedv) (e: env) (rng: Range.range): Tac.Tac (mode & na
   let rec go (bs: list (nat & mode)) (strm_ix: nat): Tac.Tac (mode & nat) =
     match bs with
     | [] ->
-      fail ("no such binder: b" ^ Tac.namedv_to_string b)
+      fail ("no such binder: b" ^ Tac.unseal b.ppname)
         rng
         ["(internal error)"]
     | (uniq, m) :: bs ->
