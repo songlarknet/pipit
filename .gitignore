@@ -1,5 +1,4 @@
-extract/gen
-build/
+_build/
 .fst.config.json
 .vscode/
 *.DS_Store
