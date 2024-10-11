@@ -4,7 +4,7 @@ module PTB = Pipit.Tactics.Base
 
 module Ref = FStar.Reflection.V2
 module Tac = FStar.Tactics.V2
-module TermEq = FStar.Reflection.V2.TermEq
+module TermEq = FStar.Reflection.TermEq.Simple
 
 module Range = FStar.Range
 
