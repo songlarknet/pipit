@@ -8,14 +8,14 @@ include make/include/extract.mk
 
 ifneq (, $(shell which $(FSTAR_EXE)))
 
-include make/lib/pipit-rts.mk
-include make/lib/pipit-base.mk
-include make/lib/pipit-core.mk
-include make/lib/pipit-abstract.mk
-include make/lib/pipit-extract.mk
-include make/lib/pipit-source-vanilla.mk
+include make/pipit/rts.mk
+include make/pipit/base.mk
+include make/pipit/core.mk
+include make/pipit/abstract.mk
+include make/pipit/extract.mk
+include make/pipit/source.mk
 
-include make/lib/example.mk
-include make/lib/test.mk
+include make/pipit/example.mk
+include make/pipit/test.mk
 
 endif

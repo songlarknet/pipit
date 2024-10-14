@@ -120,16 +120,11 @@ let modes
 
 let trigger_fetch
   (cfg:           config)
-  (ref_ck:        stream bool)
-  (cycle_time:    stream ntu)
-  (cycle_index:   stream cycle_index)
-  (ref_trigger_offset:
-                  stream ref_offset)
+  (triggers:      stream Triggers.trigger_input)
     : stream Triggers.fetch_result =
-  Triggers.fetch cfg ref_ck cycle_time cycle_index ref_trigger_offset
+  Triggers.fetch cfg triggers
 
 %splice[] (autolift_binds [`%trigger_fetch])
-
 
 let trigger_tx
   (cfg:           config)
@@ -140,13 +135,17 @@ let trigger_tx
   (sync_state:    stream sync_mode)
   (error:         stream error_severity)
     : stream (Clocked.t can_buffer_id & Clocked.t bool) =
-  let trigger         = fetch.trigger in
+  let trigger_ix      = fetch.current.index in
   let trigger_enabled = fetch.current.enabled in
-  let trigger_msg     = trigger.message_index in
-  let trigger_type    = trigger.trigger_type in
+  let trigger_msg     = fetch.message_index in
+  let trigger_type    = fetch.trigger_type in
 
   let tx_enabled      = (sync_state = In_Schedule) && trigger_enabled && (trigger_type = Tx_Trigger) in
-  let is_expired      = U64.(cycle_time > S32R.s32r_to_u64 trigger.time_mark + S32R.s32r_to_u64 cfg.tx_enable_window) in
+  let is_expired      = U64.(cycle_time > S32R.s32r_to_u64 fetch.current.time_mark + S32R.s32r_to_u64 cfg.tx_enable_window) in
+
+  // or reset?
+  let is_new = trigger_ix <> pre #trigger_index trigger_ix in
+
 
   rec' (fun (tx_app_msc_upd: stream (Clocked.t can_buffer_id & Clocked.t bool)) ->
     let pre_tx_app_ck: stream bool =
@@ -164,7 +163,7 @@ let trigger_tx
     in
 
     let tx_pending = rec' (fun tx_pending ->
-      if fetch.is_new && tx_enabled
+      if is_new && tx_enabled
       then true
       else if tx_success || is_expired
       then false
@@ -190,11 +189,11 @@ let trigger_rx
   (cycle_time:    stream ntu)
   (fetch:         stream Triggers.fetch_result)
     : stream (Clocked.t bool) =
-  let trigger         = fetch.trigger in
-  let trigger_enabled = fetch.current.enabled in
-  let trigger_msg     = trigger.message_index in
-  let trigger_type    = trigger.trigger_type in
-  let is_expired      = U64.(cycle_time > S32R.s32r_to_u64 trigger.time_mark) in
+  let current         = fetch.current in
+  let trigger_enabled = current.enabled in
+  let trigger_msg     = fetch.message_index in
+  let trigger_type    = fetch.trigger_type in
+  let is_expired      = U64.(cycle_time > S32R.s32r_to_u64 current.time_mark) in
 
   let rx_check        =
     if trigger_enabled && trigger_type = Rx_Trigger && is_expired
@@ -219,12 +218,13 @@ let trigger_ref
   (sync_state:    stream sync_mode)
   (error:         stream error_severity)
     : stream (Clocked.t ref_message) =
-  let trigger         = fetch.trigger in
-  let trigger_enabled = fetch.current.enabled in
-  let trigger_type    = trigger.trigger_type in
+  let current         = fetch.current in
+  let trigger_enabled = current.enabled in
+  let trigger_type    = fetch.trigger_type in
+  let is_started      = Triggers.is_started_u64 cycle_time current.time_mark in
 
   let tx_ref = States.tx_ref_messages cfg local_time sync_state error cycle_time cycle_index
-    (trigger_enabled && trigger_type = Tx_Ref_Trigger && fetch.is_started) in
+    (trigger_enabled && trigger_type = Tx_Ref_Trigger && is_started) in
   tx_ref
 
 %splice[] (autolift_binds [`%trigger_ref])
@@ -245,10 +245,11 @@ let controller'
   (tx_msc_upd:    stream (Clocked.t bool))
   (rx_msc_upd:    stream (Clocked.t bool))
     : stream controller_result =
-  let trigger         = fetch.trigger in
-  let trigger_enabled = fetch.current.enabled in
-  let trigger_msg     = trigger.message_index in
-  let trigger_type    = trigger.trigger_type in
+  let current         = fetch.current in
+  let trigger_enabled = current.enabled in
+  let trigger_msg     = fetch.message_index in
+  let trigger_type    = fetch.trigger_type in
+  let is_started      = Triggers.is_started_u64 cycle_time current.time_mark in
 
   let msc_upd         = Clocked.or_else tx_msc_upd rx_msc_upd in
   let msc             = MsgSt.message_status_counters trigger_msg msc_upd in
@@ -258,7 +259,7 @@ let controller'
   let watch_trigger =
     trigger_type = Watch_Trigger &&
     trigger_enabled &&
-    fetch.is_started in
+    is_started in
 
   // watch trigger: seeing a watch_trigger is only an error if we have previously observed a reference message.
   // entering configure mode resets both error and previously-seen-ref
