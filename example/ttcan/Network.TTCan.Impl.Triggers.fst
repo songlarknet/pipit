@@ -81,9 +81,11 @@ let trigger_load (cfg: config) (ix: trigger_index) (ref_trigger_offset: ref_offs
 (* True if trigger will start before the end of this frame or has already started:
   > time_mark in [0, T+period]
  *)
-let is_started (now: time_end_of_frame) (time_mark: ntu_config): bool =
+let is_started_u64 (now: U64.t) (time_mark: ntu_config): bool =
   let open UInt64 in
-  S32R.s32r_to_u64 time_mark <=^ S32R.s32r_to_u64 now
+  S32R.s32r_to_u64 time_mark <=^ now
+let is_started (now: time_end_of_frame) (time_mark: ntu_config): bool =
+  is_started_u64 (S32R.s32r_to_u64 now) time_mark
 
 // (* True if trigger will start in this frame:
 //   > time_mark in (T, T+period] *)
@@ -100,7 +102,7 @@ let is_started (now: time_end_of_frame) (time_mark: ntu_config): bool =
   doesn't yet support refinements -- whoops. *)
 let lemma_is_started (cfg: config) (cycle_time: ntu) (time_mark: ntu_config)
   : Lemma (ensures (
-      is_started cycle_time time_mark ==
+      is_started_u64 cycle_time time_mark ==
       // Schedule.time_mark_started cfg.triggers (UInt64.v cycle_time) (S32R.v time_mark)
       (S32R.v time_mark <= UInt64.v cycle_time)
   )) = ()
@@ -136,12 +138,13 @@ let trigger_absolute_time
    *)
 noextract
 let trigger_input_valid (cfg: config) (inp: stream trigger_input): stream bool =
-  Util.cycle_time_valid cfg inp.reset_ck inp.cycle_time &&
+  Util.cycle_time_valid cfg inp.reset_ck (S32R.s32r_to_u64 inp.cycle_time) &&
   Util.is_sampled_on #cycle_index inp.cycle_index        inp.reset_ck &&
   Util.is_sampled_on #ref_offset  inp.ref_trigger_offset inp.reset_ck
 
 %splice[] (autolift_binds [`%trigger_input_valid])
 
+(* XXX pending proofs
 (* Assuming the trigger input is valid, the prefetch is valid.
   The prefetch index is the next active trigger after given time; the
   enabled and time-mark triggers contain the corresponding fields.
@@ -164,6 +167,16 @@ let fetch_result_valid (cfg: config) (inp: trigger_input) (fetch: fetch_result):
   fetch.current.time_mark = trigger.time_mark &&
   fetch.trigger_type      = trigger.trigger_type &&
   fetch.message_index     = trigger.message_index
+*)
+
+
+// The autolifter introduces a lot of overhead, especially for ifs, so we get a simpler program if we pull it out to a top-level binding
+let prefetch_index (reset_ck: bool) (advance: bool) (pre_index: trigger_index): trigger_index =
+  if reset_ck
+  then S32R.s32r 0
+  else if advance
+  then S32R.inc_sat pre_index
+  else pre_index
 
 (*
   Pre-fetch the next enabled trigger.
@@ -183,14 +196,10 @@ let prefetch
   (input: stream trigger_input #_)
     : stream prefetch_result #_ =
   rec' (fun fetch ->
-    let pre_index = (S32R.s32r 0 <: trigger_index) `fby` fetch.index in
-    let advance = false `fby` (not fetch.enabled || U64.(S32R.s32r_to_u64 fetch.time_mark <= input.cycle_time)) in
-    let index =
-      if input.reset_ck
-      then S32R.s32r 0
-      else if advance
-      then S32R.inc_sat pre_index
-      else pre_index in
+    let pre_index: stream trigger_index = (S32R.s32r 0 <: trigger_index) `fby` fetch.index in
+    let advance: stream bool = false `fby` (not fetch.enabled || U64.(S32R.s32r_to_u64 fetch.time_mark <= S32R.s32r_to_u64 input.cycle_time)) in
+    let index: stream trigger_index =
+      prefetch_index input.reset_ck advance pre_index in
     let trigger = trigger_load cfg index input.ref_trigger_offset in
     let enabled = trigger_check_enabled input.cycle_index trigger in
     { index; enabled; time_mark = trigger.time_mark })
@@ -203,26 +212,26 @@ let prefetch_rely
     : stream bool #_ =
   trigger_input_valid cfg input
 
-let prefetch_guar
-  (cfg: config)
-  (pf:    stream prefetch_result)
-  (input: stream trigger_input #_)
-    : stream bool #_ =
-  prefetch_result_valid cfg input pf
+// let prefetch_guar
+//   (cfg: config)
+//   (pf:    stream prefetch_result)
+//   (input: stream trigger_input #_)
+//     : stream bool #_ =
+//   prefetch_result_valid cfg input pf
 
 
-%splice[prefetch_rely_core; prefetch_guar_core] (autolift_binds [`%prefetch_rely; `%prefetch_guar])
+// %splice[prefetch_rely_core; prefetch_guar_core] (autolift_binds [`%prefetch_rely; `%prefetch_guar])
 
-[@@lifted; of_source(`%prefetch)]
-let prefetch_core_contract (cfg: config): S.stream trigger_input -> S.stream prefetch_result =
-  let open S in
-  let c = Contract.contract_of_stream1 {
-    rely = prefetch_rely_core cfg;
-    guar = prefetch_guar_core cfg;
-    body = prefetch_core      cfg;
-  } in
-  assert (Contract.system_induct_k1 c) by (T.pipit_simplify_products []; T.dump "OK");
-  Contract.stream_of_contract1 c
+// [@@lifted; of_source(`%prefetch)]
+// let prefetch_core_contract (cfg: config): S.stream trigger_input -> S.stream prefetch_result =
+//   let open S in
+//   let c = Contract.contract_of_stream1 {
+//     rely = prefetch_rely_core cfg;
+//     guar = prefetch_guar_core cfg;
+//     body = prefetch_core      cfg;
+//   } in
+//   assert (Contract.system_induct_k1 c) by (T.pipit_simplify_products []; T.dump "OK");
+//   Contract.stream_of_contract1 c
 
 
 (*
@@ -236,7 +245,7 @@ let fetch
   let next: stream prefetch_result =
     prefetch cfg input in
   let take_next: stream bool =
-    input.reset_ck || (next.enabled && is_started cfg input.cycle_time next.time_mark) in
+    input.reset_ck || (next.enabled && is_started_u64 (S32R.s32r_to_u64 input.cycle_time) next.time_mark) in
   let rec current =
     if (true ->^ take_next) then next else pre current in
   let trigger = trigger_load cfg current.index input.ref_trigger_offset in

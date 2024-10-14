@@ -1,5 +1,5 @@
 
-$(BUILD)/%.extract: build/cache/%.fst.checked
+$(BUILD)/%.extract: _build/cache/%.fst.checked
 	@echo "* Extracting $(EXTRACT_MODULE)"
 	@rm -f $(BUILD)/extract/$(EXTRACT_NAME)/*.krml
 	@mkdir -p $(BUILD)/extract/$(EXTRACT_NAME)

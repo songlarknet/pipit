@@ -12,11 +12,13 @@ FSTAR_MAYBE_LAX = $(if $(LAX),--lax)
 FSTAR_PROOF_OPT   ?=
 
 FSTAR_INC_DIRS = example/ example/ttcan/ \
-	test/ \
-	pipit-rts/fstar/ \
-	pipit-base/ \
-	pipit-core/ pipit-abstract/ pipit-extract/ \
-	pipit-source/ pipit-source-vanilla/
+	pipit/test/ \
+	pipit/rts/fstar/ \
+	pipit/base/ \
+	pipit/core/ pipit/abstract/ pipit/extract/ \
+	pipit/source/
+
+FSTAR_SRC_DIRS = $(FSTAR_INC_DIRS)
 
 
 FSTAR_INCLUDES	  ?= $(addprefix --include ,$(FSTAR_INC_DIRS))
@@ -36,8 +38,7 @@ FSTAR_SRCS = $(wildcard $(addsuffix *.fst,$(FSTAR_SRC_DIRS)) $(addsuffix *.fsti,
 
 .PRECIOUS: %/deps.mk.rsp
 
-# $(BUILD)/%/deps.mk: %.mk.rsp $(FSTAR_SRCS)
-
+# Unfortunately this is pretty slow... it takes 2.5s to update all dependencies, which needs to happen whenever any source file changes
 %/deps.mk: %/deps.mk.rsp $(FSTAR_SRCS)
 	@echo "* Updating dependencies for $@"
 	@true $(shell rm -f $@.rsp) $(foreach f,$(FSTAR_SRCS),$(shell echo $(f) >> $@.rsp))

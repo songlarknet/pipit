@@ -12,8 +12,8 @@ module Tac = FStar.Tactics
 #push-options "--warn_error -242"
 
 // Useful for testing:
-// #push-options "--ext pipit:lift:debug"
-// #push-options "--print_implicits --print_bound_var_types --print_full_names"
+#push-options "--ext pipit:lift:debug"
+#push-options "--print_implicits --print_bound_var_types --print_full_names"
 
 instance has_stream_int: Shallow.has_stream int = {
   ty_id       = [`%Prims.int];
@@ -168,6 +168,15 @@ let eg_static_match (consts: list int) (x: stream int): stream int =
   | (c: int) :: _ -> c + x
 
 %splice[] (autolift_binds [`%eg_static_match])
+
+let silly_id (x: int): y: int { x == y } = x
+
+(*** Examples / test cases ***)
+[@@source]
+let eg_refinement0 (x: stream int): stream int =
+  silly_id x
+
+%splice[] (autolift_binds [`%eg_refinement0])
 
 (*** Not supported examples ***)
 
