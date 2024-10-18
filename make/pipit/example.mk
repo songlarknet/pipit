@@ -7,7 +7,9 @@ $(BUILD)/example/deps.mk: FSTAR_INC_DIRS=$(EXAMPLE_DEPS)
 $(BUILD)/example/deps.mk: FSTAR_SRC_DIRS=$(EXAMPLE_DIRS)
 
 .PHONY: extract
-extract: extract-pump extract-simple extract-ttcan
+extract: extract-pump extract-simple
+# XXX: disable ttcan as currently hitting a karamel bug
+# extract: extract-pump extract-simple extract-ttcan
 all: extract
 
 .PHONY: extract-pump
