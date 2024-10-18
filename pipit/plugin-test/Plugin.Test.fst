@@ -1,6 +1,7 @@
 module Plugin.Test
 #lang-pipit
 open Pipit.Source
+// open Pipit.Source.Support
 
 let x = 1
 
@@ -8,9 +9,12 @@ let x = 1
 let eg_letincs (x: stream int) =
   (x + x) + x
 
-let eg_letincs_ann (x: stream int): stream int =
-  (x + x) + x
+%splice[] (Pipit.Source.Support.lift_tac "x" "x_ppt_core")
 
+// let eg_letincs_ann (x: stream int): stream int =
+  // (x + x) + x
+
+(*
 let eg_fby (x: stream int): stream int =
   0 `fby` x
 
@@ -134,3 +138,5 @@ let eg_letrec_mut (x: int): int =
 //   let (x, y) = xy in
 //   x + y
 
+
+*)
