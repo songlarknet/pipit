@@ -39,7 +39,8 @@ FSTAR_SRCS = $(wildcard $(addsuffix *.fst,$(FSTAR_SRC_DIRS)) $(addsuffix *.fsti,
 
 .PRECIOUS: %/deps.mk.rsp
 
-# Unfortunately this is pretty slow... it takes 2.5s to update all dependencies, which needs to happen whenever any source file changes
+# Unfortunately this is pretty slow... it takes 2.5s to update all dependencies, which needs to happen whenever any source file changes.
+# They can all be done in parallel though, so it's only 1s with -j8.
 %/deps.mk: %/deps.mk.rsp $(FSTAR_SRCS)
 	@echo "* Updating dependencies for $@"
 	@true $(shell rm -f $@.rsp) $(foreach f,$(FSTAR_SRCS),$(shell echo $(f) >> $@.rsp))
