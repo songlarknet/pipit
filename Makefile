@@ -1,3 +1,6 @@
+NUM_JOBS ?= $(shell nproc)
+MAKEFLAGS := --jobs=$(NUM_JOBS)
+
 all:
 
 include make/include/dev-init.mk

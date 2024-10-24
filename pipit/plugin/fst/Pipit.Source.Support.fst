@@ -20,5 +20,4 @@ module Tac = FStar.Tactics
 
 [@@plugin]
 let lift_tac (nm_src nm_core: string) (m: mode) : Tac.Tac (list Tac.sigelt) =
-  Tac.dump "error! this is implemented in Ocaml plugin.";
   []
