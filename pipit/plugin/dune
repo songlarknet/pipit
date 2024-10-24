@@ -6,3 +6,4 @@
  ; (wrapped false)
  (flags (:standard -w -A))
 )
+(include_subdirs unqualified)

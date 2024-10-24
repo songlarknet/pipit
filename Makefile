@@ -18,4 +18,7 @@ include make/pipit/source.mk
 include make/pipit/example.mk
 include make/pipit/test.mk
 
+include make/pipit/plugin.mk
+include make/pipit/plugin-test.mk
+
 endif

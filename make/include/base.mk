@@ -16,7 +16,8 @@ FSTAR_INC_DIRS = example/ example/ttcan/ \
 	pipit/rts/fstar/ \
 	pipit/base/ \
 	pipit/core/ pipit/abstract/ pipit/extract/ \
-	pipit/source/
+	pipit/source/ \
+	pipit/plugin/fst/ pipit/plugin-test/
 
 FSTAR_SRC_DIRS = $(FSTAR_INC_DIRS)
 
@@ -46,11 +47,14 @@ FSTAR_SRCS = $(wildcard $(addsuffix *.fst,$(FSTAR_SRC_DIRS)) $(addsuffix *.fsti,
 	@mv $@.tmp $@
 
 .PHONY: clean
-clean::
+clean:: clean-deps
 	@echo "* Cleaning *.checked"
 	@rm -f $(BUILD)/cache/*.checked
+	@echo "* Cleaning *.extract"
+	@rm -f $(BUILD)/*.extract
+
+.PHONY: clean-deps
+clean-deps:
 	@echo "* Cleaning deps"
 	@rm -f $(BUILD)/*/deps.mk
 	@rm -f $(BUILD)/*/deps.mk.rsp
-	@echo "* Cleaning *.extract"
-	@rm -f $(BUILD)/*.extract
