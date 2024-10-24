@@ -3,16 +3,16 @@ module Plugin.Test
 open Pipit.Source
 // open Pipit.Source.Support
 
-let x = 1
+// let x = 1
 
 (*** Examples / test cases ***)
-let eg_letincs (x: stream int) =
-  (x + x) + x
-
-%splice[] (Pipit.Source.Support.lift_tac "x" "x_ppt_core")
-
-// let eg_letincs_ann (x: stream int): stream int =
+// let eg_letincs (x: stream int) =
   // (x + x) + x
+
+// %splice[] (Pipit.Source.Support.lift_tac "x" "x_ppt_core")
+
+let eg_letincs_ann (x: stream int): stream int =
+  (x + x) + x
 
 (*
 let eg_fby (x: stream int): stream int =

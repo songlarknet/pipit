@@ -103,13 +103,10 @@ let rec mode_of_type (t: term): (mode option * term) =
   | Function _ -> (* TODO descend, assert None *) nop
 
   | App ({ tm = Var ident ; _ }, ty, Nothing) ->
-    print_endline ("App: ident " ^ FI.string_of_lid ident);
       if FI.string_of_lid ident = "stream"
       then Some Stream, ty
       else nop
   | App (f, ty, _) ->
-    print_endline ("App: f " ^ term_to_string f);
-    print_endline ("App: t " ^ term_to_string ty);
     let _ = mode_of_type f in
     nop
   | Product (bs, ty) -> begin
@@ -123,11 +120,9 @@ let rec mode_of_type (t: term): (mode option * term) =
   | Paren p -> mode_of_type p
 
   | NamedTyp _ ->
-    print_endline "NamedTyp";
     nop
 
   | _ ->
-    print_endline "catchall";
     nop
 
 and
@@ -155,8 +150,6 @@ let rec mode_of_pattern (p: pattern): (mode * pattern) =
      in mk_mode ms, { pat = mk_pat; prange = p.prange }
 
   | PatAscribed (phd, (ty, None)) ->
-    print_endline ("PatAscribed " ^ pat_to_string phd);
-    print_endline ("PatAscribed : " ^ term_to_string ty);
     let rmd, rty = mode_of_type ty in
     default_mode rmd, { pat = PatAscribed (phd, (rty, None)); prange = p.prange }
 
