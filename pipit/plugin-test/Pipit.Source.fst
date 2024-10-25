@@ -1,6 +1,6 @@
 module Pipit.Source
 
-open Pipit.Source.Support
+open Pipit.Plugin.Interface
 
 assume new type stream : eqtype -> Type
 

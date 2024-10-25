@@ -7,8 +7,8 @@ open FStar_Compiler_Range
 let fatal (r: range) (str: string) =
   failwith ("Pipit: fatal: " ^ str ^ " (" ^ string_of_range r ^ ")")
 
-let support_path = ["Pipit"; "Source"; "Support"]
-let src_lid i = FI.lid_of_path (support_path @ [i])
+let mod_path = ["Pipit"; "Plugin"; "Interface"]
+let src_lid i = FI.lid_of_path (mod_path @ [i])
 
 (* let lid_stream = src_lid "stream" *)
 let rec_lid = src_lid "rec'"

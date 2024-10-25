@@ -4,7 +4,7 @@ include $(BUILD)/plugin-test/deps.mk
 verify: $(ALL_CHECKED_FILES)
 
 # Add dependency on built plugin - only applies to pipit/plugin-test/*.fst
-$(ALL_CHECKED_FILES): $(PLUGIN_CMXA)
+$(ALL_CHECKED_FILES): $(PLUGIN_CMX_BIN)
 
 $(BUILD)/plugin-test/deps.mk: FSTAR_INC_DIRS=$(PLUGIN_TEST_DEPS)
 $(BUILD)/plugin-test/deps.mk: FSTAR_SRC_DIRS=$(PLUGIN_TEST_DIRS)

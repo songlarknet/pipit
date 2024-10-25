@@ -1,4 +1,4 @@
-module Pipit.Source.Support
+module Pipit.Plugin.Interface
 
 [@@plugin]
 type mode = | Stream | Static | ModeFun: mode -> explicit: bool -> mode -> mode
