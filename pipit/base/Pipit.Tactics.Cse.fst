@@ -19,8 +19,10 @@ let fail (#a: Type) (msg: string) (rng: Range.range) (ctx: list string): Tac.Tac
 let debug_print (str: unit -> Tac.Tac string): Tac.Tac unit =
   if Tac.ext_getv "pipit:cse:debug" <> ""
   then (
-    let ms = Tac.curms () in
-    Tac.print (Tac.term_to_string (quote ms) ^ ": " ^ str ())
+    // let ms = Tac.curms () in
+    Tac.print (str ())
+    // DISABLE: quote does not work in plugin mode
+    // Tac.print (Tac.term_to_string (quote ms) ^ ": " ^ str ())
   )
 
 // todo better repr?
@@ -87,10 +89,10 @@ let rec find (t: Tac.term) (bs: binds) (fvs: fv_set): Tac.Tac (option (Tac.term 
 let find_or_bind (t: Tac.term) (bs_pre bs_post: binds) (fvs: fv_set): Tac.Tac (Tac.term & binds & fv_set) =
   match find t bs_pre fvs with
   | Some r ->
-    Tac.print ("find_or_bind: found" ^ Tac.term_to_string (quote r));
+    // Tac.print ("find_or_bind: found" ^ Tac.term_to_string (quote r));
     r
   | None ->
-    Tac.print ("find_or_bind: none for " ^ Tac.term_to_string (quote t));
+    // Tac.print ("find_or_bind: none for " ^ Tac.term_to_string (quote t));
     let uniq = Tac.fresh () in
     let namedv: Tac.namedv =
       { uniq = uniq; sort = Tac.seal (`_); ppname = Ref.as_ppname ("cse" ^ string_of_int uniq); } in
@@ -145,8 +147,8 @@ let rec cse_tm (t: Tac.term) (bs: binds): Tac.Tac (Tac.term & binds & fv_set) =
   | Tac.Tv_Abs bv tm ->
     let (tm, bs', fvs) = cse_tm tm bs in
     let u = bv.uniq in
-    Tac.print ("abs: closing binder " ^ Tac.term_to_string (quote u));
-    Tac.print ("abs: bindings " ^ Tac.term_to_string (quote bs'));
+    // Tac.print ("abs: closing binder " ^ Tac.term_to_string (quote u));
+    // Tac.print ("abs: bindings " ^ Tac.term_to_string (quote bs'));
     let (tm, bs', fvs) = close_dependents tm bs' [] fvs [bv.uniq] in
     (Tac.pack (Tac.Tv_Abs bv tm), bs', fvs)
 
@@ -160,8 +162,8 @@ let rec cse_tm (t: Tac.term) (bs: binds): Tac.Tac (Tac.term & binds & fv_set) =
 
   | Tac.Tv_Let false attrs b def body ->
     let u = b.uniq in
-    Tac.print ("let: binder " ^ Tac.term_to_string (quote u));
-    Tac.print ("let: def " ^ Tac.term_to_string (quote def));
+    // Tac.print ("let: binder " ^ Tac.term_to_string (quote u));
+    // Tac.print ("let: def " ^ Tac.term_to_string (quote def));
     let (dtm, dbs, dfv) = cse_tm def bs in
     let (btm, bbs, bfv) = cse_tm body List.(bs @ dbs) in
     let (btm, bbs, bfv) = close_dependents btm bbs [] bfv [b.uniq] in
@@ -172,8 +174,8 @@ let rec cse_tm (t: Tac.term) (bs: binds): Tac.Tac (Tac.term & binds & fv_set) =
     let bs' = List.(bs @ sbs) in
     let (brs, fvs) = Tac.fold_left (fun (brs, fvs) (pat, ptm) ->
       let (ptm, pbs, pfv) = cse_tm ptm bs' in
-      Tac.print ("in match: bs' " ^ Tac.term_to_string (quote bs'));
-      Tac.print ("in match: pbs " ^ Tac.term_to_string (quote pbs));
+      // Tac.print ("in match: bs' " ^ Tac.term_to_string (quote bs'));
+      // Tac.print ("in match: pbs " ^ Tac.term_to_string (quote pbs));
       // For match branches, it's safer to include all of the branch's bindings here.
       // Some applications, such as recursive calls, really can't be moved outside of
       // their branch, or we lose the information about them being terminating.

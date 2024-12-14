@@ -1,7 +1,8 @@
 EXAMPLE_DIRS=example/ example/ttcan/
 EXAMPLE_DEPS=$(PIPIT_EXTRACT_DEPS) $(PIPIT_SOURCE_VANILLA_DEPS) $(EXAMPLE_DIRS)
 include $(BUILD)/example/deps.mk
-verify: $(ALL_CHECKED_FILES)
+verify-example: $(ALL_CHECKED_FILES)
+verify: verify-example
 
 $(BUILD)/example/deps.mk: FSTAR_INC_DIRS=$(EXAMPLE_DEPS)
 $(BUILD)/example/deps.mk: FSTAR_SRC_DIRS=$(EXAMPLE_DIRS)

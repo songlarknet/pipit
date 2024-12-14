@@ -13,6 +13,8 @@ PLUGIN_SRCS=$(wildcard pipit/plugin/* pipit/plugin/fst/*)
 # --build-dir=$(realpath $(BUILD))/plugin
 $(PLUGIN_CMX_BIN): $(PLUGIN_SRCS)
 	@echo " * Building source-extension plugin"
-	$(Q)fstar.exe pipit/plugin/fst/*.fst --codegen Plugin --extract Pipit --odir pipit/plugin/generated
+	$(Q)fstar.exe pipit/plugin/fst/*.fst --codegen Plugin --extract Pipit --odir pipit/plugin/generated --include pipit/base
+	# Not sure about following includes - extracted Ocaml causes issues, plus it takes a while
+	# --include pipit/core --include pipit/extract --include pipit/source --include pipit/abstract --include pipit/rts/fstar
 	$(Q)dune build --root=pipit/plugin
 	@cp -f pipit/plugin/_build/default/pipit_plugin.cmxs $@

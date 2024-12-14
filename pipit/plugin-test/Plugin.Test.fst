@@ -1,7 +1,20 @@
 module Plugin.Test
+
 #lang-pipit
-open Pipit.Source
-// open Pipit.Source.Support
+
+// open Pipit.Source
+
+
+// let eg_letincs_pure (x: int) =
+//   (x + x) + x
+
+// %splice[] (Pipit.Plugin.Interface.lift_tac "eg_letincs" "x_ppt_core" Pipit.Plugin.Interface.Stream)
+
+
+// let eg_letincs_strm (x: stream int) =
+//   (x + x) + x
+
+// %splice[] (Pipit.Source.Support.lift_tac "x" "x_ppt_core")
 
 // let x = 1
 
@@ -11,8 +24,8 @@ open Pipit.Source
 
 // %splice[] (Pipit.Source.Support.lift_tac "x" "x_ppt_core")
 
-let eg_letincs_ann (x: stream int): stream int =
-  (x + x) + x
+// let eg_letincs_ann (x: stream int): stream int =
+  // (x + x) + x
 
 (*
 let eg_fby (x: stream int): stream int =
