@@ -111,3 +111,34 @@ let subst1_bind' (#a #b: ('t).ty) (#c: context 't) (e: exp_bind 't b c a) (i: C.
 unfold
 let subst1 (#a: ('t).ty) (#c: context 't { C.has_index c 0 }) (e: exp 't c a) (payload: exp 't (C.drop1 c 0) (C.get_index c 0)): Tot (exp 't (List.Tot.tl c) a) (decreases e) =
   subst1' e 0 payload
+
+let lifts_base' (#a: ('t).ty) (#c: context 't) (e: exp_base 't c a) (n: C.index_insert c) (c': context 't): Tot (exp_base 't (C.lifts c n c') a) =
+  match e with
+  | XVal v -> XVal v
+  | XBVar i ->
+    let c'' = C.lifts c n c' in
+    let i' = C.index_lifts i n (List.Tot.length c') in
+    // TODO PROVE EASY
+    assume (C.get_index c'' i' == a);
+    XBVar i'
+  | XVar x' ->
+    XVar x'
+
+let rec lifts' (#a: ('t).ty) (#c: context 't) (e: exp 't c a) (n: C.index_insert c) (c': context 't): Tot (exp 't (C.lifts c n c') a) (decreases e) =
+  match e with
+  | XBase e1 -> XBase (lifts_base' e1 n c')
+  | XApps e1 -> XApps (lifts_apps' e1 n c')
+  | XFby v e -> XFby v (lifts' e n c')
+  | XMu e1 ->
+    XMu (lifts' e1 (n + 1) c')
+  | XLet b e1 e2 -> XLet b (lifts' e1 n c') (lifts' e2 (n + 1) c')
+  | XContract ps r g i -> XContract ps (lifts' r n c') (lifts' g (n + 1) c') (lifts' i n c')
+  | XCheck name e1 -> XCheck name (lifts' e1 n c')
+and lifts_apps' (#a: funty ('t).ty) (#c: context 't) (e: exp_apps 't c a) (n: C.index_insert c) (c': context 't): Tot (exp_apps 't (C.lifts c n c') a) (decreases e) =
+  match e with
+  | XPrim p -> XPrim p
+  | XApp f e -> XApp (lifts_apps' f n c') (lifts' e n c')
+
+
+let lifts (#a: ('t).ty) (#c: context 't) (e: exp 't c a) (c': context 't): Tot (exp 't (C.append c' c) a) =
+  lifts' e 0 c'

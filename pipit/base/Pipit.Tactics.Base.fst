@@ -67,3 +67,10 @@ let lookup_lb_top (e: Tac.env) (nm: Ref.name): Tac.Tac Tac.letbinding =
     match Tac.inspect_sigelt se with
     | Tac.Sg_Let {lbs} -> Tac.lookup_lb lbs nm
     | _ -> Tac.fail ("lookup_lb_top: binding is not a let-binding: " ^ Ref.implode_qn nm)
+
+let term_check_fv (t: Tac.term) (fv: string): Tac.Tac bool =
+  match Tac.inspect t with
+  | Tac.Tv_FVar fv'
+  | Tac.Tv_UInst fv' _ ->
+    Tac.inspect_fv fv' = Tac.explode_qn fv
+  | _ -> false

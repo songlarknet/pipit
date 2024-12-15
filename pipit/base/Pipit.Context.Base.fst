@@ -26,7 +26,13 @@ let opt_index (c: context 'a) (i: index): option 'a = if has_index c i then Some
 
 let empty = []
 
-let append (c c': context 'a): context 'a = List.append c c'
+let append_length_plus (c c': context 'a): Lemma (List.length (List.append c c') = List.length c + List.length c') =
+  // TODO PROVE EASY
+  admit ()
+
+let append (c c': context 'a): r: context 'a { List.length r = List.length c + List.length c'} =
+  append_length_plus c c';
+  List.append c c'
 
 let rev_acc (c c': context 'a): context 'a = List.rev_acc c c'
 
@@ -40,11 +46,19 @@ let rec lift1 (l: context 'a) (i: index_insert l) (v: 'a): (l': context 'a { Lis
   | _, 0 -> v :: l
   | l0 :: l', _ -> l0 :: lift1 l' (i - 1) v
 
+let rec lifts (l: context 'a) (i: index_insert l) (l': context 'a): (r: context 'a { List.length r == List.length l + List.length l' }) =
+  match l, i with
+  | _, 0 -> append l' l
+  | l0 :: l, _ -> l0 :: lifts l (i - 1) l'
+
 let index_drop (i limit: index): (r: index { (i > limit ==> r = i - 1) /\ (i <= limit ==> r = i )}) =
   if i > limit then i - 1 else i
 
 let index_lift (i limit: index): (r: index { (i >= limit ==> r = i + 1) /\ (i < limit ==> r = i) }) =
   if i >= limit then i + 1 else i
+
+let index_lifts (i limit: index) (lift_by: nat): (r: index { (i >= limit ==> r = i + lift_by) /\ (i < limit ==> r = i ) })=
+  if i >= limit then i + lift_by else i
 
 let open1' (c: context 'a) (i: index_lookup c): context 'a = drop1 c i
 let open1 (c: context 'a { has_index c 0 }): context 'a = List.tl c
