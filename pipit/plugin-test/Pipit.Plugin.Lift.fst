@@ -30,19 +30,19 @@ module TermEq = FStar.Reflection.TermEq.Simple
 let shallow_ty t = `PSSB.shallow (`#t)
 let shallow_prim_mkPrim a b c = `PPS.mkPrim (`#a) (`#b) (`#c)
 
-let table_FTFun a b = `(PPT.FTFun (PSSB.shallow (`#a)) (`#b))
-let table_FTVal a = `(PPT.FTVal (PSSB.shallow (`#a)))
+let table_FTFun a b = `(PPT.FTFun (`#a) (`#b))
+let table_FTVal a = `(PPT.FTVal (`#a))
 
-let exp_ty ctx a = `(PXB.exp PPS.table (`#ctx) (PSSB.shallow (`#a)))
+let exp_ty ctx a = `(PXB.exp PPS.table (`#ctx) (`#a))
 let ctx_ty = `(PPT.context PPS.table)
 
 // TODO should these take ctx?
 let exp_XPrim a = `PXB.XPrim #(PPS.table) (`#a)
-let exp_XApp3 ty hd tl = `(PXB.XApp #(PPS.table) #_ #(PSSB.shallow (`#ty)) (`#hd) (`#tl) )
-let exp_XApps2 ty exp = `(PXB.XApps #(PPS.table) #_ #(PSSB.shallow (`#ty)) (`#exp))
+let exp_XApp3 ty hd tl = `(PXB.XApp #(PPS.table) #_ #(`#ty) (`#hd) (`#tl) )
+let exp_XApps2 ty exp = `(PXB.XApps #(PPS.table) #_ #(`#ty) (`#exp))
 let exp_XBVar v = `(PXB.XBase #(PPS.table) (PXB.XBVar #(PPS.table) (`#v)))
 let exp_XVal v = `(PXB.XBase #(PPS.table) (PXB.XVal #(PPS.table) (`#v)))
-let exp_XLet ty def body = `(PXB.XLet #(PPS.table) (PSSB.shallow (`#ty)) (`#def) (`#body))
+let exp_XLet ty def body = `(PXB.XLet #(PPS.table) (`#ty) (`#def) (`#body))
 let exp_XRec body = `(PXB.XMu #(PPS.table) (`#body))
 let exp_lifts ctx pfx exp = `(PXBi.lifts #(PPS.table) #_ #(`#ctx) (`#exp) (`#pfx))
 
@@ -118,7 +118,9 @@ type env = {
   extra_sigelts: Tac.tref (list Tac.sigelt);
   // mapping of lifted primitives (mutable)
   prim_env: Tac.tref (list (Ref.name & Ref.name & mode));
-  // name of top-level binding we're lifting
+  // cache for shallow stream type lookup
+  shallow_cache: Tac.tref (list (Ref.name & Tac.term));
+  // name of top-level binding we're lifting (invariant)
   name_prefix: string;
   // context variable (invariant)
   ctx_uniq: Tac.namedv;
@@ -203,7 +205,8 @@ let env_top (tac_env: Tac.env) (extra_lifteds: list (Ref.name & Ref.name & mode)
   let prim_env = Tac.alloc prim_env in
   let extra_sigelts = Tac.alloc [] in
   let ctx_uniq: Tac.namedv = { uniq = Tac.fresh (); sort = Tac.seal ctx_ty; ppname = Ref.as_ppname "ctx" } in
-  { tac_env; mode_env; lifted_env; prim_env; extra_sigelts; name_prefix; ctx_uniq }
+  let shallow_cache = Tac.alloc [] in
+  { tac_env; mode_env; lifted_env; prim_env; extra_sigelts; name_prefix; ctx_uniq; shallow_cache }
 
 let env_nil (nms: list (string & mode)): Tac.Tac env =
   let prefix = match nms with
@@ -264,20 +267,60 @@ let env_get_lifted_of_source (fv: Ref.fv) (e: env): Tac.Tac (Ref.fv & option mod
 let env_get_lifted_prim_of_source (fv: Ref.fv) (e: env): Tac.Tac (option (Ref.fv & mode)) =
   env_lifted_lookup fv (Tac.read e.prim_env)
 
-let env_get_full_context (e: env): Tac.term =
-  let rec go (l: list (nat & mode & bind_sort)): Tac.term =
+let rec tm_shallow_can_cache (t: Tac.term): Tac.Tac bool =
+  match Tac.inspect t with
+  | Tac.Tv_Var _ | Tac.Tv_BVar _
+  -> false
+  | Tac.Tv_App hd (arg,_)
+  -> if tm_shallow_can_cache hd
+     then false
+     else tm_shallow_can_cache arg
+  | Tac.Tv_Abs _ _
+  | Tac.Tv_Arrow _ _
+  | Tac.Tv_Refine _ _
+  | Tac.Tv_Let _ _ _ _ _
+  | Tac.Tv_Match _ _ _
+  | Tac.Tv_AscribedT _ _ _ _
+  | Tac.Tv_AscribedC _ _ _ _
+   -> false
+
+  | _ -> true
+
+let rec env_get_shallow_ty_search (ls: list (Tac.name & Tac.term)) (t: Tac.term) (e: env): Tac.Tac Tac.term =
+  match ls with
+  | [] ->
+    let (nm, se) = core_sigelt e [] None None Static (shallow_ty t) in
+    let sh = Tac.read e.shallow_cache in
+    Tac.write e.shallow_cache ((nm, t) :: sh);
+    Tac.write e.extra_sigelts (se :: Tac.read e.extra_sigelts);
+    Tac.pack (Tac.Tv_FVar (Tac.pack_fv nm))
+  | (nm, t') :: ls ->
+    if TermEq.term_eq t t'
+    then Tac.pack (Tac.Tv_FVar (Tac.pack_fv nm))
+    else env_get_shallow_ty_search ls t e
+
+
+let env_get_shallow_ty (t: Tac.term) (e: env): Tac.Tac Tac.term =
+  if tm_shallow_can_cache t
+  then
+    let sh = Tac.read e.shallow_cache in
+    env_get_shallow_ty_search sh t e
+  else shallow_ty t
+
+let env_get_full_context (e: env): Tac.Tac Tac.term =
+  let rec go (l: list (nat & mode & bind_sort)): Tac.Tac Tac.term =
     match l with
     | [] -> Tac.pack (Tac.Tv_Var e.ctx_uniq)
-    | (n, m, BindLocal ty) :: ms -> `((`#(shallow_ty ty)) :: (`#(go ms)))
+    | (n, m, BindLocal ty) :: ms -> `((`#(env_get_shallow_ty ty e)) :: (`#(go ms)))
     | _ :: ms -> go ms
   in
     go e.mode_env
 
-let env_lifts (e: env) (t: Tac.term): Tac.term =
-  let rec go (l: list (nat & mode & bind_sort)): Tac.term =
+let env_lifts (e: env) (t: Tac.term): Tac.Tac Tac.term =
+  let rec go (l: list (nat & mode & bind_sort)): Tac.Tac Tac.term =
     match l with
     | [] -> `[]
-    | (n, m, BindLocal ty) :: ms -> `((`#(shallow_ty ty)) :: (`#(go ms)))
+    | (n, m, BindLocal ty) :: ms -> `((`#(env_get_shallow_ty ty e)) :: (`#(go ms)))
     | _ :: ms -> go ms
   in
     let pfx = go e.mode_env in
@@ -374,12 +417,12 @@ let lift_prim_gen (e: env) (prim: Tac.term): Tac.Tac Tac.term =
   let (args,res) = Tac.collect_arr ty in
   let res = PTB.returns_of_comp res in
   let ft =
-    List.fold_right (fun a b -> table_FTFun a b) args (table_FTVal res)
+    Tac.fold_right (fun a b -> table_FTFun (env_get_shallow_ty a e) b) args (table_FTVal (env_get_shallow_ty res e))
   in
   let ctx = Tac.pack (Tac.Tv_Var e.ctx_uniq) in
   let argnamedvs = Tac.map
     (fun ty ->
-      let tys = exp_ty ctx ty in
+      let tys = exp_ty ctx (env_get_shallow_ty ty e) in
       ty, ({ uniq = Tac.fresh (); sort = Tac.seal tys; ppname = Ref.as_ppname "prim" } <: Tac.namedv))
     args
   in
@@ -392,16 +435,16 @@ let lift_prim_gen (e: env) (prim: Tac.term): Tac.Tac Tac.term =
   in
   let prim = (exp_XPrim (shallow_prim_mkPrim nm_tm ft prim)) in
   // TODO: deal with implicit args
-  let lift = List.fold_left
+  let lift = Tac.fold_left
     (fun hd (ty,nv) ->
       let tm = Tac.pack (Tac.Tv_Var nv) in
-      exp_XApp3 ty hd tm)
+      exp_XApp3 (env_get_shallow_ty ty e) hd tm)
     prim argnamedvs
   in
-  let lift = exp_XApps2 res lift in
-  let abs = List.fold_right
+  let lift = exp_XApps2 (env_get_shallow_ty res e) lift in
+  let abs = Tac.fold_right
     (fun (ty,nv) hd ->
-      let tys = exp_ty ctx ty in
+      let tys = exp_ty ctx (env_get_shallow_ty ty e) in
       Tac.pack (Tac.Tv_Abs (Tac.namedv_to_binder nv tys) hd))
     argnamedvs lift
   in
@@ -453,14 +496,14 @@ let lift_ty (t: Tac.term) (m: mode) (e: env): Tac.Tac Tac.term =
   match m with
   | Stream ->
     let ctx = env_get_full_context e in
-    exp_ty ctx t
+    exp_ty ctx (env_get_shallow_ty t e)
   | _ -> t
 
 let lift_ty_binder (b: Tac.binder) (m: mode) (e: env): Tac.Tac Tac.binder =
   let sort = strip_ty b.sort in
   match m with
   | Stream ->
-    let sort = exp_ty (Tac.pack (Tac.Tv_Var e.ctx_uniq)) sort in
+    let sort = exp_ty (Tac.pack (Tac.Tv_Var e.ctx_uniq)) (env_get_shallow_ty sort e) in
     { b with sort = sort }
   | _ ->
     { b with sort = sort }
@@ -611,7 +654,7 @@ let rec lift_tm (e: env) (t: Tac.term) (mm: option mode): Tac.Tac (mode & Tac.te
     let (mb, body) = lift_tm (env_push b md bs e) body mm in
     let lett = match md, mb with
       | Stream, Stream ->
-        exp_XLet b.sort def body
+        exp_XLet (env_get_shallow_ty b.sort e) def body
       | _, _ ->
         let b = strip_ty_simple_binder_static b in
         Tac.pack (Tac.Tv_Let false attrs b def body)
@@ -710,7 +753,8 @@ let lift_tac (nm_src nm_core: string) : Tac.Tac (list Tac.sigelt) =
   // debug_print (fun () -> "CSE: " ^ Tac.term_to_string tm);
   let tm = Tac.pack (Tac.Tv_Abs (Tac.namedv_to_binder e.ctx_uniq ctx_ty) tm) in
   let _, se = core_sigelt e [`core_lifted] (Some nm_src_m) (Some nm_core_m) lb_mode tm in
-  List.(Tac.read e.extra_sigelts @ [se])
+  let extra_sigelts = List.rev (Tac.read e.extra_sigelts) in
+  List.(extra_sigelts @ [se])
 
   // let m = Tac.cur_module () in
   // let open List in

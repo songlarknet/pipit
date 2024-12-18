@@ -206,7 +206,7 @@ let pre_decl (r: FStar_Compiler_Range.range) (d: FPA.decl) =
     then begin
       let attr = Pipit_Plugin_Support.quote_mode_attr pm r in
       let tm = pre_term tm in
-      prerr_endline (FPA.term_to_string tm);
+      (* prerr_endline (FPA.term_to_string tm); *)
       let splice = { d with d = mk_splice pat pm; attrs = []; quals = [] } in
       Inr [{ d with d = TopLevelLet (NoLetQualifier, [pp, tm]); attrs = attr :: d.attrs };
           splice]
