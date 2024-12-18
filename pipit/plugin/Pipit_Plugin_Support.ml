@@ -12,7 +12,7 @@ let src_lid i = FI.lid_of_path (mod_path @ [i])
 
 (* let lid_stream = src_lid "stream" *)
 let rec_lid = src_lid "rec'"
-let lift_tac_lid = src_lid "lift_tac"
+let lift_tac_lid = FI.lid_of_path ["Pipit"; "Plugin"; "Lift"; "lift_tac"]
 let core_of_source_lid = src_lid "core_of_source"
 let extract_lid = src_lid "extract"
 let source_mode_lid = src_lid "source_mode"
@@ -28,6 +28,7 @@ let match_lid (f: range -> FI.lident) (i: FI.lident): bool =
 type mode_fun_qualifier = bool
 let mf'implicit = false
 let mf'explicit = true
+(* LODO don't need this, use generated from Pipit.Plugin.Interface? *)
 type mode =
   | Stream
   | Static
@@ -135,36 +136,48 @@ and
       let m, ty = mode_of_type ty in
       m, { b with b = NoName ty }
 
-let rec mode_of_pattern (p: pattern): (mode * pattern) =
+let rec mode_of_pattern (p: pattern): (mode * bool * pattern) =
   match p.pat with
   | PatAscribed ({ pat = PatApp (phd, args); prange }, (ty, None)) ->
+    let mhd, xhd, phd = mode_of_pattern phd in
     let ms = List.map mode_of_pattern args in
     let rmd, rty = mode_of_type ty in
     let rec mk_mode ms = match ms with
      | [] -> default_mode rmd
-     | (m, p) :: ms ->
-       ModeFun (m, mf'explicit, mk_mode ms)
+     | (m, x, p) :: ms ->
+       ModeFun (m, x, mk_mode ms)
     in
     let mk_pat =
-      PatAscribed ({ pat = PatApp (phd, List.map snd ms); prange }, (rty, None))
-     in mk_mode ms, { pat = mk_pat; prange = p.prange }
+      PatAscribed ({ pat = PatApp (phd, List.map (fun (m,x,p) -> p) ms); prange }, (rty, None))
+     in mk_mode ms, xhd, { pat = mk_pat; prange = p.prange }
 
   | PatAscribed (phd, (ty, None)) ->
+    let mhd, xhd, phd = mode_of_pattern phd in
     let rmd, rty = mode_of_type ty in
-    default_mode rmd, { pat = PatAscribed (phd, (rty, None)); prange = p.prange }
+    default_mode rmd, xhd, { pat = PatAscribed (phd, (rty, None)); prange = p.prange }
 
   | PatApp (phd, args) ->
+    let mhd, xhd, phd = mode_of_pattern phd in
     let ms = List.map mode_of_pattern args in
     let rec mk_mode ms any_stream = match ms with
      | [] -> if any_stream then Stream else Static
-     | (m, p) :: ms ->
-       ModeFun (m, mf'explicit, mk_mode ms (any_stream || m = Stream))
+     | (m, x, p) :: ms ->
+       ModeFun (m, x, mk_mode ms (any_stream || m = Stream))
     in
     let mk_pat =
-      PatApp (phd, List.map snd ms)
-     in mk_mode ms false, { pat = mk_pat; prange = p.prange }
+      PatApp (phd, List.map (fun (m,x,p) -> p) ms)
+     in mk_mode ms false, xhd, { pat = mk_pat; prange = p.prange }
 
-  | _ -> Static, p
+  | PatWild (None, _)
+  | PatVar (_, None, _)
+  | PatTvar (_, None, _)
+  -> Static, true, p
+  | PatWild (Some _, _)
+  | PatVar (_, Some _, _)
+  | PatTvar (_, Some _, _)
+  -> Static, false, p
+
+  | _ -> Static, true, p
 
 let rec mode_of_term (t: term): mode option =
   match t.tm with
@@ -174,7 +187,7 @@ let rec mode_of_term (t: term): mode option =
   | Abs (ps, body) ->
     let pss = List.map mode_of_pattern ps in
     (* TODO set default if any stream, TODO construct ModeFun *)
-    let dflt = if List.exists (fun (m, _) -> mode_any_stream m) pss then Stream else Static in
+    let dflt = if List.exists (fun (m, _, _) -> mode_any_stream m) pss then Stream else Static in
     let m = Option.value (mode_of_term body) ~default:dflt in
     Some m
   | Function _ -> fatal t.range "TODO Function"

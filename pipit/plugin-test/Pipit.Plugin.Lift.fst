@@ -126,16 +126,27 @@ type env = {
 
 (* construct top-level binding for given term *)
 let core_sigelt (e: env) (attrs: list Tac.term) (nm_src nm_core: option string) (m: mode) (tm: Tac.term): Tac.Tac (Tac.name & Tac.sigelt) =
-  let nm_def = match nm_core with
-    | Some n -> Ref.explode_qn n
-    | None ->
-      // LODO use a better name here that reflects actual primitive
+  let nm_def = match nm_core, nm_src with
+    | Some n, _ -> Ref.explode_qn n
+    | None, Some n ->
+      (match List.rev (Ref.explode_qn n) with
+      | x :: _ ->
+        let open List in
+        let u = Tac.fresh () in
+        let m = Tac.cur_module () in
+        m @ ["__prim_" ^ x ^ string_of_int u]
+      | _ ->
+      let u = Tac.fresh () in
+      Ref.explode_qn (e.name_prefix ^ "__prim_" ^ string_of_int u))
+    | _ ->
       let u = Tac.fresh () in
       Ref.explode_qn (e.name_prefix ^ "__prim_" ^ string_of_int u)
   in
 
   let ty = Tac.pack Tac.Tv_Unknown in
   // TODO: support recursive bindings
+  // pack multiple bindings into one sigelt
+  // set isrec to true if rec
   let lb_core: Tac.letbinding = {
     lb_fv  = Tac.pack_fv nm_def;
     lb_us  = [];
@@ -440,7 +451,9 @@ let lift_stream_match (e: env) (tscrut: Tac.term) (tret: Tac.term) (scrut: Tac.t
 let lift_ty (t: Tac.term) (m: mode) (e: env): Tac.Tac Tac.term =
   let t = strip_ty t in
   match m with
-  | Stream -> exp_ty (Tac.pack (Tac.Tv_Var e.ctx_uniq)) t
+  | Stream ->
+    let ctx = env_get_full_context e in
+    exp_ty ctx t
   | _ -> t
 
 let lift_ty_binder (b: Tac.binder) (m: mode) (e: env): Tac.Tac Tac.binder =
@@ -482,14 +495,19 @@ let rec lift_tm (e: env) (t: Tac.term) (mm: option mode): Tac.Tac (mode & Tac.te
     go_mode (Static, t)
 
   | Tac.Tv_App (hd: Tac.term) (arg, aqual) ->
-    let rec go_apps m hd args: Tac.Tac (mode & Tac.term) = match m, args with
+    let rec go_apps m hd args e: Tac.Tac (mode & Tac.term) = match m, args with
       | ModeFun _ false m2, (_,Ref.Q_Explicit)::_ ->
-        go_apps m2 hd args
+        go_apps m2 hd args e
+      | ModeFun _ true m2, (_,Ref.Q_Implicit)::_ ->
+        fail "unexpected implicit argument"
+          (Ref.range_of_term arg)
+          ["go_apps";
+          "arg: " ^ Tac.term_to_string arg;
+          "head: " ^ Tac.term_to_string hd;
+          "mode: " ^ Tac.term_to_string (quote_mode m)]
 
-      | ModeFun m1 mq m2, (arg,aq)::args ->
-      // | ModeFun m1 true m2, (arg,Ref.Q_Explicit)::args
-      // | ModeFun m1 false m2, (arg,Ref.Q_Implicit)::args ->
-        let (ma, arg) = lift_tm e arg (Some m1) in
+      | ModeFun m1 mq m2, (arg0,aq)::args ->
+        let (ma, arg) = lift_tm e arg0 (Some m1) in
         debug_print (fun () -> "go_apps: arg: " ^ Tac.term_to_string (quote ma) ^ " : " ^ Tac.term_to_string arg);
         (match ma, m1 with
         | Stream, Static ->
@@ -505,11 +523,19 @@ let rec lift_tm (e: env) (t: Tac.term) (mm: option mode): Tac.Tac (mode & Tac.te
           let prim = `(`#prim) (`#ctx_full) in
           // TODO require m2 static
           let m2 = lift_mode m2 in
-          go_apps m2 (Tac.pack (Tac.Tv_App prim (arg, aq))) args
-        | _, _ ->
+          go_apps m2 (Tac.pack (Tac.Tv_App prim (arg, aq))) args e
+        | Stream, Stream ->
         // TODO introduce XLet for compound stream arguments
+          // if not (PTB.is_compound_term arg0)
+          // then
+            go_apps m2 (Tac.pack (Tac.Tv_App hd (arg, aq))) args e
+          // else
+          //   let x0 = exp_XBVar 
+          //   let x0 = exp_XLet (`_) arg
+          //   (go_apps m2 (Tac.pack (Tac.Tv_App hd (exp_, aq))) args e)
+        | _, _ ->
           let (ma, arg) = mode_cast m1 (ma, arg) in
-          go_apps m2 (Tac.pack (Tac.Tv_App hd (arg, aq))) args)
+          go_apps m2 (Tac.pack (Tac.Tv_App hd (arg, aq))) args e)
 
       | _, (arg,_) :: _ ->
         fail "too many arguments for mode"
@@ -532,16 +558,6 @@ let rec lift_tm (e: env) (t: Tac.term) (mm: option mode): Tac.Tac (mode & Tac.te
         | Some m -> m, `(`#hdx) (`#ctx_full))
       | _ -> (mh, hd)
     in
-    // TODO implement explicit lift stop?
-    // (static x) stops lifting of x, but if the result is applied to
-    // another argument, we still want to lift that:
-    // > lift ((static x) y) ==> x (lift y)
-    // if PTB.term_check_fv hd (`%static)
-    // then match args with
-    //      | (hd, Ref.Q_Explicit)::args -> go_apps (mode_of_ty (PTB.tc_unascribe e.tac_env hd)) (lift_ty hd) args
-    //      | (ty, Ref.Q_Implicit)::(hd, Ref.Q_Explicit)::args -> go_apps (mode_of_ty ty) (lift_ty hd) args
-    //      | _ -> fail "static: impossible: expected application" (Ref.range_of_term t) []
-    // else
     if PTB.term_check_fv hd (`%rec')
     then match args with
       | [arg, Ref.Q_Explicit]
@@ -557,7 +573,7 @@ let rec lift_tm (e: env) (t: Tac.term) (mm: option mode): Tac.Tac (mode & Tac.te
 
       | _ -> fail "rec': impossible: expected application" (Ref.range_of_term t) ["term: " ^ Tac.term_to_string t; "args: " ^ Tac.term_to_string (quote args)]
     else
-      go_mode (go_apps mh hd args)
+      go_mode (go_apps mh hd args e)
 
   | Tac.Tv_Abs bv tm ->
     debug_print (fun () -> "Abs: lift_tm with " ^ Tac.term_to_string bv.sort ^ "; mode " ^ Tac.term_to_string (quote mm));
@@ -576,7 +592,7 @@ let rec lift_tm (e: env) (t: Tac.term) (mm: option mode): Tac.Tac (mode & Tac.te
       (Static, t))
 
   | Tac.Tv_Let true attrs b def body ->
-    // TODO letrecs
+    // LODO letrecs
     let def_mode = mode_of_attrs attrs in
     go_mode (Static, t)
     // debug_print (fun () -> "letrec: binder type: " ^ Tac.term_to_string (b.sort));
@@ -589,7 +605,10 @@ let rec lift_tm (e: env) (t: Tac.term) (mm: option mode): Tac.Tac (mode & Tac.te
   | Tac.Tv_Let false attrs b def body ->
     let def_mode = mode_of_attrs attrs in
     let (md, def) = lift_tm e def def_mode in
-    let (mb, body) = lift_tm (env_push b md (BindLocal b.sort) e) body mm in
+    let bs = match md with
+      | Stream -> BindLocal b.sort
+      | _ -> BindMeta in
+    let (mb, body) = lift_tm (env_push b md bs e) body mm in
     let lett = match md, mb with
       | Stream, Stream ->
         exp_XLet b.sort def body
@@ -600,16 +619,17 @@ let rec lift_tm (e: env) (t: Tac.term) (mm: option mode): Tac.Tac (mode & Tac.te
     (mb, lett)
 
   | Tac.Tv_Match scrut0 ret brs0 ->
-    go_mode (Static, t)
-    // // TODO: lift_tm on ret
-    // let (ms, scrut) = lift_tm e scrut0 in
-    // (match ms with
-    // | Static ->
-    //   debug_print (fun () -> "match: static scrutinee " ^ Tac.term_to_string scrut);
-    //   let mts = Tac.map (fun (pat,tm) -> lift_tm (env_push_pat pat Static e) tm) brs0 in
-    //   let (mbrs, ts) = joins_modes (Ref.range_of_term t) mts in
-    //   let brs = Pipit.List.zip2 (List.map fst brs0) ts in
-    //   (mbrs, Tac.pack (Tac.Tv_Match scrut ret brs))
+    // // LODO: lift_tm on ret
+    let (ms, scrut) = lift_tm e scrut0 None in
+    (match ms with
+    | Static ->
+      debug_print (fun () -> "match: static scrutinee " ^ Tac.term_to_string scrut);
+      let mts = Tac.map (fun (pat,tm) -> lift_tm (env_push_pat pat Static BindMeta e) tm mm) brs0 in
+      let (mbrs, ts) = joins_modes (Ref.range_of_term t) mts in
+      let brs = Pipit.List.zip2 (List.map fst brs0) ts in
+      (mbrs, Tac.pack (Tac.Tv_Match scrut ret brs))
+      | _ -> 
+        fail "streaming matches not implemented yet" (Tac.range_of_term t) [Tac.term_to_string t])
     // | Stream ->
     //   debug_print (fun () -> "match: stream scrutinee " ^ Tac.term_to_string scrut);
     //   // XXX: the current semantics for streaming-matches is more of a "select"
@@ -684,7 +704,10 @@ let lift_tac (nm_src nm_core: string) : Tac.Tac (list Tac.sigelt) =
     | Some m -> m in
   let e = env_nil [nm_src_m, lb_mode] in
   let nm_src_const = Tac.pack (Tac.Tv_Const (Ref.C_String nm_src_m)) in
-  let _, tm = lift_tm e lb_src.lb_def (Some lb_mode) in
+  let tm = lb_src.lb_def in
+  let _, tm = lift_tm e tm (Some lb_mode) in
+  // let tm = if nm_src = "eg_letrec_mut" then PTC.cse tm else tm in
+  // debug_print (fun () -> "CSE: " ^ Tac.term_to_string tm);
   let tm = Tac.pack (Tac.Tv_Abs (Tac.namedv_to_binder e.ctx_uniq ctx_ty) tm) in
   let _, se = core_sigelt e [`core_lifted] (Some nm_src_m) (Some nm_core_m) lb_mode tm in
   List.(Tac.read e.extra_sigelts @ [se])

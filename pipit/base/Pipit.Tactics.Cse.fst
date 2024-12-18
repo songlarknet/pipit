@@ -145,12 +145,20 @@ let rec cse_tm (t: Tac.term) (bs: binds): Tac.Tac (Tac.term & binds & fv_set) =
 
 
   | Tac.Tv_Abs bv tm ->
+  (match bv.qual with
+  | Tac.Q_Meta _ ->
+    // Drop all bindings before the typeclass binder because the values might implicitly depend upon a typeclass constraint
+    let (tm, bs', fvs) = cse_tm tm bs in
+    let u = bv.uniq in
+    let (tm, fvs) = close_all tm bs' (u :: fvs) in
+    (Tac.pack (Tac.Tv_Abs bv tm), [], fvs)
+  | _ ->
     let (tm, bs', fvs) = cse_tm tm bs in
     let u = bv.uniq in
     // Tac.print ("abs: closing binder " ^ Tac.term_to_string (quote u));
     // Tac.print ("abs: bindings " ^ Tac.term_to_string (quote bs'));
     let (tm, bs', fvs) = close_dependents tm bs' [] fvs [bv.uniq] in
-    (Tac.pack (Tac.Tv_Abs bv tm), bs', fvs)
+    (Tac.pack (Tac.Tv_Abs bv tm), bs', fvs))
 
   | Tac.Tv_Let true attrs b def body ->
   // DUP: we can't define mutually recursive letrecs, so we have to close b inside each subterm

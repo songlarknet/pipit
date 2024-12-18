@@ -24,7 +24,7 @@ include make/pipit/source.mk
 
 include make/pipit/plugin.mk
 #XXXNOCOMMIT
-# FSTAR_EXTRA_OPT:=$(FSTAR_EXTRA_OPT) --debug Plugin.Test --ext pipit:lift:debug=1
+# FSTAR_EXTRA_OPT:=$(FSTAR_EXTRA_OPT) --debug Plugin.Test.Language.Lift --ext pipit:lift:debug=1
 include make/pipit/plugin-test.mk
 
 endif

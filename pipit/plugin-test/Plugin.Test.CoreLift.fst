@@ -1,44 +1,21 @@
 module Plugin.Test.CoreLift
 
 open Pipit.Plugin.Interface
+open Pipit.Plugin.Primitives
 module PPL = Pipit.Plugin.Lift
-module PPI = Pipit.Plugin.Interface
-
-module PXB = Pipit.Exp.Base
 module PSSB = Pipit.Sugar.Shallow.Base
-module PPS  = Pipit.Prim.Shallow
-module PPT  = Pipit.Prim.Table
 
 // Don't warn on local let-recs; they're only for testing
-#push-options "--warn_error -242"
+// #set-options "--warn_error -242"
 
 // Useful for testing:
-#push-options "--ext pipit:lift:debug"
-#push-options "--print_implicits --print_bound_var_types --print_full_names"
+// #set-options "--ext pipit:lift:debug"
+// #set-options "--print_implicits --print_bound_var_types --print_full_names"
 
 instance has_stream_int: Pipit.Sugar.Shallow.Base.has_stream int = {
   ty_id       = [`%Prims.int];
   val_default = 0;
 }
-
-// define fby primitive by manually lifting
-let fby (#a: eqtype) {| PSSB.has_stream a |} (dflt: a) (strm: a): a = dflt
-
-[@@core_lifted; core_of_source "Plugin.Test.CoreLift.fby" (ModeFun Static false (ModeFun Static false (ModeFun Static true (ModeFun Stream true Stream))))]
-let fby_core (ctx: PPT.context PPS.table) (#a: eqtype) {| PSSB.has_stream a |}
-  (dflt: a) (strm: PXB.exp PPS.table ctx (PSSB.shallow a)): PXB.exp PPS.table ctx (PSSB.shallow a) =
-  PXB.XFby dflt strm
-
-// let rec' (#a: eqtype) {| PSSB.has_stream a |} (f: a -> a): a = admit ()
-
-// rec can't currently be implemented here, because the contexts required for rec are a bit weird
-// [@@core_lifted; core_of_source "Plugin.Test.CoreLift.rec'" (ModeFun Static false (ModeFun Static false (ModeFun (ModeFun Stream true Stream) true Stream)))]
-// let rec_core (ctx: PPT.context PPS.table) (#a: eqtype) {| PSSB.has_stream a |}
-//   (f: PXB.exp PPS.table (PSSB.shallow a :: ctx) (PSSB.shallow a) -> PXB.exp PPS.table (PSSB.shallow a :: ctx) (PSSB.shallow a)): PXB.exp PPS.table ctx (PSSB.shallow a) =
-//   PXB.XMu (
-//     let x = PXB.XBase (PXB.XBVar 0) in
-//     f x)
-
 
 [@@source_mode (ModeFun Stream true Stream)]
 let eg_inc_left_strm (x: int) =
@@ -103,83 +80,112 @@ let eg_let_strm_ann (x: int): int =
 %splice[] (PPL.lift_tac1 "eg_let_strm_ann")
 
 [@@source_mode (ModeFun Stream true Stream)]
+let eg_let_stat (x: int): int =
+  let stat = 1 in
+  x + stat
+
+%splice[] (PPL.lift_tac1 "eg_let_stat")
+
+[@@source_mode (ModeFun Stream true Stream)]
 let eg_rec_strm (x: int) =
   let count = rec' (fun count -> 0 `fby` count + 1) in
   count
 
 %splice[] (PPL.lift_tac1 "eg_rec_strm")
 
-// [@@Tac.preprocess_with preprocess; source]
-// let eg_mixed_ann (x: stream int): stream int =
-//   let rec count1 = 0 `fby` count1 + 1 in
-//   let rec count2: stream int = 0 `fby` count2 + 1 in
-//   let strm1: stream int = 0 in
-//   let strm2 = 0 <: stream int in
-//   let strm3 = count1 + strm1 in
-//   let static1: int = 0 in
-//   let static2 = 0 in
-//   count1 + count2 + strm1 + strm2 + strm3 + static1 + static2
+[@@source_mode (ModeFun Stream true Stream)]
+let eg_rec_strm_let_stat (x: int) =
+  let count1 = rec' (fun count1 -> 0 `fby` count1 + 1) in
+  let static1: int = 0 in
+  count1 + static1
 
-// %splice[] (autolift_binds [`%eg_mixed_ann])
+%splice[] (PPL.lift_tac1 "eg_rec_strm_let_stat")
 
-// let eg_pairs (x: stream int) (y: stream bool): stream int =
-//   0 `fby` fst (Mktuple2 x y)
+// slow!
+[@@source_mode (ModeFun Stream true Stream)]
+let eg_mixed_ann (x: int) =
+  let count1 = rec' (fun count1 -> 0 `fby` count1 + 1) in
+  [@@source_mode Stream]
+  let count2 = rec' (fun count2 -> 0 `fby` count2 + 1) in
+  [@@source_mode Stream]
+  let strm1 = 0 in
+  [@@source_mode Stream]
+  let strm2: int = 0 in
+  let strm3 = count1 + strm1 in
+  [@@source_mode Static]
+  let static1: int = 0 in
+  let static2 = 0 in
+  count1 + count2 + strm1 + strm2 + strm3 + static1 + static2
 
-// %splice[] (autolift_binds [`%eg_pairs])
+%splice[] (PPL.lift_tac1 "eg_mixed_ann")
+
+[@@source_mode (ModeFun Stream true (ModeFun Stream true Stream))]
+let eg_pairs (x: int) (y: bool): int =
+  0 `fby` fst (x, y)
+
+%splice[] (PPL.lift_tac1 "eg_pairs")
+
+// TODO matches
+// [@@source_mode (ModeFun Stream true (ModeFun Stream true Stream))]
+// let eg_pairs_destr (x: int) (y: bool): int =
+//   let xy = (x, y) in
+//   let (xz, yz) = xy in
+//   0 `fby` xz
+
+// %splice[] (PPL.lift_tac1 "eg_pairs_destr")
+
+type ctor = | Ctor: x: int -> y: int -> ctor
+instance has_stream_ctor: PSSB.has_stream ctor = {
+  ty_id       = [`%ctor];
+  val_default = Ctor PSSB.val_default PSSB.val_default;
+}
+
+[@@source_mode (ModeFun Stream true Stream)]
+let eg_ctor (add: int) =
+  let rcd = rec' (fun rcd ->
+    let x = 0 `fby` Ctor?.x rcd + add in
+    let y = 0 `fby` Ctor?.y rcd - add in
+    Ctor x y)
+  in
+  rcd
+
+%splice[] (PPL.lift_tac1 "eg_ctor")
+
+[@@source_mode (ModeFun Stream true Stream)]
+let eg_pairsrec (add: int) =
+  let xy = rec' (fun xy ->
+    let x = 0 `fby` fst xy + add in
+    let y = 0 `fby` snd xy - add in
+    (x, y))
+  in
+  xy
+
+%splice[] (PPL.lift_tac1 "eg_pairsrec")
+
+type record = { x: int; y: int; }
+
+instance has_stream_record: PSSB.has_stream record = {
+  ty_id       = [`%record];
+  val_default = { x = 0; y = 0; };
+}
 
 
-// type ctor = | Ctor: x: int -> y: int -> ctor
-// instance has_stream_ctor: Shallow.has_stream ctor = {
-//   ty_id       = [`%ctor];
-//   val_default = Ctor Shallow.val_default Shallow.val_default;
-// }
-
-// [@@Tac.preprocess_with preprocess]
-// let eg_ctor (add: stream int): stream ctor =
-//   let rec rcd =
-//     let x = 0 `fby` Ctor?.x rcd + add in
-//     let y = 0 `fby` Ctor?.y rcd - add in
-//     Ctor x y
-//   in
-//   rcd
-
-// %splice[] (autolift_binds [`%eg_ctor])
-
-// [@@Tac.preprocess_with preprocess]
-// let eg_pairsrec (add: stream int): stream (int & int) =
-//   // recursive streams sometimes need annotations
-//   let rec xy: stream (int & int) =
-//     let x = 0 `fby` fst xy + add in
-//     let y = 0 `fby` snd xy - add in
-//     (x, y)
-//   in
-//   xy
-
-// %splice[] (autolift_binds [`%eg_pairsrec])
-
-// type record = { x: int; y: int; }
-
-// instance has_stream_record: Shallow.has_stream record = {
-//   ty_id       = [`%record];
-//   val_default = { x = 0; y = 0; };
-// }
+[@@source_mode (ModeFun Stream true Stream)]
+let eg_record (add: int) =
+  let x = 0 `fby` add in
+  let y = 1 `fby` add in
+  let xy = { x; y } in
+  xy.x
 
 
-// // XXX:TODO: preprocess breaks on records?
-// [@@Tac.preprocess_with preprocess; source]
-// let eg_record (add: stream int): stream int =
-//   let x = 0 `fby` add in
-//   let y = 1 `fby` add in
-//   let xy = { x; y } in
-//   xy.x
+%splice[] (PPL.lift_tac1 "eg_record")
 
-
-// %splice[] (autolift_binds [`%eg_record])
-
-// let eg_streaming_if (x: stream int): stream int =
+// TODO match
+// [@@source_mode (ModeFun Stream true Stream)]
+// let eg_streaming_if (x: int) =
 //   if x >= 0 then x else -x
 
-// %splice[] (autolift_binds [`%eg_streaming_if])
+// %splice[] (PPL.lift_tac1 "eg_streaming_if")
 
 // let eg_streaming_match_lets (x: stream int): stream int =
 //   let cond = x >= 0 in
@@ -191,21 +197,35 @@ let eg_rec_strm (x: int) =
 
 // %splice[] (autolift_binds [`%eg_streaming_match_lets])
 
-// let eg_static_match (consts: list int) (x: stream int): stream int =
+[@@source_mode (ModeFun Static true (ModeFun Stream true Stream))]
+let eg_static_match (consts: list int) (x: int) =
+  match consts with
+  | [] -> 0
+  | (c: int) :: _ -> c + x
+
+%splice[] (PPL.lift_tac1 "eg_static_match")
+
+// not supported yet, issue proving termination on the generated core
+// [@@source_mode (ModeFun Static true (ModeFun Stream true Stream))]
+// let rec eg_fir (consts: list int) (x: int): Tot int (decreases consts)
+//  =
 //   match consts with
 //   | [] -> 0
-//   | (c: int) :: _ -> c + x
+//   | (c: int) :: cs ->
+//     let open FStar.Mul in
+//     // hmm, explicit type app needed to avoid type inference weirdness
+//     let pre: int = 0 `fby` x in
+//     c * x + eg_fir cs pre
 
-// %splice[] (autolift_binds [`%eg_static_match])
+// %splice[] (PPL.lift_tac1 "eg_fir")
 
-// let silly_id (x: int): y: int { x == y } = x
+let silly_id (x: int): y: int { x == y } = x
 
-// (*** Examples / test cases ***)
-// [@@source]
-// let eg_refinement0 (x: stream int): stream int =
-//   silly_id x
+[@@source_mode (ModeFun Stream true Stream)]
+let eg_refinement0 (x: int) =
+  silly_id x
 
-// %splice[] (autolift_binds [`%eg_refinement0])
+%splice[] (PPL.lift_tac1 "eg_refinement0")
 
 (*** Not supported examples ***)
 

@@ -74,3 +74,22 @@ let term_check_fv (t: Tac.term) (fv: string): Tac.Tac bool =
   | Tac.Tv_UInst fv' _ ->
     Tac.inspect_fv fv' = Tac.explode_qn fv
   | _ -> false
+
+let rec is_compound_term (t: Tac.term): Tac.Tac bool =
+  match Tac.inspect t with
+  | Tac.Tv_Var _
+  | Tac.Tv_BVar _
+  | Tac.Tv_FVar _
+  | Tac.Tv_UInst _ _
+  | Tac.Tv_Type _
+  | Tac.Tv_Const _
+  | Tac.Tv_Uvar _ _
+  | Tac.Tv_Unknown
+  | Tac.Tv_Unsupp
+  ->
+    false
+  | Tac.Tv_AscribedT e _ _ _
+  | Tac.Tv_AscribedC e _ _ _ ->
+    is_compound_term e
+
+  | _ -> true
