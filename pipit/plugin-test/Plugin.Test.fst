@@ -12,18 +12,17 @@ instance has_stream_int: PSSB.has_stream int = {
   val_default = 0;
 }
 
-// let fst (#a #b: eqtype) {| PSSB.has_stream a |} {| PSSB.has_stream b |} (x: stream (a & b)): stream a =
-//   fst x
+let fst (#a #b: eqtype) {| PSSB.has_stream a |} {| PSSB.has_stream b |} (x: stream (a & b)): stream a =
+  fst x
 
-// let snd (#a #b: eqtype) {| PSSB.has_stream a |} {| PSSB.has_stream b |} (x: stream (a & b)): stream b =
-//   snd x
+let snd (#a #b: eqtype) {| PSSB.has_stream a |} {| PSSB.has_stream b |} (x: stream (a & b)): stream b =
+  snd x
 
 let eg_letrec_mut (x: stream int) =
   let rec a = x + b
       and b = x - a
   in a
 
-(*
 
 let eg_inc_left_strm (x: stream int) =
   x + 1
@@ -149,13 +148,19 @@ let eg_refinement0 (x: stream int) =
 
 // streaming matches cannot bind variables:
 
-// [@@Tac.preprocess_with tac_lift]
+// maybe clocked streaming matches should use match^ syntax
+// eg unclocked:
+// u = if a then (0 `fby` x) else (0 `fby` y)
+// u(t) = if a(t) then x(t - 1) else y(t - 1)
+// vs clocked:
+// c = if^ a then (0 `fby` x) else (0 `fby` y)
+// c(t) = if a(t) then x(max { t' | a(t'), t' < t }) else y(max { t' | !a(t') /\ t' < t })
+
 // let eg_streaming_match_bind (x: stream (option int)): stream int =
-//   match x with
+//   match^ x with
 //   | Some e -> e
 //   | None -> 0
 
-// [@@Tac.preprocess_with tac_lift]
 // let eg_streaming_letmatch (xy: stream (int & int)): stream int =
 //   let (x, y) = xy in
 //   x + y
@@ -166,7 +171,3 @@ let eg_refinement0 (x: stream int) =
 // let eg_instantiate_lemma (x y: stream int): stream int =
 //   lemma_nat_something x y;
 //   x + y
-
-// %splice[] (autolift_binds [`%eg_instantiate_lemma])
-
-*)

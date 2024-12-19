@@ -41,13 +41,13 @@ let funty_sem (t: funty shallow_type): Type0 =
 
 noeq
 type prim: Type u#1 = {
-  prim_id:  option ident;
+  prim_id:  option string;
   prim_ty:  funty shallow_type;
   prim_sem: funty_sem prim_ty;
 }
 
 let mkPrim
-  (prim_id:  option ident)
+  (prim_id:  option string)
   (prim_ty:  funty shallow_type)
   (prim_sem: funty_sem prim_ty): prim =
   { prim_id; prim_ty; prim_sem }

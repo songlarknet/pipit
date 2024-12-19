@@ -104,9 +104,11 @@ let rec pre_term (t: FPA.term): FPA.term =
     { t with tm = Bind (i, pre_term e, pre_term e')}
   | If (p, op, ret, tru, fal) ->
     (* TODO descend into ret *)
+    (* TODO add type ascriptions to ensure type is readily available *)
     { t with tm = If (pre_term p, op, ret, pre_term tru, pre_term fal)}
   | Match (scrut, op, ret, brs) ->
     (* TODO descend into ret *)
+    (* TODO add type ascriptions to ensure type is readily available *)
     { t with tm = Match (pre_term scrut, op, ret, List.map pre_branch brs)}
   | Ascribed (e, ty, tac, is_eq) ->
     let m, ty = Pipit_Plugin_Support.mode_of_type ty in

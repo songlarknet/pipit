@@ -400,14 +400,40 @@ let strip_ty_visit (t: Tac.term): Tac.Tac Tac.term =
 let strip_ty: Tac.term -> Tac.Tac Tac.term =
   Tac.visit_tm strip_ty_visit
 
+// TODO merge lift_prim_gen,lift_prim_gen_apply
+let lift_prim_gen_apply (e: env) (prim: Tac.term) (args: list (Tac.term & Tac.typ)) (tret: Tac.typ): Tac.Tac Tac.term =
+  let nm =
+    match Tac.inspect_unascribe prim with
+    | Tac.Tv_FVar fv ->
+      let fv' = Tac.inspect_fv fv in
+      Some (Ref.implode_qn fv')
+    | _ -> Some (e.name_prefix ^ "__prim_anon_" ^ string_of_int (Tac.fresh ()))
+  in
+  let nm_tm =
+    match nm with
+    | Some f -> (quote (Some f))
+    | None -> (`None)
+  in
+  let ft =
+    Tac.fold_right (fun (_,a) b -> table_FTFun (env_get_shallow_ty a e) b) args (table_FTVal (env_get_shallow_ty tret e))
+  in
+  let prim = (exp_XPrim (shallow_prim_mkPrim nm_tm ft prim)) in
+  let lift = Tac.fold_left
+    (fun hd (arg,ty) ->
+      exp_XApp3 (env_get_shallow_ty ty e) hd arg)
+    prim args
+  in
+  let lift = exp_XApps2 (env_get_shallow_ty tret e) lift in
+  lift
+
 let lift_prim_gen (e: env) (prim: Tac.term): Tac.Tac Tac.term =
   let ty = strip_ty (PTB.tc_unascribe e.tac_env prim) in
   let nm =
     match Tac.inspect_unascribe prim with
     | Tac.Tv_FVar fv ->
       let fv' = Tac.inspect_fv fv in
-      Some fv'
-    | _ -> None
+      Some (Ref.implode_qn fv')
+    | _ -> Some (e.name_prefix ^ "__prim_anon_" ^ string_of_int (Tac.fresh ()))
   in
   let nm_tm =
     match nm with
@@ -466,12 +492,12 @@ let lift_prim (e: env) (prim: Tac.term) (m: mode): Tac.Tac Tac.term =
       (Tac.pack (Tac.Tv_FVar (Tac.pack_fv nm_def))))
   | _ -> lift_prim_gen e prim
 
-let lift_stream_match (e: env) (tscrut: Tac.term) (tret: Tac.term) (scrut: Tac.term) (ret: option Tac.match_returns_ascription) (brs: list (Tac.pattern & Tac.term)): Tac.Tac Tac.term =
+let lift_stream_match (e: env) (tscrut: Tac.term) (tret: Tac.term) (scrut: Tac.term) (ret: option Tac.match_returns_ascription) (brs: list (Tac.pattern & (mode & Tac.term))): Tac.Tac Tac.term =
   let mk_namedv (pp: string) (ty: Tac.term) =
     { uniq = Tac.fresh (); sort = Tac.seal ty; ppname = Ref.as_ppname pp } <: Tac.namedv
   in
   let nscrut = mk_namedv "scrut" tscrut in
-  let nbrs = Tac.map (fun (pat,tm) ->
+  let nbrs = Tac.map (fun (pat,(m,tm)) ->
     (mk_namedv "branch" tret, pat, tm)) brs in
   let brs = List.map (fun (nm,pat,tm) -> (pat, Tac.pack (Tac.Tv_Var nm))) nbrs in
   let xmatch = Tac.pack (Tac.Tv_Match (Tac.pack (Tac.Tv_Var nscrut)) ret brs) in
@@ -480,16 +506,10 @@ let lift_stream_match (e: env) (tscrut: Tac.term) (tret: Tac.term) (scrut: Tac.t
     | (nm,ty)::nms ->
       go_abs (Tac.pack (Tac.Tv_Abs (Tac.namedv_to_binder nm ty) hd)) nms
   in
-  let rec go_app hd tms: Tac.Tac Tac.term = match tms with
-    | [] -> hd
-    | (tm,ty)::tms ->
-      go_app (Tac.pack (Tac.Tv_App hd (tm, Ref.Q_Explicit))) tms
-  in
   let abs = go_abs xmatch (List.rev ((nscrut, tscrut) :: List.map (fun (nm,_,_) -> (nm, tret)) nbrs)) in
-  // TODO find mode
-  let abs = lift_prim e abs Static in
-  let app = go_app abs ((scrut, tscrut) :: List.map (fun (_,_,tm) -> (tm, tret)) nbrs) in
-  app
+  let args = (scrut, tscrut) :: List.map (fun (_,_,tm) -> (tm, tret)) nbrs in
+  let p = lift_prim_gen_apply e abs args tret in
+  p
 
 let lift_ty (t: Tac.term) (m: mode) (e: env): Tac.Tac Tac.term =
   let t = strip_ty t in
@@ -635,16 +655,10 @@ let rec lift_tm (e: env) (t: Tac.term) (mm: option mode): Tac.Tac (mode & Tac.te
       (Static, t))
 
   | Tac.Tv_Let true attrs b def body ->
-    // LODO letrecs
+    // LODO letrecs -- assume they won't have any streams in them for now.
+    // recursive streams have been rewritten to calls to rec' by frontend
     let def_mode = mode_of_attrs attrs in
     go_mode (Static, t)
-    // debug_print (fun () -> "letrec: binder type: " ^ Tac.term_to_string (b.sort));
-    // let mdef = mode_of_ty b.sort in
-    // let e = env_push b mdef e in
-    // let (_mdef, def) = lift_tm e def in
-    // let (mb, body) = lift_tm e body in
-    // let b = lift_ty_simple_binder b in
-    // (mb, Tac.pack (Tac.Tv_Let true attrs b def body))
   | Tac.Tv_Let false attrs b def body ->
     let def_mode = mode_of_attrs attrs in
     let (md, def) = lift_tm e def def_mode in
@@ -662,48 +676,49 @@ let rec lift_tm (e: env) (t: Tac.term) (mm: option mode): Tac.Tac (mode & Tac.te
     (mb, lett)
 
   | Tac.Tv_Match scrut0 ret brs0 ->
-    // // LODO: lift_tm on ret
+    // LODO: lift_tm on ret
     let (ms, scrut) = lift_tm e scrut0 None in
-    (match ms with
-    | Static ->
+    (match ms, brs0 with
+    | Static, _ ->
       debug_print (fun () -> "match: static scrutinee " ^ Tac.term_to_string scrut);
       let mts = Tac.map (fun (pat,tm) -> lift_tm (env_push_pat pat Static BindMeta e) tm mm) brs0 in
       let (mbrs, ts) = joins_modes (Ref.range_of_term t) mts in
       let brs = Pipit.List.zip2 (List.map fst brs0) ts in
       (mbrs, Tac.pack (Tac.Tv_Match scrut ret brs))
-      | _ -> 
-        fail "streaming matches not implemented yet" (Tac.range_of_term t) [Tac.term_to_string t])
-    // | Stream ->
-    //   debug_print (fun () -> "match: stream scrutinee " ^ Tac.term_to_string scrut);
-    //   // XXX: the current semantics for streaming-matches is more of a "select"
-    //   // than a match: all of the branches are eagerly evaluated, and then we
-    //   // just choose which to return based on the scrutinee
-    //   let rec check_pat p: Tac.Tac unit = match p with
-    //     | Tac.Pat_Constant _ -> ()
-    //     | Tac.Pat_Cons c -> Tac.iter (fun (p,_) -> check_pat p) c.subpats
-    //     | Tac.Pat_Var _ ->
-    //       fail ("streaming patterns can't bind variables (TODO)")
-    //         (Ref.range_of_term t) ["in pattern-match"]
-    //     // not sure what this means...
-    //     | Tac.Pat_Dot_Term _ -> ()
-    //   in
-    //   let check_pat_top p: Tac.Tac unit = match p with
-    //     // TODO: assert Pat_Var binder is `_` / not mentioned
-    //     | Tac.Pat_Var _ -> ()
-    //     | p -> check_pat p
-    //   in
-    //   let brs = Tac.map (fun (pat,tm) -> check_pat_top pat; (pat, lift_tm e tm (Some Stream))) brs0 in
+    | Stream, [Tac.Pat_Cons c, tm] ->
+      debug_print (fun () -> "match: irrefutable, stream scrutinee " ^ Tac.term_to_string scrut);
+      // TODO irrefutableable
+      let tscrut = PTB.tc_unascribe e.tac_env scrut0 in
+      (Stream, t)
+    | Stream, _ ->
+      debug_print (fun () -> "match: stream scrutinee " ^ Tac.term_to_string scrut);
+      // XXX: the current semantics for streaming-matches is more of a "select"
+      // than a match: all of the branches are eagerly evaluated, and then we
+      // just choose which to return based on the scrutinee
+      let rec check_pat p: Tac.Tac unit = match p with
+        | Tac.Pat_Constant _ -> ()
+        | Tac.Pat_Cons c -> Tac.iter (fun (p,_) -> check_pat p) c.subpats
+        | Tac.Pat_Var p ->
+          // XXX hack assert variable not mentioned
+          if Tac.unseal p.v.ppname <> "uu___"
+          then
+            fail ("streaming patterns can't bind variables (TODO)")
+              (Ref.range_of_term t) ["in pattern-match"; "variable: " ^ Tac.unseal p.v.ppname]
+        // not sure what this means...
+        | Tac.Pat_Dot_Term _ -> ()
+      in
+      let brs = Tac.map (fun (pat,tm) -> check_pat pat; (pat, lift_tm e tm (Some Stream))) brs0 in
 
-    //   // XXX: WRONG COMPLEXITY: this typechecking must be very bad for nested pattern matches
-    //   let tscrut = element_of_stream_ty_force (PTB.tc_unascribe e.tac_env scrut0) in
-    //   let tret = match brs0 with
-    //    | (_, tm) :: _ ->
-    //     element_of_stream_ty_force (PTB.tc_unascribe e.tac_env tm)
-    //    | [] -> Tac.pack Tac.Tv_Unknown in
-    //   (Stream, lift_stream_match e tscrut tret scrut ret brs)
-    // | ModeFun _ _ _ ->
-    //   fail "match scrutinee cannot be function"
-    //     (Ref.range_of_term scrut) ["in pattern match"])
+      // XXX: WRONG COMPLEXITY: this typechecking must be very bad for nested pattern matches - front-end preprocessor should insert type annotations
+      let tscrut = PTB.tc_unascribe e.tac_env scrut0 in
+      let tret = match brs0 with
+       | (_, tm) :: _ ->
+        PTB.tc_unascribe e.tac_env tm
+       | [] -> Tac.pack Tac.Tv_Unknown in
+      (Stream, lift_stream_match e tscrut tret scrut ret brs)
+    | ModeFun _ _ _, _ ->
+      fail "match scrutinee cannot be function"
+        (Ref.range_of_term scrut) ["in pattern match"])
 
   | Tac.Tv_AscribedT (tm: Tac.term) (ty: Tac.term) tac use_eq ->
     debug_print (fun () -> "AscribedT: " ^ Tac.term_to_string ty);

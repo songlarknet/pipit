@@ -9,14 +9,50 @@ module PSSB = Pipit.Sugar.Shallow.Base
 // #set-options "--warn_error -242"
 
 // Useful for testing:
-// #set-options "--ext pipit:lift:debug"
-// #set-options "--print_implicits --print_bound_var_types --print_full_names"
+#set-options "--ext pipit:lift:debug"
+#set-options "--print_implicits --print_bound_var_types --print_full_names"
 
 instance has_stream_int: Pipit.Sugar.Shallow.Base.has_stream int = {
   ty_id       = [`%Prims.int];
   val_default = 0;
 }
 
+instance has_stream_option (#a: eqtype) {| PSSB.has_stream a |}: PSSB.has_stream (option a) = {
+  ty_id       = `%Pervasives.option :: PSSB.ty_id #a;
+  val_default = None;
+}
+
+// [@@source_mode (ModeFun Stream true Stream)]
+// let eg_streaming_if_anf (x: int) =
+//   let m0 = x >= 0 in
+//   let m1 = x in
+//   let m2 = -x in
+//   if m0 then m1 else m2
+// %splice[] (PPL.lift_tac1 "eg_streaming_if_anf")
+
+// [@@source_mode (ModeFun Stream true Stream)]
+// let eg_streaming_if (x: int) =
+//   if x >= 0 then x else -x
+// %splice[] (PPL.lift_tac1 "eg_streaming_if")
+
+// [@@source_mode (ModeFun Stream true Stream)]
+// let eg_streaming_match_option (x: option int) =
+//   match x with
+//   | None -> -1
+//   | Some 0 -> 0
+//   | Some 1 -> 1
+//   | Some _ -> 2
+// %splice[] (PPL.lift_tac1 "eg_streaming_match_option")
+
+[@@source_mode (ModeFun Stream true Stream)]
+let eg_streaming_match_pair (xy: (int & int)) =
+  let x = Mktuple2?._1 xy in
+  let y = Mktuple2?._2 xy in
+  // let (x, y) = xy in
+  x + y
+%splice[] (PPL.lift_tac1 "eg_streaming_match_pair")
+
+(*
 [@@source_mode (ModeFun Stream true Stream)]
 let eg_inc_left_strm (x: int) =
   x + 1
@@ -182,6 +218,14 @@ let eg_record (add: int) =
 
 // TODO match
 // [@@source_mode (ModeFun Stream true Stream)]
+// let eg_streaming_if_anf (x: int) =
+//   let m0 = x >= 0 in
+//   let m1 = x in
+//   let m2 = -x in
+//   if m0 then m1 else m2
+// %splice[] (PPL.lift_tac1 "eg_streaming_if_anf")
+
+// [@@source_mode (ModeFun Stream true Stream)]
 // let eg_streaming_if (x: int) =
 //   if x >= 0 then x else -x
 
@@ -230,14 +274,6 @@ let eg_refinement0 (x: int) =
 (*** Not supported examples ***)
 
 
-// mutual recursion not supported:
-
-// [@@Tac.preprocess_with tac_lift]
-// let eg_letrec_mut (x: int): int =
-//   let rec a = x + b
-//       and b = x - a
-//   in a
-
 // streaming matches cannot bind variables:
 
 // [@@Tac.preprocess_with tac_lift]
@@ -259,3 +295,5 @@ let eg_refinement0 (x: int) =
 //   x + y
 
 // %splice[] (autolift_binds [`%eg_instantiate_lemma])
+
+*)

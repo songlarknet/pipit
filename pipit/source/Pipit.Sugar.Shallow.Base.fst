@@ -72,7 +72,7 @@ let pre {| has_stream 'a |} (e: stream 'a): stream 'a = S.pre e
 
 private
 let p'select (a: eqtype) {| has_stream a |}: Shallow.prim =
-  Shallow.mkPrim (Some [`%PR.p'select]) (shallow bool `Table.FTFun` (shallow a `Table.FTFun` (shallow a `Table.FTFun` (Table.FTVal (shallow a))))) PR.p'select
+  Shallow.mkPrim (Some (`%PR.p'select)) (shallow bool `Table.FTFun` (shallow a `Table.FTFun` (shallow a `Table.FTFun` (Table.FTVal (shallow a))))) PR.p'select
 
 (* x -> y in Lustre means "x" at the first step, and then "y" at subsequent steps.
   we also bind this operator as (->^) for lifted arrow
