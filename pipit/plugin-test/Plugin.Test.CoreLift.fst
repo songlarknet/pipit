@@ -9,7 +9,7 @@ module PSSB = Pipit.Sugar.Shallow.Base
 // #set-options "--warn_error -242"
 
 // Useful for testing:
-#set-options "--ext pipit:lift:debug"
+// #set-options "--ext pipit:lift:debug"
 #set-options "--print_implicits --print_bound_var_types --print_full_names"
 
 instance has_stream_int: Pipit.Sugar.Shallow.Base.has_stream int = {
@@ -22,37 +22,60 @@ instance has_stream_option (#a: eqtype) {| PSSB.has_stream a |}: PSSB.has_stream
   val_default = None;
 }
 
-// [@@source_mode (ModeFun Stream true Stream)]
-// let eg_streaming_if_anf (x: int) =
-//   let m0 = x >= 0 in
-//   let m1 = x in
-//   let m2 = -x in
-//   if m0 then m1 else m2
-// %splice[] (PPL.lift_tac1 "eg_streaming_if_anf")
+type ctor = | Ctor: x: int -> y: int -> ctor
+instance has_stream_ctor: PSSB.has_stream ctor = {
+  ty_id       = [`%ctor];
+  val_default = Ctor PSSB.val_default PSSB.val_default;
+}
 
-// [@@source_mode (ModeFun Stream true Stream)]
-// let eg_streaming_if (x: int) =
-//   if x >= 0 then x else -x
-// %splice[] (PPL.lift_tac1 "eg_streaming_if")
+type record = { x: int; y: int; }
+instance has_stream_record: PSSB.has_stream record = {
+  ty_id       = [`%record];
+  val_default = { x = 0; y = 0; };
+}
 
-// [@@source_mode (ModeFun Stream true Stream)]
-// let eg_streaming_match_option (x: option int) =
-//   match x with
-//   | None -> -1
-//   | Some 0 -> 0
-//   | Some 1 -> 1
-//   | Some _ -> 2
-// %splice[] (PPL.lift_tac1 "eg_streaming_match_option")
 
 [@@source_mode (ModeFun Stream true Stream)]
-let eg_streaming_match_pair (xy: (int & int)) =
-  let x = Mktuple2?._1 xy in
-  let y = Mktuple2?._2 xy in
-  // let (x, y) = xy in
-  x + y
-%splice[] (PPL.lift_tac1 "eg_streaming_match_pair")
+let eg_streaming_if_anf (x: int) =
+  let m0 = x >= 0 in
+  let m1 = x in
+  let m2 = -x in
+  if m0 then m1 else m2
+%splice[] (PPL.lift_tac1 "eg_streaming_if_anf")
 
-(*
+[@@source_mode (ModeFun Stream true Stream)]
+let eg_streaming_if (x: int) =
+  if x >= 0 then x else -x
+%splice[] (PPL.lift_tac1 "eg_streaming_if")
+
+[@@source_mode (ModeFun Stream true Stream)]
+let eg_streaming_match_option (x: option int) =
+  match x with
+  | None -> -1
+  | Some 0 -> 0
+  | Some 1 -> 1
+  | Some _ -> 2
+%splice[] (PPL.lift_tac1 "eg_streaming_match_option")
+
+
+[@@source_mode (ModeFun Stream true Stream)]
+let eg_streaming_match_ctor (xy: ctor) =
+  let Ctor x y = xy in
+  x + y
+%splice[] (PPL.lift_tac1 "eg_streaming_match_ctor")
+
+[@@source_mode (ModeFun Stream true Stream)]
+let eg_streaming_match_rcd (xy: ctor) =
+  let {x; y} = xy in
+  x + y
+%splice[] (PPL.lift_tac1 "eg_streaming_match_rcd")
+
+[@@source_mode (ModeFun Stream true Stream)]
+let eg_streaming_match_tup (xy: (int & int)) =
+  let (x, y) = xy in
+  x + y
+%splice[] (PPL.lift_tac1 "eg_streaming_match_tup")
+
 [@@source_mode (ModeFun Stream true Stream)]
 let eg_inc_left_strm (x: int) =
   x + 1
@@ -170,12 +193,6 @@ let eg_pairs (x: int) (y: bool): int =
 
 // %splice[] (PPL.lift_tac1 "eg_pairs_destr")
 
-type ctor = | Ctor: x: int -> y: int -> ctor
-instance has_stream_ctor: PSSB.has_stream ctor = {
-  ty_id       = [`%ctor];
-  val_default = Ctor PSSB.val_default PSSB.val_default;
-}
-
 [@@source_mode (ModeFun Stream true Stream)]
 let eg_ctor (add: int) =
   let rcd = rec' (fun rcd ->
@@ -198,13 +215,6 @@ let eg_pairsrec (add: int) =
 
 %splice[] (PPL.lift_tac1 "eg_pairsrec")
 
-type record = { x: int; y: int; }
-
-instance has_stream_record: PSSB.has_stream record = {
-  ty_id       = [`%record];
-  val_default = { x = 0; y = 0; };
-}
-
 
 [@@source_mode (ModeFun Stream true Stream)]
 let eg_record (add: int) =
@@ -216,30 +226,16 @@ let eg_record (add: int) =
 
 %splice[] (PPL.lift_tac1 "eg_record")
 
-// TODO match
-// [@@source_mode (ModeFun Stream true Stream)]
-// let eg_streaming_if_anf (x: int) =
-//   let m0 = x >= 0 in
-//   let m1 = x in
-//   let m2 = -x in
-//   if m0 then m1 else m2
-// %splice[] (PPL.lift_tac1 "eg_streaming_if_anf")
+[@@source_mode (ModeFun Stream true Stream)]
+let eg_streaming_match_lets (x: int): int =
+  let cond = x >= 0 in
+  let abs =
+    match cond with
+      | true -> x
+      | false -> -x
+  in abs
 
-// [@@source_mode (ModeFun Stream true Stream)]
-// let eg_streaming_if (x: int) =
-//   if x >= 0 then x else -x
-
-// %splice[] (PPL.lift_tac1 "eg_streaming_if")
-
-// let eg_streaming_match_lets (x: stream int): stream int =
-//   let cond = x >= 0 in
-//   let abs =
-//     match cond with
-//       | true -> x
-//       | false -> -x
-//   in abs
-
-// %splice[] (autolift_binds [`%eg_streaming_match_lets])
+%splice[] (PPL.lift_tac1 "eg_streaming_match_lets")
 
 [@@source_mode (ModeFun Static true (ModeFun Stream true Stream))]
 let eg_static_match (consts: list int) (x: int) =
@@ -282,10 +278,6 @@ let eg_refinement0 (x: int) =
 //   | Some e -> e
 //   | None -> 0
 
-// [@@Tac.preprocess_with tac_lift]
-// let eg_streaming_letmatch (xy: stream (int & int)): stream int =
-//   let (x, y) = xy in
-//   x + y
 
 // Lemma instantiation not supported; use a pattern instead
 // let lemma_nat_something (x: int) (y: int): Lemma (ensures x > y) = admit ()
@@ -295,5 +287,3 @@ let eg_refinement0 (x: int) =
 //   x + y
 
 // %splice[] (autolift_binds [`%eg_instantiate_lemma])
-
-*)

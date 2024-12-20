@@ -532,6 +532,52 @@ let strip_ty_simple_binder_static (b: Tac.simple_binder): Tac.Tac Tac.simple_bin
   let sort = strip_ty b.sort in
   { b with sort = sort }
 
+let rec mk_apps (proj: Tac.term) (args: list Tac.argv): Tac.Tac Tac.term =
+  match args with
+  | [] -> proj
+  | arg :: args -> mk_apps (Tac.pack (Tac.Tv_App proj arg)) args
+
+let mk_proj (scrut: Tac.term) (tscrut: Tac.term) (pat_head: Tac.name) (arrb: Tac.binder): Tac.Tac Tac.term =
+  let proj_fv = match List.rev pat_head with
+    | x :: xs -> Tac.pack_fv List.(rev xs @ ["__proj__" ^ x ^ "__item__" ^ Tac.unseal arrb.ppname])
+    | [] -> Tac.fail "impossible: empty Pat_Cons, no constructor"
+  in
+  let proj = Tac.pack (Tac.Tv_FVar proj_fv) in
+  // take type's parameters as implicit arguments to projector - questionable
+  // TODO check that tscrut matches projector return type, might be a type synonym
+  let (_tm, args) = Tac.collect_app tscrut in
+  let args = List.map (fun (t,_) -> (t,Tac.Q_Implicit)) args in
+  let proj = mk_apps proj List.(args @ [scrut, Tac.Q_Explicit]) in
+  proj
+
+let rec irrefutable_pats (e: env) (scrut: Tac.term) (tscrut: Tac.term) (pat_head: Tac.name) (pat_vars: list (Tac.pattern & bool)) (tm: Tac.term) (ty: Tac.term): Tac.Tac Tac.term =
+  match pat_vars, Tac.inspect ty with
+  | [], _ -> tm
+  | (Tac.Pat_Dot_Term _, _) :: pat_vars', _ ->
+     irrefutable_pats e scrut tscrut pat_head pat_vars' tm ty
+  | (Tac.Pat_Var v, patq) :: pat_vars', Tac.Tv_Arrow b (Tac.C_Total ty')
+   -> begin
+   debug_print (fun () -> "irrefutable_pats: " ^ Tac.term_to_string (quote (patq, b.qual)));
+    match patq, b.qual with
+     | false, Tac.Q_Explicit
+     | true, Tac.Q_Implicit
+     | true, Tac.Q_Equality
+     | true, Tac.Q_Meta _ ->
+      let tm = irrefutable_pats e scrut tscrut pat_head pat_vars' tm ty' in
+      let letb: Tac.simple_binder = { ppname = v.v.ppname; attrs = []; qual = Tac.Q_Explicit; sort = Tac.unseal v.sort; uniq = v.v.uniq; } in
+      let def = mk_proj scrut tscrut pat_head b in
+      Tac.pack (Tac.Tv_Let false [] letb def tm)
+
+
+     | _ -> irrefutable_pats e scrut tscrut pat_head pat_vars tm ty'
+    end
+  // impossible?
+  | _ ->
+    fail "irrefutable_pats: unsupported pattern match"
+      (Tac.range_of_term scrut)
+      []
+
+
 let rec lift_tm (e: env) (t: Tac.term) (mm: option mode): Tac.Tac (mode & Tac.term) =
   let ti = Tac.inspect t in
   let rng = Tac.range_of_term t in
@@ -686,10 +732,13 @@ let rec lift_tm (e: env) (t: Tac.term) (mm: option mode): Tac.Tac (mode & Tac.te
       let brs = Pipit.List.zip2 (List.map fst brs0) ts in
       (mbrs, Tac.pack (Tac.Tv_Match scrut ret brs))
     | Stream, [Tac.Pat_Cons c, tm] ->
-      debug_print (fun () -> "match: irrefutable, stream scrutinee " ^ Tac.term_to_string scrut);
-      // TODO irrefutableable
+      debug_print (fun () -> "match: irrefutable, stream scrutinee " ^ Tac.term_to_string scrut0);
+      let ty = Tac.tc e.tac_env (Tac.pack (Tac.Tv_FVar c.head)) in
+      // todo let-bind scrut to avoid duplication
       let tscrut = PTB.tc_unascribe e.tac_env scrut0 in
-      (Stream, t)
+      let tm = irrefutable_pats e scrut0 tscrut (Tac.inspect_fv c.head) c.subpats tm ty in
+      lift_tm e tm None
+
     | Stream, _ ->
       debug_print (fun () -> "match: stream scrutinee " ^ Tac.term_to_string scrut);
       // XXX: the current semantics for streaming-matches is more of a "select"
@@ -743,7 +792,6 @@ let rec lift_tm (e: env) (t: Tac.term) (mm: option mode): Tac.Tac (mode & Tac.te
   | Tac.Tv_Unsupp ->
     fail ("lift failed: cannot inspect term: " ^ Tac.term_to_string t)
       (Ref.range_of_term t) ["(unsupported term)"]
-
 
 // [@@plugin]
 // TODO change arguments to (list (string & string)), support letrecs
