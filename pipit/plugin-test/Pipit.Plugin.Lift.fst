@@ -1,3 +1,5 @@
+// TODO move this to plugin/
+// TODO fix extraction for plugin
 module Pipit.Plugin.Lift
 
 open Pipit.Plugin.Interface
@@ -17,11 +19,6 @@ module PPT  = Pipit.Prim.Table
 module PXB  = Pipit.Exp.Base
 module PXBi  = Pipit.Exp.Binding
 
-
-// module Table = Pipit.Prim.Table
-// module ShallowPrim = Pipit.Prim.Shallow
-// module Shallow = Pipit.Sugar.Shallow.Base
-// module SugarBase = Pipit.Sugar.Base
 module PTC = Pipit.Tactics.Cse
 
 module TermEq = FStar.Reflection.TermEq.Simple
@@ -33,6 +30,11 @@ let shallow_prim_mkPrim a b c = `PPS.mkPrim (`#a) (`#b) (`#c)
 let table_FTFun a b = `(PPT.FTFun (`#a) (`#b))
 let table_FTVal a = `(PPT.FTVal (`#a))
 
+// LODO this should use checked expressions cexp instead of raw expressions.
+//      but be careful not to slow down typechecking of generated expressions
+// LODO not sure if ctx is useful - just use closed expressions
+//  ...for checking expressions, they need to be closed - otherwise conversion to transition system gets stuck.
+//  ...and contracts need to be sealed, so we can't substitute expressions into them with unproved checks
 let exp_ty ctx a = `(PXB.exp PPS.table (`#ctx) (`#a))
 let ctx_ty = `(PPT.context PPS.table)
 
@@ -812,31 +814,10 @@ let lift_tac (nm_src nm_core: string) : Tac.Tac (list Tac.sigelt) =
   let nm_src_const = Tac.pack (Tac.Tv_Const (Ref.C_String nm_src_m)) in
   let tm = lb_src.lb_def in
   let _, tm = lift_tm e tm (Some lb_mode) in
-  // let tm = if nm_src = "eg_letrec_mut" then PTC.cse tm else tm in
-  // debug_print (fun () -> "CSE: " ^ Tac.term_to_string tm);
   let tm = Tac.pack (Tac.Tv_Abs (Tac.namedv_to_binder e.ctx_uniq ctx_ty) tm) in
   let _, se = core_sigelt e [`core_lifted] (Some nm_src_m) (Some nm_core_m) lb_mode tm in
   let extra_sigelts = List.rev (Tac.read e.extra_sigelts) in
   List.(extra_sigelts @ [se])
-
-  // let m = Tac.cur_module () in
-  // let open List in
-  // let lb_src = PTB.lookup_lb_top (Tac.top_env ()) (m @ [nm_src]) in
-  // let ty = Tac.pack Tac.Tv_Unknown in
-
-  // // TODO: support recursive bindings
-  // let lb_core: Tac.letbinding = {
-  //   lb_fv  = Tac.pack_fv (m @ [nm_core]);
-  //   lb_us  = lb_src.lb_us;
-  //   lb_typ = ty;
-  //   lb_def = lb_src.lb_def;
-  // } in
-  // let sv: Tac.sigelt_view = Tac.Sg_Let {isrec=false; lbs=[lb_core]} in
-  // let se: Tac.sigelt = Tac.pack_sigelt sv in
-  // let nm_src_const = Tac.pack (Tac.Tv_Const (Ref.C_String (Ref.implode_qn (m @ [nm_src])))) in
-  // let attrs = [ `(core_of_source (`#nm_src_const))] in
-  // Tac.print ("DONE: " ^ nm_core);
-  // [Ref.set_sigelt_attrs attrs se]
 
 let lift_tac1 (nm_src: string) : Tac.Tac (list Tac.sigelt) =
   lift_tac nm_src (env_core_nm nm_src)

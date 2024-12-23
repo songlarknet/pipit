@@ -1,10 +1,10 @@
 module Plugin.Test
 #lang-pipit
 
-#set-options "--ext pipit:lift:debug"
-#set-options "--print_implicits --print_bound_var_types --print_full_names"
+// #set-options "--ext pipit:lift:debug"
+// #set-options "--print_implicits --print_bound_var_types --print_full_names"
 
-open Pipit.Plugin.Primitives
+open Pipit.Source
 module PSSB = Pipit.Sugar.Shallow.Base
 
 instance has_stream_int: PSSB.has_stream int = {

@@ -1,16 +1,15 @@
-module Plugin.Test.CoreLift
+module Plugin.Test.Core.Basic
 
-open Pipit.Plugin.Interface
-open Pipit.Plugin.Primitives
+open Pipit.Source
 module PPL = Pipit.Plugin.Lift
 module PSSB = Pipit.Sugar.Shallow.Base
 
 // Don't warn on local let-recs; they're only for testing
-// #set-options "--warn_error -242"
+#set-options "--warn_error -242"
 
 // Useful for testing:
 // #set-options "--ext pipit:lift:debug"
-#set-options "--print_implicits --print_bound_var_types --print_full_names"
+// #set-options "--print_implicits --print_bound_var_types --print_full_names"
 
 instance has_stream_int: Pipit.Sugar.Shallow.Base.has_stream int = {
   ty_id       = [`%Prims.int];
@@ -36,47 +35,6 @@ instance has_stream_record: PSSB.has_stream record = {
 
 
 [@@source_mode (ModeFun Stream true Stream)]
-let eg_streaming_if_anf (x: int) =
-  let m0 = x >= 0 in
-  let m1 = x in
-  let m2 = -x in
-  if m0 then m1 else m2
-%splice[] (PPL.lift_tac1 "eg_streaming_if_anf")
-
-[@@source_mode (ModeFun Stream true Stream)]
-let eg_streaming_if (x: int) =
-  if x >= 0 then x else -x
-%splice[] (PPL.lift_tac1 "eg_streaming_if")
-
-[@@source_mode (ModeFun Stream true Stream)]
-let eg_streaming_match_option (x: option int) =
-  match x with
-  | None -> -1
-  | Some 0 -> 0
-  | Some 1 -> 1
-  | Some _ -> 2
-%splice[] (PPL.lift_tac1 "eg_streaming_match_option")
-
-
-[@@source_mode (ModeFun Stream true Stream)]
-let eg_streaming_match_ctor (xy: ctor) =
-  let Ctor x y = xy in
-  x + y
-%splice[] (PPL.lift_tac1 "eg_streaming_match_ctor")
-
-[@@source_mode (ModeFun Stream true Stream)]
-let eg_streaming_match_rcd (xy: ctor) =
-  let {x; y} = xy in
-  x + y
-%splice[] (PPL.lift_tac1 "eg_streaming_match_rcd")
-
-[@@source_mode (ModeFun Stream true Stream)]
-let eg_streaming_match_tup (xy: (int & int)) =
-  let (x, y) = xy in
-  x + y
-%splice[] (PPL.lift_tac1 "eg_streaming_match_tup")
-
-[@@source_mode (ModeFun Stream true Stream)]
 let eg_inc_left_strm (x: int) =
   x + 1
 
@@ -100,7 +58,6 @@ let eg_additions_strm_ret_ann (x: int): int =
   (x + x) + x
 
 %splice[] (PPL.lift_tac1 "eg_additions_strm_ret_ann")
-
 
 
 [@@source_mode (ModeFun Stream true Stream)]
@@ -184,15 +141,6 @@ let eg_pairs (x: int) (y: bool): int =
 
 %splice[] (PPL.lift_tac1 "eg_pairs")
 
-// TODO matches
-// [@@source_mode (ModeFun Stream true (ModeFun Stream true Stream))]
-// let eg_pairs_destr (x: int) (y: bool): int =
-//   let xy = (x, y) in
-//   let (xz, yz) = xy in
-//   0 `fby` xz
-
-// %splice[] (PPL.lift_tac1 "eg_pairs_destr")
-
 [@@source_mode (ModeFun Stream true Stream)]
 let eg_ctor (add: int) =
   let rcd = rec' (fun rcd ->
@@ -226,39 +174,6 @@ let eg_record (add: int) =
 
 %splice[] (PPL.lift_tac1 "eg_record")
 
-[@@source_mode (ModeFun Stream true Stream)]
-let eg_streaming_match_lets (x: int): int =
-  let cond = x >= 0 in
-  let abs =
-    match cond with
-      | true -> x
-      | false -> -x
-  in abs
-
-%splice[] (PPL.lift_tac1 "eg_streaming_match_lets")
-
-[@@source_mode (ModeFun Static true (ModeFun Stream true Stream))]
-let eg_static_match (consts: list int) (x: int) =
-  match consts with
-  | [] -> 0
-  | (c: int) :: _ -> c + x
-
-%splice[] (PPL.lift_tac1 "eg_static_match")
-
-// not supported yet, issue proving termination on the generated core
-// [@@source_mode (ModeFun Static true (ModeFun Stream true Stream))]
-// let rec eg_fir (consts: list int) (x: int): Tot int (decreases consts)
-//  =
-//   match consts with
-//   | [] -> 0
-//   | (c: int) :: cs ->
-//     let open FStar.Mul in
-//     // hmm, explicit type app needed to avoid type inference weirdness
-//     let pre: int = 0 `fby` x in
-//     c * x + eg_fir cs pre
-
-// %splice[] (PPL.lift_tac1 "eg_fir")
-
 let silly_id (x: int): y: int { x == y } = x
 
 [@@source_mode (ModeFun Stream true Stream)]
@@ -266,24 +181,3 @@ let eg_refinement0 (x: int) =
   silly_id x
 
 %splice[] (PPL.lift_tac1 "eg_refinement0")
-
-(*** Not supported examples ***)
-
-
-// streaming matches cannot bind variables:
-
-// [@@Tac.preprocess_with tac_lift]
-// let eg_streaming_match_bind (x: stream (option int)): stream int =
-//   match x with
-//   | Some e -> e
-//   | None -> 0
-
-
-// Lemma instantiation not supported; use a pattern instead
-// let lemma_nat_something (x: int) (y: int): Lemma (ensures x > y) = admit ()
-
-// let eg_instantiate_lemma (x y: stream int): stream int =
-//   lemma_nat_something x y;
-//   x + y
-
-// %splice[] (autolift_binds [`%eg_instantiate_lemma])

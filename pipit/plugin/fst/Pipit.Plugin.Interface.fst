@@ -2,7 +2,6 @@
   Most of the contents here shouldn't need to be exposed to users. *)
 module Pipit.Plugin.Interface
 
-
 (*** Types ***)
 
 (* Modes describe computations as streaming or static (non-streaming). *)
@@ -35,9 +34,3 @@ let core_lifted = ()
 irreducible
 let core_lifted_prim = ()
 
-(*** Public Attributes -- these should be moved to the public interface ***)
-(* Mark to be extracted *)
-// irreducible
-// let extract = ()
-// irreducible
-// let defer_check = ()
