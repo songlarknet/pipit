@@ -316,7 +316,7 @@ let rec tm_shallow_can_cache (t: Tac.term): Tac.Tac bool =
   | Tac.Tv_AscribedC _ _ _ _
    -> false
 
-  | _ -> false // true
+  | _ -> true
 
 let rec env_get_shallow_ty_search (ls: list (Tac.name & Tac.term)) (t: Tac.term) (e: env): Tac.Tac Tac.term =
   match ls with
@@ -720,9 +720,14 @@ let rec lift_tm (e: env) (t: Tac.term) (mm: option mode): Tac.Tac (mode & Tac.te
   | Tac.Tv_Abs bv tm ->
     debug_print (fun () -> "Abs: lift_tm with " ^ Tac.term_to_string bv.sort ^ "; mode " ^ Tac.term_to_string (quote mm));
     (match mm with
-    | Some (ModeFun m1 mx m2) ->
+    | Some (ModeFun Stream mx m2) ->
       let bs = BindLocal (env_get_shallow_ty bv.sort e) in
+      let (m2, tm) = lift_tm (env_push bv Stream bs e) tm (Some m2) in
+      (ModeFun Stream (PTB.qual_is_explicit bv.qual) m2, tm)
+    | Some (ModeFun m1 mx m2) ->
+      let bs = BindMeta in
       let (m2, tm) = lift_tm (env_push bv m1 bs e) tm (Some m2) in
+      let tm = Tac.pack (Tac.Tv_Abs bv tm) in
       (ModeFun m1 (PTB.qual_is_explicit bv.qual) m2, tm)
     | Some mm ->
       fail "bad mode for abstraction"

@@ -1,7 +1,7 @@
 module Plugin.Test
 #lang-pipit
 
-// #set-options "--ext pipit:lift:debug"
+#set-options "--ext pipit:lift:debug"
 // #set-options "--print_implicits --print_bound_var_types --print_full_names"
 
 open Pipit.Source
@@ -143,6 +143,10 @@ let silly_id (x: int): y: int { x == y } = x
 let eg_refinement0 (x: stream int) =
   silly_id x
 
+let eg_streaming_letmatch (xy: stream (int & int)): stream int =
+  let (x, y) = xy in
+  x + y
+
 (*** Not supported examples ***)
 
 
@@ -160,10 +164,6 @@ let eg_refinement0 (x: stream int) =
 //   match^ x with
 //   | Some e -> e
 //   | None -> 0
-
-// let eg_streaming_letmatch (xy: stream (int & int)): stream int =
-//   let (x, y) = xy in
-//   x + y
 
 // Lemma instantiation not supported; use a pattern instead
 // let lemma_nat_something (x: int) (y: int): Lemma (ensures x > y) = admit ()
