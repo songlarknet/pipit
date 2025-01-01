@@ -8,8 +8,8 @@ module PSSB = Pipit.Sugar.Shallow.Base
 #set-options "--warn_error -242"
 
 // Useful for testing:
-// #set-options "--ext pipit:lift:debug"
-// #set-options "--print_implicits --print_bound_var_types --print_full_names"
+#set-options "--ext pipit:lift:debug"
+#set-options "--print_implicits --print_bound_var_types --print_full_names"
 
 instance has_stream_int: Pipit.Sugar.Shallow.Base.has_stream int = {
   ty_id       = [`%Prims.int];

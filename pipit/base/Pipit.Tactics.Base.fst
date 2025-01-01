@@ -31,7 +31,6 @@ let eta_expand (tm ty: Tac.term): Tac.Tac Tac.term =
   let (bs,cmp)= Tac.collect_arr_bs ty in
   eta_expand_binders bs tm
 
-
 let qual_is_explicit (q: Ref.aqualv): bool =
   match q with
   | Ref.Q_Explicit -> true
@@ -93,3 +92,23 @@ let rec is_compound_term (t: Tac.term): Tac.Tac bool =
     is_compound_term e
 
   | _ -> true
+
+
+let rec collect_list (tm: Tac.term): Tac.Tac (list Tac.term) =
+  let (hd,args) = Tac.collect_app tm in
+  if term_check_fv hd (`%Prims.Nil)
+  then []
+  else if term_check_fv hd (`%Prims.Cons)
+  then match args with
+    | [ a, Tac.Q_Explicit; b, Tac.Q_Explicit ]
+    | [ _, Tac.Q_Implicit; a, Tac.Q_Explicit; b, Tac.Q_Explicit ] ->
+      a :: collect_list b
+    | _ -> [tm]
+  else []
+
+let rec mk_list (tms: list Tac.term): Tac.Tac Tac.term =
+  match tms with
+  | [] -> `[]
+  | a :: tms ->
+    let tms = mk_list tms in
+    `((`#a) :: (`#tms))

@@ -33,16 +33,15 @@ assume val fby (#a: eqtype) {| PSSB.has_stream a |} (dflt: a) (strm: a): a
 
 // LODO getting the mode wrong here leads to some confusing errors - should check it against type of `fby`
 [@@core_lifted; core_of_source "Pipit.Source.fby" (ModeFun Static false (ModeFun Static false (ModeFun Static true (ModeFun Stream true Stream))))]
-let fby_core (ctx: PPT.context PPS.table) (#a: eqtype) {| PSSB.has_stream a |}
-  (dflt: a) (strm: PXB.exp PPS.table ctx (PSSB.shallow a)): PXB.exp PPS.table ctx (PSSB.shallow a) =
-  PXB.XFby dflt strm
+let fby_core (#a: eqtype) {| PSSB.has_stream a |}
+  (dflt: a): PXB.exp PPS.table [PSSB.shallow a] (PSSB.shallow a) =
+  PXB.XFby dflt (PXB.XBase (PXB.XBVar 0))
 
 assume val check (prop: bool): unit
 
 [@@core_lifted; core_of_source "Pipit.Source.check" (ModeFun Stream true Stream)]
-let check_core (ctx: PPT.context PPS.table)
-  (strm: PXB.exp PPS.table ctx (PSSB.shallow bool)): PXB.exp PPS.table ctx (PSSB.shallow unit) =
-  PXB.XCheck Pipit.Prop.Metadata.PSUnknown  strm
+let check_core: PXB.exp PPS.table [PSSB.shallow bool] (PSSB.shallow unit) =
+  PXB.XCheck Pipit.Prop.Metadata.PSUnknown (PXB.XBase (PXB.XBVar 0))
 
 
 // specialise if-then-else? maybe we should generate better expressions for if-then-else.

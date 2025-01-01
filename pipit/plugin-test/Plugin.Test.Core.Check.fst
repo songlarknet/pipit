@@ -28,7 +28,7 @@ let eg_check_trivial (x: int) =
 
 let eg_check_trivial_check_proof: PXB.exp PPS.table [PSSB.shallow int] (PSSB.shallow int) =
   // let open Pipit.Sugar.Check in
-  let e = eg_check_trivial_core [PSSB.shallow int] (PXB.XBase (PXB.XBVar 0)) in
+  let e = eg_check_trivial_core in
   // let e: Pipit.Exp.Checked.Compound.cexp PPS.table [PSSB.shallow int] (PSSB.shallow int) = unsafe_coerce e in
   let sys = SX.system_of_exp e in
   assert (SI.induct1 sys) by (PT.norm_full []);
@@ -36,11 +36,6 @@ let eg_check_trivial_check_proof: PXB.exp PPS.table [PSSB.shallow int] (PSSB.sha
   // assert (SI.system_holds_all sys);
   // assert (PXCB.check_all Pipit.Prop.Metadata.check_mode_unknown e);
   PXCB.bless e
-
-let eg_check_trivial_check_weaken (ctx: PPT.context PPS.table) (xs: PXB.exp PPS.table ctx (PSSB.shallow int)): PXB.exp PPS.table ctx (PSSB.shallow int) =
-    (PXB.XLet (PSSB.shallow int)
-      xs
-      (PXB.weaken ctx eg_check_trivial_check_proof))
 
 [@@source_mode (ModeFun Stream true Stream)]
 let eg_check_false (x: int) =
