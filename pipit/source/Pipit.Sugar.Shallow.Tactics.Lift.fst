@@ -541,7 +541,9 @@ let lift_prim_gen (e: env) (prim: Tac.term): Tac.Tac Tac.term =
   in
   let nm_tm =
     match nm with
-    | Some f -> (quote (Some f))
+    | Some f ->
+      let f' = Tac.implode_qn f in
+      (quote (Some f'))
     | None -> (`None)
   in
   let (args,res) = Tac.collect_arr ty in

@@ -27,19 +27,19 @@ let p'ftfun (a: eqtype) (r: Table.funty Shallow.shallow_type) {| has_stream a |}
 
 let p'prim1
   {| has_stream 'a |} {| has_stream 'r |}
-  (prim_id:  option Shallow.ident)
+  (prim_id:  option string)
   (prim_sem: 'a -> 'r): Shallow.prim =
   Shallow.mkPrim prim_id (p'ftfun 'a (p'ftval 'r)) prim_sem
 
 let p'prim2
   {| has_stream 'a |} {| has_stream 'b |} {| has_stream 'r |}
-  (prim_id:  option Shallow.ident)
+  (prim_id:  option string)
   (prim_sem: 'a -> 'b -> 'r): Shallow.prim =
   Shallow.mkPrim prim_id (p'ftfun 'a (p'ftfun 'b (p'ftval 'r))) prim_sem
 
 let p'prim3
   {| has_stream 'a |} {| has_stream 'b |} {| has_stream 'c |} {| has_stream 'r |}
-  (prim_id:  option Shallow.ident)
+  (prim_id:  option string)
   (prim_sem: 'a -> 'b -> 'c -> 'r): Shallow.prim =
   Shallow.mkPrim prim_id (p'ftfun 'a (p'ftfun 'b (p'ftfun 'c (p'ftval 'r)))) prim_sem
 
@@ -83,22 +83,22 @@ let ff: stream bool = const false
   totally consistent as `not` doesn't work...
  *)
 let (/\):  stream bool -> stream bool -> stream bool =
-  S.liftP2 (p'prim2 (Some [`%PR.p'b'and]) PR.p'b'and)
+  S.liftP2 (p'prim2 (Some (`%PR.p'b'and)) PR.p'b'and)
 let (\/):  stream bool -> stream bool -> stream bool =
-  S.liftP2 (p'prim2 (Some [`%PR.p'b'or]) PR.p'b'or)
+  S.liftP2 (p'prim2 (Some (`%PR.p'b'or)) PR.p'b'or)
 let (==>): stream bool -> stream bool -> stream bool =
-  S.liftP2 (p'prim2 (Some [`%PR.p'b'implies]) PR.p'b'implies)
+  S.liftP2 (p'prim2 (Some (`%PR.p'b'implies)) PR.p'b'implies)
 
 let notb: stream bool -> stream bool =
-  S.liftP1 (p'prim1 (Some [`%PR.p'b'not]) PR.p'b'not)
+  S.liftP1 (p'prim1 (Some (`%PR.p'b'not)) PR.p'b'not)
 
 unfold let (~) = notb
 
 let (=) (#a: eqtype) {| has_stream a |}: stream a -> stream a -> stream bool =
-  S.liftP2 (p'prim2 #a #a (Some [`%(=)]) (fun x y -> x = y))
+  S.liftP2 (p'prim2 #a #a (Some (`%(=))) (fun x y -> x = y))
 
 let (<>) (#a: eqtype) {| has_stream a |}: stream a -> stream a -> stream bool =
-  S.liftP2 (p'prim2 #a #a (Some [`%(<>)]) (fun x y -> x <> y))
+  S.liftP2 (p'prim2 #a #a (Some (`%(<>))) (fun x y -> x <> y))
 
 let tup (#a #b: eqtype) {| has_stream a |} {| has_stream b |}: stream a -> stream b -> stream (a & b) #_ =
   lift2 (fun x y -> (x, y))
@@ -115,7 +115,7 @@ let snd (#a #b: eqtype) {| has_stream a |} {| has_stream b |}: stream (a & b) #_
 
 (* if-then-else *)
 let select (#a: eqtype) {| has_stream a |} : stream bool -> stream a -> stream a -> stream a =
-  S.liftP3 (p'prim3 #bool #a #a (Some [`%PR.p'select]) PR.p'select)
+  S.liftP3 (p'prim3 #bool #a #a (Some (`%PR.p'select)) PR.p'select)
 
 let if_then_else (#a: eqtype) {| has_stream a |} = select #a
 

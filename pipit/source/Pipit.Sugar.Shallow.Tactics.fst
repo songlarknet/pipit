@@ -108,7 +108,8 @@ let rec lift_prim_go (args: list Tac.binder) (ret: Tac.comp) (app: Ref.term): Ta
 
 let lift_prim_tm (nm: string) (tm: Ref.term): Tac.Tac Tac.term =
   let full_nm = List.(Tac.cur_module () @ [nm]) in
-  let full_nm' = quote full_nm in
+  let ff = Tac.implode_qn full_nm in
+  let full_nm' = quote ff in
   let e       = Tac.top_env () in
   let ty      = Tac.tc e tm in
   let ty      = norm_term e ty in

@@ -5,6 +5,7 @@ open Plugin.Test.Core.Basic
 open Pipit.Source
 
 module PPL = Pipit.Plugin.Lift
+// module PPC = Pipit.Plugin.Check
 module PSSB = Pipit.Sugar.Shallow.Base
 
 module PPS  = Pipit.Prim.Shallow
@@ -26,16 +27,14 @@ let eg_check_trivial (x: int) =
   x
 %splice[eg_check_trivial_core] (PPL.lift_tac1 "eg_check_trivial")
 
-let eg_check_trivial_check_proof: PXB.exp PPS.table [PSSB.shallow int] (PSSB.shallow int) =
-  // let open Pipit.Sugar.Check in
+[@@core_of_source (`%eg_check_trivial) (ModeFun Stream true Stream)]
+let eg_check_trivial_check: PXB.exp PPS.table [PSSB.shallow int] (PSSB.shallow int) =
   let e = eg_check_trivial_core in
-  // let e: Pipit.Exp.Checked.Compound.cexp PPS.table [PSSB.shallow int] (PSSB.shallow int) = unsafe_coerce e in
   let sys = SX.system_of_exp e in
   assert (SI.induct1 sys) by (PT.norm_full []);
-  // assert (system_induct_k1 e) by (PT.norm_full []);
-  // assert (SI.system_holds_all sys);
-  // assert (PXCB.check_all Pipit.Prop.Metadata.check_mode_unknown e);
   PXCB.bless e
+
+// %splice[eg_check_trivial_core_check] (PPC.check_tac1 "eg_check_trivial")
 
 [@@source_mode (ModeFun Stream true Stream)]
 let eg_check_false (x: int) =
@@ -43,6 +42,13 @@ let eg_check_false (x: int) =
   check prop;
   x
 %splice[] (PPL.lift_tac1 "eg_check_false")
+
+[@@core_of_source (`%eg_check_false) (ModeFun Stream true Stream); expect_failure]
+let eg_check_false_check: PXB.exp PPS.table [PSSB.shallow int] (PSSB.shallow int) =
+  let e = eg_check_false_core in
+  let sys = SX.system_of_exp e in
+  assert (SI.induct1 sys) by (PT.norm_full []);
+  PXCB.bless e
 
 // Lemma instantiation not supported; use a pattern instead
 // let lemma_nat_something (x: int) (y: int): Lemma (ensures x > y) = admit ()
