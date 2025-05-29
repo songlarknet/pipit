@@ -29,7 +29,7 @@ let tac_opt = ["Network.TTCan"]
   do not want the expression in the generated C code. *)
 [@@(Tac.postprocess_with (XL.tac_normalize_pure tac_opt))]
 noextract
-let modes_expr = SugarBase.exp_of_stream3 (Ctrl.modes cfg)
+let modes_expr = SugarBase.exp_of_stream3 (Ctrl.modes_core cfg)
 
 (* Define the state type for mode controller *)
 [@@(Tac.postprocess_with (XL.tac_normalize_pure tac_opt))]
@@ -60,7 +60,7 @@ let modes_step
 
 [@@(Tac.postprocess_with (XL.tac_normalize_pure tac_opt))]
 noextract
-let trigger_fetch_expr = SugarBase.exp_of_stream4 (Ctrl.trigger_fetch cfg)
+let trigger_fetch_expr = SugarBase.exp_of_stream1 (Ctrl.trigger_fetch_core cfg)
 
 [@@(Tac.postprocess_with (XL.tac_normalize_pure tac_opt))]
 type trigger_fetch_state = XX.state_of_exp trigger_fetch_expr
@@ -68,7 +68,7 @@ type trigger_fetch_state = XX.state_of_exp trigger_fetch_expr
 [@@(Tac.postprocess_with (XL.tac_normalize_pure tac_opt))]
 noextract
 inline_for_extraction
-let trigger_fetch_system: XX.esystem (bool & (Types.ntu & (Types.cycle_index & (Types.ref_offset & unit)))) trigger_fetch_state Triggers.fetch_result =
+let trigger_fetch_system: XX.esystem (Triggers.trigger_input & unit) trigger_fetch_state Triggers.fetch_result =
   assert_norm (XX.extractable trigger_fetch_expr);
   XX.exec_of_exp trigger_fetch_expr
 
@@ -78,17 +78,13 @@ let trigger_fetch_reset = XL.mk_reset trigger_fetch_system
 
 [@@(Tac.postprocess_with (XL.tac_extract tac_opt))]
 let trigger_fetch_step
-  (ref_ck:        bool)
-  (cycle_time:    Types.ntu)
-  (cycle_index:   Types.cycle_index)
-  (ref_trigger_offset:
-                  Types.ref_offset)
-  = XL.mk_step trigger_fetch_system (ref_ck, (cycle_time, (cycle_index, (ref_trigger_offset, ()))))
+  (trigger: Triggers.trigger_input)
+  = XL.mk_step trigger_fetch_system (trigger, ())
 
 
 [@@(Tac.postprocess_with (XL.tac_normalize_pure tac_opt))]
 noextract
-let controller_expr = SugarBase.exp_of_stream9 (Ctrl.controller cfg)
+let controller_expr = SugarBase.exp_of_stream9 (Ctrl.controller_core cfg)
 
 [@@(Tac.postprocess_with (XL.tac_normalize_pure tac_opt))]
 type controller_state = XX.state_of_exp controller_expr

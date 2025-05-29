@@ -15,19 +15,14 @@ type index_t = S32R.t { min = 0; max = BV64.n - 1 }
 
 let zero: U64.t = BV64.zero
 
-let index' (bv: t) (ix: index_t): bool =
-  BV64I.index_read bv (S32R.s32r_to_u8' ix)
+let index (bv: t) (ix: index_t): bool =
+  BV64I.index_read bv (S32R.s32r_to_u8 ix)
 
-let set' (bv: t) (ix: index_t): t =
-  BV64I.set bv (S32R.s32r_to_u8' ix)
+let set (bv: t) (ix: index_t): t =
+  BV64I.set bv (S32R.s32r_to_u8 ix)
 
-let clear' (bv: t) (ix: index_t): t =
-  BV64I.clear bv (S32R.s32r_to_u8' ix)
+let clear (bv: t) (ix: index_t): t =
+  BV64I.clear bv (S32R.s32r_to_u8 ix)
 
-let update' (bv: t) (ix: index_t) (v: bool): t =
-  BV64I.update bv (S32R.s32r_to_u8' ix) v
-
-%splice[index]  (SugarTac.lift_prim "index"  (`index'))
-%splice[set]    (SugarTac.lift_prim "set"    (`set'))
-%splice[clear]  (SugarTac.lift_prim "clear"  (`clear'))
-%splice[update] (SugarTac.lift_prim "update" (`update'))
+let update (bv: t) (ix: index_t) (v: bool): t =
+  BV64I.update bv (S32R.s32r_to_u8 ix) v

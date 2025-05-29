@@ -2,7 +2,9 @@ module Network.TTCan.Impl.Util
 
 module S       = Pipit.Sugar.Shallow
 module U64     = Network.TTCan.Prim.U64
+module S32R    = Network.TTCan.Prim.S32R
 
+open Pipit.Sugar.Shallow.Tactics.Lift
 open Network.TTCan.Types
 
 (**** Edges ***)
@@ -10,43 +12,84 @@ open Network.TTCan.Types
 (* True when value changes; initially true (stream transitions from bottom to value) *)
 let edge
   (#a: eqtype) {| S.has_stream a |}
-  (v: S.stream a)
-    : S.stream bool =
-  let open S in
-  (const true) ->^ (v <> pre v)
+  (v: stream a)
+    : stream bool =
+  true ->^ (v <> pre v)
 
 (* True when value transitions to true; initially true when v initially true (stream transitions from bottom to true) *)
 let rising_edge
-  (v: S.stream bool)
-    : S.stream bool =
-  let open S in
-  v /\ ~ (false `fby` v)
+  (v: stream bool)
+    : stream bool =
+  v && not (false `fby` v)
 
 (* True when value transitions FROM true; initially false regardless of v (stream transitions from bottom to value) *)
 let falling_edge
-  (v: S.stream bool)
-    : S.stream bool =
-  let open S in
-  ~ v /\ (false `fby` v)
+  (v: stream bool)
+    : stream bool =
+  not v && (false `fby` v)
 
+(* Check whether the value stream `v` only changes when clock `k` is true.
+  (That is, if v is sampled on k)
+
+  This is related to `edge`, in that:
+  > is_sampled_on v (edge v)
+  always holds
+
+  *)
+let is_sampled_on
+  (#a: eqtype) {| S.has_stream a |}
+  (v: stream a)
+  (k: stream bool)
+    : stream bool =
+  true ->^ (v = pre v || k)
 
 (* Resettable latch.
   Named arguments would be nice. It's easy to confuse the set/reset so we
   package them up in a record.
 *)
-noeq
-type latch_args = { set: S.stream bool; reset: S.stream bool }
+type latch_args = { set: bool; reset: bool }
 
-let latch (args: latch_args): S.stream bool =
-  let open S in
-  rec' (fun latch ->
-    if_then_else args.set (const true)
-      (if_then_else args.reset (const false) (false `fby` latch)))
+instance has_stream_latch_args: S.has_stream latch_args = {
+  ty_id = [`%latch_args];
+  val_default = { set = false; reset = false; };
+}
 
+[@@FStar.Tactics.preprocess_with preprocess]
+let latch (args: stream latch_args): stream bool =
+  let rec latch =
+    if args.set
+    then true
+    else if args.reset
+    then false
+    else (false `fby` latch)
+  in latch
 
-let time_ascending
-  (local_time: S.stream ntu)
-    : S.stream bool =
-  let open S in
+(**** Time utilities ***)
+
+(* The driver performs a "tick" at least every ttcan_exec_period ntus.
+  The time must be increasing and increase by at most ttcan_exec_period.
+  The initial value of the time does not necessarily need to be 0.
+*)
+let local_time_valid (cfg: config) (local_time: stream ntu): stream bool =
   let open U64 in
-  0uL `fby` local_time < local_time
+  let prev = pre local_time in
+  let next = prev + S32R.s32r_to_u64 cfg.triggers.ttcan_exec_period in
+  true ->^ (prev < local_time && local_time <= next)
+
+(* The cycle time is the time relative to the start of the current basic cycle.
+  Whenever the reference clock indicates the start of a new basic cycle, the
+  cycle time resets. We allow a period's slack time between the actual reset and
+  the reference clock, as the driver might not be called immediately.
+*)
+let cycle_time_valid (cfg: config) (ref_ck: stream bool) (cycle_time: stream ntu): stream bool =
+  let open U64 in
+  let ttcan_exec_period = S32R.s32r_to_u64 cfg.triggers.ttcan_exec_period in
+  let prev = pre cycle_time in
+  let next = prev + ttcan_exec_period in
+  // Reset on first step and on reference clock
+  if true ->^ ref_ck
+  then cycle_time < ttcan_exec_period
+  else prev < cycle_time && cycle_time <= next
+
+
+%splice[] (autolift_binds [`%edge; `%rising_edge; `%falling_edge; `%is_sampled_on; `%latch; `%local_time_valid; `%cycle_time_valid])

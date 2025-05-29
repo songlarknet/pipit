@@ -1,0 +1,9 @@
+(library
+ (name pipit_plugin)
+ (public_name pipit_plugin)
+ (libraries fstar.lib)
+ (modes native)
+ ; (wrapped false)
+ (flags (:standard -w -A))
+)
+(include_subdirs unqualified)

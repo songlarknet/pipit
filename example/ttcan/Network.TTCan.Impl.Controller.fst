@@ -11,6 +11,9 @@ module States   = Network.TTCan.Impl.States
 module Triggers = Network.TTCan.Impl.Triggers
 module Util     = Network.TTCan.Impl.Util
 
+open Pipit.Sugar.Shallow.Tactics.Lift
+module Tac = FStar.Tactics
+
 
 open Network.TTCan.Types
 
@@ -21,14 +24,13 @@ module UInt8 = FStar.UInt8
 module UInt64= FStar.UInt64
 module Cast  = FStar.Int.Cast
 
-
 type driver_input = {
   local_time:  ntu;
   mode_cmd:    Clocked.t mode;
   tx_status:   tx_status;
   bus_status:  bus_status;
   rx_ref:      Clocked.t ref_message;
-  rx_app:      Clocked.t app_message_index;
+  rx_app:      Clocked.t trigger_index;
 }
 
 (* Result of top-level controller node *)
@@ -40,8 +42,8 @@ type controller_result = {
                  bool;
 
   tx_ref:        Clocked.t ref_message;
-  tx_app:        Clocked.t app_message_index;
-  tx_delay:      ntu; // note: when tx_ref.ck or tx_app.ck
+  tx_app:        Clocked.t can_buffer_id;
+  tx_time_mark:  ntu; // note: when tx_ref.ck or tx_app.ck
 
   // TODO: add other fields:
   // mode:          mode;
@@ -71,261 +73,264 @@ instance has_stream_driver_input: S.has_stream driver_input = {
   val_default = { local_time = S.val_default; mode_cmd = S.val_default; tx_status = S.val_default; bus_status = S.val_default; rx_ref = S.val_default; rx_app = S.val_default; } <: driver_input;
 }
 
-%splice[get_local_time] (SugarTac.lift_prim "get_local_time" (`(fun (d: driver_input) -> d.local_time)))
-%splice[get_mode_cmd] (SugarTac.lift_prim "get_mode_cmd" (`(fun (d: driver_input) -> d.mode_cmd)))
-%splice[get_tx_status] (SugarTac.lift_prim "get_tx_status" (`(fun (d: driver_input) -> d.tx_status)))
-%splice[get_bus_status] (SugarTac.lift_prim "get_bus_status" (`(fun (d: driver_input) -> d.bus_status)))
-%splice[get_rx_ref] (SugarTac.lift_prim "get_rx_ref" (`(fun (d: driver_input) -> d.rx_ref)))
-%splice[get_rx_app] (SugarTac.lift_prim "get_rx_app" (`(fun (d: driver_input) -> d.rx_app)))
-
 instance has_stream_controller_result: S.has_stream controller_result = {
   ty_id       = [`%controller_result];
-  val_default = { error = S.val_default; driver_enable_acks = S.val_default; tx_ref = S.val_default; tx_app = S.val_default; tx_delay = S.val_default; } <: controller_result;
+  val_default = { error = S.val_default; driver_enable_acks = S.val_default; tx_ref = S.val_default; tx_app = S.val_default; tx_time_mark = S.val_default; } <: controller_result;
 }
-
-%splice[controller_result_new] (SugarTac.lift_prim "controller_result_new" (`(fun (error: error_severity) (driver_enable_acks: bool) (tx_ref: Clocked.t ref_message) (tx_app: Clocked.t app_message_index) (tx_delay: ntu) -> { error; driver_enable_acks; tx_ref; tx_app; tx_delay; } <: controller_result)))
 
 instance has_stream_modes_result: S.has_stream modes_result = {
   ty_id       = [`%modes_result];
   val_default = { mode = S.val_default; ref_ck = S.val_default; cycle_index = S.val_default; cycle_time = S.val_default; ref_trigger_offset = S.val_default; sync_state = S.val_default; error_CAN_Bus_Off = S.val_default; error = S.val_default; } <: modes_result
 }
-%splice[modes_result_new] (SugarTac.lift_prim "modes_result_new" (`(fun (mode: mode) (ref_ck: bool) (cycle_index: cycle_index) (cycle_time: ntu) (ref_trigger_offset: ref_offset) (sync_state: sync_mode) (error_CAN_Bus_Off: bool) (error: error_severity) -> { mode; ref_ck; cycle_index; cycle_time; ref_trigger_offset; sync_state; error_CAN_Bus_Off; error; } <: modes_result)))
 
 
 let modes
   (cfg: config)
-  (input:         S.stream driver_input)
-  (pre_error:     S.stream error_severity)
-  (pre_tx_ref:    S.stream (Clocked.t ref_message))
-    : S.stream modes_result =
-  let open S in
-  let^ mode        = States.mode_states (get_mode_cmd input) in
+  (input:         stream driver_input)
+  (pre_error:     stream error_severity)
+  (pre_tx_ref:    stream (Clocked.t ref_message))
+    : stream modes_result =
+  let mode        = States.mode_states input.mode_cmd in
 
-  let^ last_ref    = States.rx_ref_filters (get_rx_ref input) pre_tx_ref (get_tx_status input) in
-  let^ ref_ck      = Clocked.get_clock last_ref in
-  let^ ref_master  = Clocked.map get_master last_ref in
-  let^ ref_sof     = Clocked.map get_sof last_ref in
-  let^ cycle_index = Clocked.current_or_else (S32R.s32r' 0) (Clocked.map get_cycle_index last_ref) in
+  let last_ref    = States.rx_ref_filters input.rx_ref pre_tx_ref input.tx_status in
+  let ref_ck      = Clocked.get_clock last_ref in
+  let ref_master  = Clocked.map Mkref_message?.master last_ref in
+  let ref_sof     = Clocked.map (fun r -> r.sof) last_ref in
+  let cycle_index = Clocked.current_or_else (S32R.s32r 0) (Clocked.map Mkref_message?.cycle_index last_ref) in
 
-  let^ cycle_time  = States.cycle_times mode ref_sof (get_local_time input) in
+  let cycle_time  = States.cycle_times mode ref_sof input.local_time in
 
   (*^9.3.7 CAN_Bus_Off (S3): the controller went bus-off due to CAN-specific errors *)
-  let^ error_CAN_Bus_Off
-                   = Util.latch { set = get_bus_status input = const Bus_Off; reset = mode = const Mode_Configure } in
-  let^ error       = if_then_else error_CAN_Bus_Off (const S3_Severe) pre_error in
+  let error_CAN_Bus_Off = Util.latch {
+    set   = (input.bus_status = Bus_Off);
+    reset = (mode = Mode_Configure);
+  } in
+  let error       = if error_CAN_Bus_Off then S3_Severe else pre_error in
 
-  let^ sync_state  = States.sync_states mode error ref_sof (get_local_time input) in
-  let^ master_state= States.master_modes cfg mode error ref_master in
+  let sync_state  = States.sync_states mode error ref_sof input.local_time in
+  let master_state= States.master_modes cfg mode error ref_master in
 
-  let^ ref_trigger_offset
+  let ref_trigger_offset
                    = States.ref_trigger_offsets cfg master_state error ref_master in
 
-  modes_result_new mode ref_ck cycle_index cycle_time ref_trigger_offset sync_state error_CAN_Bus_Off error
+  { mode; ref_ck; cycle_index; cycle_time;
+    ref_trigger_offset; sync_state; error_CAN_Bus_Off; error; }
+
+%splice[] (autolift_binds [`%modes])
 
 let trigger_fetch
   (cfg:           config)
-  (ref_ck:        S.stream bool)
-  (cycle_time:    S.stream ntu)
-  (cycle_index:   S.stream cycle_index)
-  (ref_trigger_offset:
-                  S.stream ref_offset)
-    : S.stream Triggers.fetch_result =
-  Triggers.fetch cfg ref_ck cycle_time cycle_index ref_trigger_offset
+  (triggers:      stream Triggers.trigger_input)
+    : stream Triggers.fetch_result =
+  Triggers.fetch cfg triggers
 
+%splice[] (autolift_binds [`%trigger_fetch])
 
 let trigger_tx
-  (tx_status:     S.stream tx_status)
-  (bus_status:    S.stream bus_status)
-  (fetch:         S.stream Triggers.fetch_result)
-  (sync_state:    S.stream sync_mode)
-  (error:         S.stream error_severity)
-    : S.stream (Clocked.t app_message_index & Clocked.t bool) =
-  let open S in
-  let^ trigger         = Triggers.get_trigger (Triggers.get_current fetch) in
-  let^ trigger_enabled = Triggers.get_enabled (Triggers.get_current fetch) in
-  let^ trigger_msg     = get_message_index trigger in
-  let^ trigger_type    = get_trigger_type  trigger in
+  (cfg:           config)
+  (tx_status:     stream tx_status)
+  (bus_status:    stream bus_status)
+  (cycle_time:    stream ntu)
+  (fetch:         stream Triggers.fetch_result)
+  (sync_state:    stream sync_mode)
+  (error:         stream error_severity)
+    : stream (Clocked.t can_buffer_id & Clocked.t bool) =
+  let trigger_ix      = fetch.current.index in
+  let trigger_enabled = fetch.current.enabled in
+  let trigger_msg     = fetch.message_index in
+  let trigger_type    = fetch.trigger_type in
 
-  let^ tx_enabled      = (sync_state = const In_Schedule) /\ trigger_enabled /\ (trigger_type = const Tx_Trigger) in
+  let tx_enabled      = (sync_state = In_Schedule) && trigger_enabled && (trigger_type = Tx_Trigger) in
+  let is_expired      = U64.(cycle_time > S32R.s32r_to_u64 fetch.current.time_mark + S32R.s32r_to_u64 cfg.tx_enable_window) in
 
-  rec' (fun tx_app_msc_upd ->
-    let^ pre_tx_app_ck   = false `fby` Clocked.get_clock (fst tx_app_msc_upd) in
+  // or reset?
+  let is_new = trigger_ix <> pre #trigger_index trigger_ix in
+
+
+  rec' (fun (tx_app_msc_upd: stream (Clocked.t can_buffer_id & Clocked.t bool)) ->
+    let pre_tx_app_ck: stream bool =
+      false `fby` Clocked.get_clock (fst tx_app_msc_upd) in
 
     //^9.2 For messages to be transmitted, the MSC shall be incremented (by one) if the transmission attempt is not successful. The MSC decrement condition shall be different for the error states S0 and S1 and S2.
-    let^ tx_success      =
+    let tx_success      =
       //^9.2 In S0 and S1, the MSC shall be decremented (by one) when the message has been transmitted successfully.
-      if_then_else (Errors.no_error error)
-        (tx_status = const Tx_Ok /\ pre_tx_app_ck)
+      if Errors.no_error error
+      then tx_status = Tx_Ok && pre_tx_app_ck
         //^9.2 In S2 (all transmissions are disabled) the MSC shall be decremented by one when the FSE detects bus idle during the Tx_Enable window of the time window for this message.
-        (if_then_else (error = const S2_Error)
-          (bus_status = const Bus_Idle /\ pre_tx_app_ck)
-          (const false))
+      else if error = S2_Error
+      then bus_status = Bus_Idle && pre_tx_app_ck
+      else false
     in
 
-    let^ tx_pending = rec' (fun tx_pending ->
-      if_then_else (Triggers.get_is_new fetch /\ tx_enabled)
-        (const true)
-        (if_then_else (tx_success \/ (Triggers.get_is_expired fetch))
-          (const false)
-          (false `fby` tx_pending))) in
+    let tx_pending = rec' (fun tx_pending ->
+      if is_new && tx_enabled
+      then true
+      else if tx_success || is_expired
+      then false
+      else false `fby` tx_pending) in
 
-    let^ tx_app =
-      if_then_else (tx_pending /\ Errors.no_error error)
-        (Clocked.some trigger_msg)
-        Clocked.none in
+    let tx_app =
+      if tx_pending && Errors.no_error error
+      then Some trigger_msg
+      else None
+    in
 
-    let^ msc_upd =
-      if_then_else (Util.falling_edge tx_pending)
-        (Clocked.some tx_success)
-        Clocked.none in
-    tup tx_app msc_upd)
+    let msc_upd =
+      if Util.falling_edge tx_pending
+      then Some tx_success
+      else None
+    in
+    (tx_app, msc_upd))
 
+%splice[] (autolift_binds [`%trigger_tx])
 
 let trigger_rx
-  (rx_app:        S.stream (Clocked.t app_message_index))
-  (fetch:         S.stream Triggers.fetch_result)
-    : S.stream (Clocked.t bool) =
-  let open S in
-  let^ trigger         = Triggers.get_trigger (Triggers.get_current fetch) in
-  let^ trigger_enabled = Triggers.get_enabled (Triggers.get_current fetch) in
-  let^ trigger_msg     = get_message_index trigger in
-  let^ trigger_type    = get_trigger_type  trigger in
+  (rx_app:        stream (Clocked.t trigger_index))
+  (cycle_time:    stream ntu)
+  (fetch:         stream Triggers.fetch_result)
+    : stream (Clocked.t bool) =
+  let current         = fetch.current in
+  let trigger_enabled = current.enabled in
+  let trigger_msg     = fetch.message_index in
+  let trigger_type    = fetch.trigger_type in
+  let is_expired      = U64.(cycle_time > S32R.s32r_to_u64 current.time_mark) in
 
-  let^ rx_check        = if_then_else (trigger_enabled /\ trigger_type = const Rx_Trigger /\ Triggers.get_is_expired fetch)
-    (Clocked.some trigger_msg)
-    Clocked.none in
-  let^ rx_check_ok     = MsgSt.rx_pendings rx_check rx_app in
+  let rx_check        =
+    if trigger_enabled && trigger_type = Rx_Trigger && is_expired
+    then Some trigger_msg
+    else None in
+  let rx_check_ok     = MsgSt.rx_pendings rx_check rx_app in
 
-  if_then_else (Clocked.get_clock rx_check)
-    (Clocked.some rx_check_ok)
-    Clocked.none
+  if Clocked.get_clock rx_check
+  then Some rx_check_ok
+  else None
 
-
+%splice[] (autolift_binds [`%trigger_rx])
 
 let trigger_ref
   (cfg:           config)
-  (local_time:    S.stream ntu)
-  (tx_status:     S.stream tx_status)
-  (bus_status:    S.stream bus_status)
-  (cycle_index:   S.stream cycle_index)
-  (cycle_time:    S.stream ntu)
-  (fetch:         S.stream Triggers.fetch_result)
-  (sync_state:    S.stream sync_mode)
-  (error:         S.stream error_severity)
-    : S.stream (Clocked.t ref_message) =
-  let open S in
-  let^ trigger         = Triggers.get_trigger (Triggers.get_current fetch) in
-  let^ trigger_enabled = Triggers.get_enabled (Triggers.get_current fetch) in
-  let^ trigger_type    = get_trigger_type  trigger in
+  (local_time:    stream ntu)
+  (tx_status:     stream tx_status)
+  (bus_status:    stream bus_status)
+  (cycle_index:   stream cycle_index)
+  (cycle_time:    stream ntu)
+  (fetch:         stream Triggers.fetch_result)
+  (sync_state:    stream sync_mode)
+  (error:         stream error_severity)
+    : stream (Clocked.t ref_message) =
+  let current         = fetch.current in
+  let trigger_enabled = current.enabled in
+  let trigger_type    = fetch.trigger_type in
+  let is_started      = Triggers.is_started_u64 cycle_time current.time_mark in
 
-  let^ tx_ref = States.tx_ref_messages cfg local_time sync_state error cycle_time cycle_index
-    (trigger_enabled /\ trigger_type = const Tx_Ref_Trigger /\ Triggers.get_is_started fetch) in
+  let tx_ref = States.tx_ref_messages cfg local_time sync_state error cycle_time cycle_index
+    (trigger_enabled && trigger_type = Tx_Ref_Trigger && is_started) in
   tx_ref
 
-
+%splice[] (autolift_binds [`%trigger_ref])
 
 let controller'
   (cfg:           config)
-  (ref_ck:        S.stream bool)
-  (mode:          S.stream mode)
-  (cycle_time:    S.stream ntu)
-  (fetch:         S.stream Triggers.fetch_result)
-  (sync_state:    S.stream sync_mode)
+  (input:         stream driver_input)
+  (ref_ck:        stream bool)
+  (mode:          stream mode)
+  (cycle_time:    stream ntu)
+  (fetch:         stream Triggers.fetch_result)
+  (sync_state:    stream sync_mode)
   (error_CAN_Bus_Off:
-                  S.stream bool)
-  (error:         S.stream error_severity)
-  (tx_ref:        S.stream (Clocked.t ref_message))
-  (tx_app:        S.stream (Clocked.t app_message_index))
-  (tx_msc_upd:    S.stream (Clocked.t bool))
-  (rx_msc_upd:    S.stream (Clocked.t bool))
-    : S.stream controller_result =
-  let open S in
-  let^ trigger         = Triggers.get_trigger (Triggers.get_current fetch) in
-  let^ trigger_enabled = Triggers.get_enabled (Triggers.get_current fetch) in
-  let^ trigger_msg     = get_message_index trigger in
-  let^ trigger_type    = get_trigger_type  trigger in
+                  stream bool)
+  (error:         stream error_severity)
+  (tx_ref:        stream (Clocked.t ref_message))
+  (tx_app:        stream (Clocked.t can_buffer_id))
+  (tx_msc_upd:    stream (Clocked.t bool))
+  (rx_msc_upd:    stream (Clocked.t bool))
+    : stream controller_result =
+  let current         = fetch.current in
+  let trigger_enabled = current.enabled in
+  let trigger_msg     = fetch.message_index in
+  let trigger_type    = fetch.trigger_type in
+  let is_started      = Triggers.is_started_u64 cycle_time current.time_mark in
 
-  let^ msc_upd         = Clocked.or_else tx_msc_upd rx_msc_upd in
-  let^ msc             = MsgSt.message_status_counters trigger_msg msc_upd in
+  let msc_upd         = Clocked.or_else tx_msc_upd rx_msc_upd in
+  let msc             = MsgSt.message_status_counters trigger_msg msc_upd in
 
-  let^ tx_delay =
-    if_then_else (Triggers.get_is_started fetch)
-      (const 0uL)
-      U64.(cycle_time - S32R.s32r_to_u64 (get_time_mark trigger)) in
+  let tx_time_mark    = Triggers.trigger_absolute_time input.local_time cycle_time fetch.current.time_mark in
 
-  let^ watch_trigger =
-    trigger_type = const Watch_Trigger /\
-    trigger_enabled /\
-    Triggers.get_is_started fetch in
+  let watch_trigger =
+    trigger_type = Watch_Trigger &&
+    trigger_enabled &&
+    is_started in
 
   // watch trigger: seeing a watch_trigger is only an error if we have previously observed a reference message.
   // entering configure mode resets both error and previously-seen-ref
-  let^ error_Watch_Trigger_Reached = Util.latch {
-    reset = (mode = const Mode_Configure);
-    set   = Util.latch { reset = (mode = const Mode_Configure); set = ref_ck; } /\ watch_trigger
+  let error_Watch_Trigger_Reached = Util.latch {
+    reset = (mode = Mode_Configure);
+    set   = Util.latch { reset = (mode = Mode_Configure); set = ref_ck; } && watch_trigger
   } in
   // (restart any every (mode = Mode_Configure))(ref_ck) and watch_trigger,
   // mode = Mode_Configure);
 //   -- TODO: NOT SUPPORTED YET: Init_Watch_Trigger: requires a different failure mode, doesn't go to S3 as acks must be kept enabled
 
 
-  let^ error_Tx_Underflow =
+  let error_Tx_Underflow =
     // Check for underflow just before starting new cycle, reset if no underflow upon reaching next cycle
     Errors.cycle_end_check {
       reset = ref_ck;
-      set   = sync_state = const In_Schedule /\ S32R.(Triggers.get_tx_count fetch < const cfg.expected_tx_triggers);
+      set   = sync_state = In_Schedule && false // TODO tx_count: S32R.(fetch.tx_count < cfg.expected_tx_triggers);
     } in
 
-  let^ error_Tx_Overflow =
+  let error_Tx_Overflow =
     // Check for overflow any time, but only reset at new cycle if no overflows
     Errors.transient {
       reset = ref_ck;
-      set   = sync_state = const In_Schedule /\ S32R.(Triggers.get_tx_count fetch > const cfg.expected_tx_triggers);
+      set   = sync_state = In_Schedule && false // TODO tx_count: S32R.(fetch.tx_count > cfg.expected_tx_triggers);
     } in
 
   // Update MSC min/max-per-cycle whenever we update MSC.
   // should it also update whenever we see a new trigger that we aren't going to update the MSC for?
-  let^ error_Scheduling_Error_1 = Errors.scheduling_error_1 ref_ck
-  (if_then_else (Clocked.get_clock msc_upd) //  \/ (Triggers.get_is_new fetch /\ ~ trigger_enabled))
-    (Clocked.some msc)
-    Clocked.none) in
+  let error_Scheduling_Error_1 = Errors.scheduling_error_1 ref_ck
+  (if Clocked.get_clock msc_upd //  || (fetch.is_new && not trigger_enabled))
+   then Some msc
+   else None) in
 
 (*^9.3.4 Scheduling_Error_2 (S2) is set if for one transmit message object the MSC has reached 7. It is reset when no transmit object has an MSC of seven. *)
-  let^ error_Scheduling_Error_2 = Errors.transient {
+  let error_Scheduling_Error_2 = Errors.transient {
     reset = ref_ck;
-    set   = Clocked.get_clock tx_msc_upd /\ msc = S32R.s32r 7 /\ trigger_type = const Tx_Trigger;
+    set   = Clocked.get_clock tx_msc_upd && msc = S32R.s32r 7 && trigger_type = Tx_Trigger;
   } in
 
-  let^ fault_bits = fault_bits_new
-    error_Scheduling_Error_1
-    error_Tx_Underflow
-    error_Scheduling_Error_2
-    error_Tx_Overflow
-    error_CAN_Bus_Off
-    error_Watch_Trigger_Reached in
+  let fault_bits: stream fault_bits = {
+    scheduling_error_1 = error_Scheduling_Error_1;
+    tx_underflow = error_Tx_Underflow;
+    scheduling_error_2 = error_Scheduling_Error_2;
+    tx_overflow = error_Tx_Overflow;
+    can_bus_off = error_CAN_Bus_Off;
+    watch_trigger_reached = error_Watch_Trigger_Reached;
+  } in
 
-  let^ error = Errors.summary fault_bits in
-  let^ driver_enable_acks = (sync_state <> const Sync_Off) /\ (error <> const S3_Severe) in
+  let error = Errors.summary fault_bits in
+  let driver_enable_acks = (sync_state <> Sync_Off) && (error <> S3_Severe) in
 
-  controller_result_new error driver_enable_acks tx_ref tx_app tx_delay
+  { error; driver_enable_acks; tx_ref; tx_app; tx_time_mark; }
 
-
+%splice[] (autolift_binds [`%controller'])
 
 let controller
   (cfg:           config)
-  (input:         S.stream driver_input)
-  (ref_ck:        S.stream bool)
-  (mode:          S.stream mode)
-  (cycle_index:   S.stream cycle_index)
-  (cycle_time:    S.stream ntu)
-  (fetch:         S.stream Triggers.fetch_result)
-  (sync_state:    S.stream sync_mode)
+  (input:         stream driver_input)
+  (ref_ck:        stream bool)
+  (mode:          stream mode)
+  (cycle_index:   stream cycle_index)
+  (cycle_time:    stream ntu)
+  (fetch:         stream Triggers.fetch_result)
+  (sync_state:    stream sync_mode)
   (error_CAN_Bus_Off:
-                  S.stream bool)
-  (error:         S.stream error_severity)
-    : S.stream controller_result =
-  let open S in
-  let^ tx_ref = trigger_ref cfg (get_local_time input) (get_tx_status input) (get_bus_status input) cycle_index cycle_time fetch sync_state error in
-  let^ rx_msc_upd = trigger_rx (get_rx_app input) fetch in
-  let^ tx = trigger_tx (get_tx_status input) (get_bus_status input) fetch sync_state error in
-  controller' cfg ref_ck mode cycle_time fetch sync_state error_CAN_Bus_Off error tx_ref (fst tx) (snd tx) rx_msc_upd
+                  stream bool)
+  (error:         stream error_severity)
+    : stream controller_result =
+  let tx_ref = trigger_ref cfg input.local_time input.tx_status input.bus_status cycle_index cycle_time fetch sync_state error in
+  let rx_msc_upd = trigger_rx input.rx_app cycle_time fetch in
+  let tx = trigger_tx cfg input.tx_status input.bus_status cycle_time fetch sync_state error in
+  controller' cfg input ref_ck mode cycle_time fetch sync_state error_CAN_Bus_Off error tx_ref (fst tx) (snd tx) rx_msc_upd
+
+%splice[] (autolift_binds [`%controller])

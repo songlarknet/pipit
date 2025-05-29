@@ -1,0 +1,6 @@
+(lang dune 3.2)
+(name pipit_plugin)
+(package
+  (name pipit_plugin)
+  (synopsis "Pipit: reactive systems in F*")
+)
