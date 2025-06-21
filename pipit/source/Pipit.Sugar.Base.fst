@@ -88,7 +88,9 @@ let _mk_let (#t: table) (#ty1 #ty2: t.ty) (def: cexp t [] ty1) (body: cexp t [ty
     (*See note: disable CSE*)
     // let (def', s) = _mk_bind def s in
     // (CX.subst1 body def', s)
-    let e: cexp t [] ty2 = XLet _ def body in
+    let e = XLet _ def body in
+    assert (sealed true e);
+    assert (check_all PM.check_mode_valid e);
     (e, s)
 
 (*See note: disable CSE*)
@@ -175,7 +177,10 @@ let stream_of_exp1 (#t: table) (#a #b: t.ty) (e: cexp t [a] b) (sa: stream t a):
     (*See note: disable CSE*)
     // let (ax, s) = _mk_bind ax s in
     // (CX.subst1 e ax, s)
-    (XLet a ax e, s)
+    let e' = XLet a ax e in
+    assert (sealed true e');
+    assert (check_all PM.check_mode_valid e');
+    (e', s)
 
 [@@"opaque_to_smt"]
 let stream_of_exp2 (#t: table) (#a #b #c: t.ty) (e: cexp t [a; b] c) (sa: stream t a) (sb: stream t b): stream t c =
@@ -186,6 +191,8 @@ let stream_of_exp2 (#t: table) (#a #b #c: t.ty) (e: cexp t [a; b] c) (sa: stream
     // let (bx, s) = _mk_bind bx s in
     let ex = XLet b bx (XLet a (CX.weaken [b] ax) e) in
     // let ex = CX.subst1 (CX.subst1 e (CX.weaken [b] ax)) bx in
+    assert (sealed true ex);
+    assert (check_all PM.check_mode_valid ex);
     (ex, s)
 
 [@@"opaque_to_smt"]
@@ -198,8 +205,14 @@ let stream_of_exp3 (#t: table) (#a #b #c #d: t.ty) (e: cexp t [a; b; c] d) (sa: 
     let (cx, s) = sc s in
     // let (cx, s) = _mk_bind cx s in
     // let ex      = CX.subst1 (CX.subst1 (CX.subst1 e (CX.weaken [b; c] ax)) (CX.weaken [c] bx)) cx in
-    let ex = XLet c cx (XLet b (CX.weaken [c] bx) (XLet a (CX.weaken [b; c] ax) e)) in
-    (ex, s)
+    let ex0 = XLet a (CX.weaken [b; c] ax) e in
+    let ex1 = XLet b (CX.weaken [c] bx) ex0 in
+    let ex2 = XLet c cx ex1 in
+    assert (sealed true ex2);
+    assert (check_all PM.check_mode_valid ex0);
+    assert (check_all PM.check_mode_valid ex1);
+    assert (check_all PM.check_mode_valid ex2);
+    (ex2, s)
 
 (**** Binding combinators ****)
 [@@"opaque_to_smt"]

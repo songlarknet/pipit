@@ -21,8 +21,9 @@ include make/pipit/source.mk
 include make/pipit/example.mk
 include make/pipit/test.mk
 
-include make/pipit/plugin.mk
+# DISABLED disable plugins for now, makefile issues mean that compiling core etc depends on plugin, but plugin depends on core
+# include make/pipit/plugin.mk
 # FSTAR_EXTRA_OPT:=$(FSTAR_EXTRA_OPT) --debug Plugin.Test.Language.Lift --ext pipit:lift:debug=1
-include make/pipit/plugin-test.mk
+# include make/pipit/plugin-test.mk
 
 endif

@@ -298,6 +298,7 @@ let lemma_check_all_bless_contract (#t: table u#i u#j) (#c: context t) (#a: t.ty
   :
   Lemma (ensures check_all PM.check_mode_valid (XContract PM.PSUnknown r (bless g) (bless b))) =
   introduce forall rows.
+    (PM.prop_status_contains PM.check_mode_valid PM.PSUnknown ==> bigstep_always rows r) /\
     check PM.check_mode_valid rows r /\
     (bigstep_always rows r ==>
       (forall (vs: list (t.ty_sem a) { bigsteps_prop rows (bless b) vs}).

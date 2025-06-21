@@ -35,7 +35,7 @@ instance has_stream_unit: has_stream unit = {
 }
 
 instance has_stream_tup2 {| a: has_stream 'a |} {| b: has_stream 'b |}: has_stream ('a & 'b) = {
-  ty_id       = L.(`%Pervasives.tuple2 :: a.ty_id @ b.ty_id);
+  ty_id       = L.("tuple2:" :: a.ty_id @ b.ty_id);
   val_default = (a.val_default, b.val_default);
 }
 
