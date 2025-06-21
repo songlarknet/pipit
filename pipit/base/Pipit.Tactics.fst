@@ -31,7 +31,7 @@ let norm_phase_pre (namespaces: list string) =
   minimal normalisation. *)
 let norm_phase_post () =
   // XXX: does this need zeta_full to force descending into matches?
-  T.norm [delta_only [`%PipitRuntime.Prim.p'delay]]
+  T.norm [delta_only [`%PipitRuntime.Prim.p'delay]; iota; simplify; primops; nbe]
 
 let norm_full (namespaces: list string) =
   norm_phase_pre namespaces;

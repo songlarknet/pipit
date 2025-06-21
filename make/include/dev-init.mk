@@ -7,7 +7,7 @@ dev-init:
 	@echo "* Updating opam index"
 	@opam update
 	@echo "* Create a local opam switch with OCaml 4.14"
-	@opam switch create . 4.14.1
+	@opam switch create . 4.14.2
 	@echo "* Updating / initialising git submodules"
 	@git submodule update --init
 	@echo "* Pinning development version of F*"
