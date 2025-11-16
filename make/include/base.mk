@@ -1,8 +1,11 @@
-BUILD       ?= _build
+BUILD       		?= $(ROOT_DIR)/_build
+COMPONENT   		?= CALLER_MUST_SET_COMPONENT
+FSTAR_INC_DIRS 	?= CALLER_MUST_SET_FSTAR_INC_DIRS
+FSTAR_SRC_DIRS 	?= CALLER_MUST_SET_FSTAR_SRC_DIRS
+FSTAR_ALREADY_CACHED ?= CALLER_MUST_SET_FSTAR_ALREADY_CACHED
 
 FSTAR_EXE   ?= fstar.exe
 KARAMEL_EXE ?= krml
-Z3_EXE 	    ?= z3
 Q           ?= @
 
 # Set LAX=1 to disable proofs
@@ -11,51 +14,45 @@ FSTAR_MAYBE_LAX = $(if $(LAX),--lax)
 
 FSTAR_PROOF_OPT   ?=
 
-FSTAR_INC_DIRS = example/ example/ttcan/ \
-	pipit/test/ \
-	pipit/rts/fstar/ \
-	pipit/base/ \
-	pipit/core/ pipit/abstract/ pipit/extract/ \
-	pipit/source/ \
-	pipit/plugin/fst/ pipit/plugin-test/
-
-FSTAR_SRC_DIRS = $(FSTAR_INC_DIRS)
-
-
-FSTAR_INCLUDES	  ?= $(addprefix --include ,$(FSTAR_INC_DIRS))
-FSTAR_CACHE       ?= --cache_dir $(BUILD)/cache --cache_checked_modules --already_cached Prims,FStar,LowStar
-FSTAR_HINTS       ?= --hint_dir $(BUILD)/hint --use_hints --record_hints
+FSTAR_ALL_INC_DIRS ?= $(addprefix $(PIPIT_DIR)/,$(FSTAR_INC_DIRS)) $(FSTAR_SRC_DIRS)
+# FSTAR_ALL_INC_DIRS ?= $(patsubst %,$(BUILD)/%/cache,$(FSTAR_INC_DIRS)) $(addprefix $(PIPIT_DIR)/,$(FSTAR_INC_DIRS)) $(FSTAR_SRC_DIRS)
+FSTAR_INCLUDES	  ?= $(addprefix --include ,$(FSTAR_ALL_INC_DIRS))
+FSTAR_CACHE       ?= --cache_dir $(BUILD)/cache --cache_checked_modules --already_cached Prims,FStar,LowStar,$(FSTAR_ALREADY_CACHED)
 
 FSTAR_DEP_OPT     ?= $(FSTAR_INCLUDES) $(FSTAR_CACHE)
 
 FSTAR_EXTRA_OPT   ?=
 FSTAR_OPT		  ?= $(FSTAR_INCLUDES) $(FSTAR_PROOF_OPT) $(FSTAR_CACHE) $(FSTAR_EXTRA_OPT) $(FSTAR_MAYBE_LAX) $(FSTAR_HINTS)
 
-FSTAR_SRCS = $(wildcard $(addsuffix *.fst,$(FSTAR_SRC_DIRS)) $(addsuffix *.fsti,$(FSTAR_SRC_DIRS)))
+FSTAR_SRCS = $(wildcard $(addsuffix /*.fst,$(FSTAR_SRC_DIRS)) $(addsuffix /*.fsti,$(FSTAR_SRC_DIRS)))
+
+all: verify
+.PHONY: all
 
 
-%/deps.mk.rsp:
-	@mkdir -p $(shell dirname $@)
+%/deps.mk: $(FSTAR_SRCS)
+	@echo "[$(COMPONENT)] Updating dependencies"
+	@mkdir -p $(dir $@)
+	$(Q) $(FSTAR_EXE) $(FSTAR_DEP_OPT) --dep full $(FSTAR_SRCS) -o $@
 
-.PRECIOUS: %/deps.mk.rsp
-
-# Unfortunately this is pretty slow... it takes 2.5s to update all dependencies, which needs to happen whenever any source file changes.
-# They can all be done in parallel though, so it's only 1s with -j8.
-%/deps.mk: %/deps.mk.rsp $(FSTAR_SRCS)
-	@echo "* Updating dependencies for $@"
-	@true $(shell rm -f $@.rsp) $(foreach f,$(FSTAR_SRCS),$(shell echo $(f) >> $@.rsp))
-	$(Q) $(FSTAR_EXE) $(FSTAR_DEP_OPT) --dep full @$@.rsp > $@.tmp
-	@mv $@.tmp $@
+include $(BUILD)/$(COMPONENT)/deps.mk
 
 .PHONY: clean
 clean:: clean-deps
-	@echo "* Cleaning *.checked"
+	@echo "[$(COMPONENT)] Cleaning *.checked"
 	@rm -f $(BUILD)/cache/*.checked
-	@echo "* Cleaning *.extract"
+	@echo "[$(COMPONENT)] Cleaning *.extract"
 	@rm -f $(BUILD)/*.extract
 
 .PHONY: clean-deps
 clean-deps:
-	@echo "* Cleaning deps"
+	@echo "[$(COMPONENT)] Cleaning deps"
 	@rm -f $(BUILD)/*/deps.mk
-	@rm -f $(BUILD)/*/deps.mk.rsp
+
+%.fst.checked:
+	@echo "[$(COMPONENT)] Checking: $<"
+	$(Q)$(FSTAR_EXE) $(FSTAR_OPT) $<
+	@touch -c $@
+
+.PHONY: verify
+verify: $(ALL_CHECKED_FILES)
