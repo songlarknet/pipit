@@ -63,10 +63,7 @@ The local configuration in `pipit.fst.config.json` will use the local `opam` swi
 
 ## Build instructions
 
-Use `make -j8` to check the proofs.
-
-~~Use `make extract -j8` to extract C code for the Pump example; the extracted C code is written to `build/extract`.~~
-(*The extraction is disabled for now (2025/11/16), as I haven't yet gotten the updated karamel to build on MacOS.*)
+Use `make -j8` to check the proofs. This will also extract C code for the Pump example.
 
 The embedded system that actually runs the Pump example is in the [app-pipit-pump repository](https://github.com/songlarknet/app-pipit-pump); it uses the Zephyr RTOS.
 
