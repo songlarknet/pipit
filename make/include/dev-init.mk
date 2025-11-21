@@ -12,5 +12,5 @@ dev-init:
 	@opam install fstar.2025.10.06 --yes --no-depexts
 # 	@opam pin add fstar fstar.v2025.10.06 git+https://github.com/FStarLang/FStar.git#v2025.10.06 --no-action
 # 	@echo "* Pinning development version of karamel; building"
-# 	@opam pin add karamel git+https://github.com/FStarLang/karamel.git --yes --no-depexts
+	@opam pin add karamel git+https://github.com/songlarknet/karamel.git#master --yes --no-depexts
 # no-depexts is required for Linux without Python 2.7 apt package

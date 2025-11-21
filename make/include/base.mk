@@ -42,7 +42,7 @@ clean:: clean-deps
 	@echo "[$(COMPONENT)] Cleaning *.checked"
 	@rm -f $(BUILD)/cache/*.checked
 	@echo "[$(COMPONENT)] Cleaning *.extract"
-	@rm -f $(BUILD)/*.extract
+	@rm -f $(BUILD)/cache/*.extract
 
 .PHONY: clean-deps
 clean-deps:
@@ -50,7 +50,7 @@ clean-deps:
 	@rm -f $(BUILD)/*/deps.mk
 
 %.fst.checked:
-	@echo "[$(COMPONENT)] Checking: $<"
+	@echo "[$(COMPONENT)] Checking: $< $@"
 	$(Q)$(FSTAR_EXE) $(FSTAR_OPT) $<
 	@touch -c $@
 
