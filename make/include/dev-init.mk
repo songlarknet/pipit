@@ -9,7 +9,7 @@ dev-init:
 	@echo "* Create a local opam switch with OCaml 4.14"
 	@opam switch create . 4.14.2
 # 	@echo "* Pinning development version of F*"
-	@opam install fstar.2025.10.06 --yes --no-depexts
+	@opam install fstar.2025.10.06 --yes --no-depexts --no-action
 # 	@opam pin add fstar fstar.v2025.10.06 git+https://github.com/FStarLang/FStar.git#v2025.10.06 --no-action
 # 	@echo "* Pinning development version of karamel; building"
 	@opam pin add karamel git+https://github.com/songlarknet/karamel.git#master --yes --no-depexts
