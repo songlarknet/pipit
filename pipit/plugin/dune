@@ -1,7 +1,7 @@
 (library
- (name pipit_plugin)
- (public_name pipit_plugin)
- (libraries fstar.lib)
+ (name pipit)
+ (public_name pipit)
+ (libraries fstar.lib fstar.pluginlib fstar.compiler)
  (modes native)
  ; (wrapped false)
  (flags (:standard -w -A))

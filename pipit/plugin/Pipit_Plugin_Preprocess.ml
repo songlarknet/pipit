@@ -1,15 +1,16 @@
+open Fstarcompiler
 open FStar_Pervasives
 
-module FCE  = FStar_Compiler_Effect
-module FPA  = FStar_Parser_AST
-module FPAU = FStar_Parser_AST_Util
-module FI   = FStar_Ident
-module FC   = FStar_Const
+module FCE  = FStarC_Compiler_Effect
+module FPA  = FStarC_Parser_AST
+module FPAU = FStarC_Parser_AST_Util
+module FI   = FStarC_Ident
+module FC   = FStarC_Const
 
 let rec pat_is_strm_rec (p: FPA.pattern): bool =
   match p.pat with
   | PatWild _ | PatConst _ | PatVar _
-  | PatName _ | PatTvar _
+  | PatName _
   | PatList _
   | PatTuple _
   | PatRecord _
@@ -33,12 +34,12 @@ let rec mk_lets r binds body =
   match binds with
   | [] -> body
   | b :: binds ->
-    FPA.mk_term (FPA.Let (FPA.NoLetQualifier, [b], mk_lets r binds body)) r FPA.Expr
+    FPA.mk_term (FPA.Let (FPA.LocalNoLetQualifier, [b], mk_lets r binds body)) r FPA.Expr
 
 let rec mk_rec_snds t id0 index: FPA.term =
   let open FPA in
   if index = 0
-  then { t with tm = Tvar id0 }
+  then { t with tm = Var id0 }
   else
     let x0 = mk_rec_snds t id0 (index - 1) in
     let snd = { t with tm = FPA.Name (FI.lid_of_str "snd")} in
@@ -54,7 +55,7 @@ let rec pre_term (t: FPA.term): FPA.term =
   let go2 (t,i) = (pre_term t, i) in
 
   match t.tm with
-  | Wild | Const _ | Tvar _ | Uvar _
+  | Wild | Const _ | Uvar _
   | Var _ | Name _ | Projector _
   -> t
   | Op (i,ts) ->
@@ -70,7 +71,7 @@ let rec pre_term (t: FPA.term): FPA.term =
     { t with tm = App (pre_term a, pre_term b, c)}
 
   (* todo mut recs  *)
-  | Let (Rec, [(attrs, (pat, def))], body)
+  | Let (LocalRec, [(attrs, (pat, def))], body)
     when pat_is_strm_rec pat && tm_is_strm_rec def
     ->
       let _, _, pat = Pipit_Plugin_Support.mode_of_pattern pat in
@@ -78,10 +79,10 @@ let rec pre_term (t: FPA.term): FPA.term =
       let abs = {t with tm = FPA.Abs ([pat], def) } in
       let rec' = { t with tm = FPA.Name (Pipit_Plugin_Support.rec_lid t.range) } in
       let rec_app = { t with tm = FPA.App (rec', abs, FPA.Nothing) } in
-      let letrec = { t with tm = FPA.Let (FPA.NoLetQualifier, [(attrs, (pat, rec_app))], pre_term body) } in
+      let letrec = { t with tm = FPA.Let (FPA.LocalNoLetQualifier, [(attrs, (pat, rec_app))], pre_term body) } in
       letrec
 
-  | Let (Rec, binds, body)
+  | Let (LocalRec, binds, body)
     when List.for_all (fun (a,(p,t)) -> pat_is_strm_rec p && tm_is_strm_rec t) binds
     -> pre_letrecs t binds body
 
@@ -159,7 +160,8 @@ let rec pre_term (t: FPA.term): FPA.term =
     let pat0: FPA.pattern = { pat = FPA.PatVar (id0, None, []); prange = r } in
     let pats = List.map (fun (a,(p,t)) ->
       let (_m,_x,p) = Pipit_Plugin_Support.mode_of_pattern p in p) binds in
-    let exts = List.mapi (fun i _ -> mk_rec_extract t id0 i) binds in
+    let lid0 = FI.lid_of_ids [id0] in
+    let exts = List.mapi (fun i _ -> mk_rec_extract t lid0 i) binds in
     let ext_binds = List.map2 (fun p e -> (None, (p, e))) pats exts in
     let attrs = attr_cons Stream r None in
     (* TODO subst in ext_binds *)
@@ -200,7 +202,7 @@ let mk_splice (pat: FPA.pattern) (mode: Pipit_Plugin_Support.mode): FPA.decl' =
   } in
   Splice (false, [fresh], tac_abs)
 
-let pre_decl (r: FStar_Compiler_Range.range) (d: FPA.decl) =
+let pre_decl (r: FStarC_Range.range) (d: FPA.decl) =
   match d.d with
   | TopLevelLet (NoLetQualifier, [pat, tm]) ->
     let (pm, _x, pp) = Pipit_Plugin_Support.mode_of_pattern pat in
@@ -225,7 +227,7 @@ let pre_decl (r: FStar_Compiler_Range.range) (d: FPA.decl) =
   | _ -> Inr [d]
 
 
-let rec pre_decls_acc (r: FStar_Compiler_Range.range) (ds: FPA.decl list) (acc: FPA.decl list):
+let rec pre_decls_acc (r: FStarC_Range.range) (ds: FPA.decl list) (acc: FPA.decl list):
   (FPAU.error_message, FPA.decl list) either =
   match ds with
   | [] -> Inr acc
@@ -234,6 +236,6 @@ let rec pre_decls_acc (r: FStar_Compiler_Range.range) (ds: FPA.decl list) (acc: 
     | Inl err -> Inl err
     | Inr d -> pre_decls_acc r ds (acc @ d)
 
-let pre_decls (r: FStar_Compiler_Range.range) (ds: FPA.decl list):
+let pre_decls (r: FStarC_Range.range) (ds: FPA.decl list):
   (FPAU.error_message, FPA.decl list) either =
   pre_decls_acc r ds []

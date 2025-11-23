@@ -1,8 +1,10 @@
-module FI   = FStar_Ident
-module FC   = FStar_Const
+open Fstarcompiler
 
-open FStar_Parser_AST
-open FStar_Compiler_Range
+module FI   = FStarC_Ident
+module FC   = FStarC_Const
+
+open FStarC_Parser_AST
+open FStarC_Range
 
 let fatal (r: range) (str: string) =
   failwith ("Pipit: fatal: " ^ str ^ " (" ^ string_of_range r ^ ")")
@@ -92,7 +94,7 @@ let mk_modefuns (ms: (mode * binder) list) (ty: term) ((md, mt): mode option * t
 let rec mode_of_type (t: term): (mode option * term) =
   let nop = None, t in
   match t.tm with
-  | Wild | Const _ | Op _ | Tvar _ | Uvar _ | Name _ -> nop
+  | Wild | Const _ | Op _ | Uvar _ | Name _ -> nop
   | Projector _ -> nop
   | Var lid ->
     if FI.string_of_lid lid = "stream"
@@ -128,8 +130,8 @@ let rec mode_of_type (t: term): (mode option * term) =
 
 and
   mode_of_binder b = match b.b with
-   | Variable _ | TVariable _ -> None, b
-   | Annotated (i, ty) | TAnnotated (i, ty) ->
+   | Variable _ -> None, b
+   | Annotated (i, ty) ->
       let m, ty = mode_of_type ty in
       m, { b with b = Annotated (i, ty) }
    | NoName ty ->
@@ -170,18 +172,16 @@ let rec mode_of_pattern (p: pattern): (mode * bool * pattern) =
 
   | PatWild (None, _)
   | PatVar (_, None, _)
-  | PatTvar (_, None, _)
   -> Static, true, p
   | PatWild (Some _, _)
   | PatVar (_, Some _, _)
-  | PatTvar (_, Some _, _)
   -> Static, false, p
 
   | _ -> Static, true, p
 
 let rec mode_of_term (t: term): mode option =
   match t.tm with
-  | Wild | Const _ | Op _ | Tvar _ | Uvar _ 
+  | Wild | Const _ | Op _ | Uvar _ 
   | Var _ | Name _ | Projector _ | Construct _
   -> None
   | Abs (ps, body) ->
