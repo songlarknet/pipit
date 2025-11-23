@@ -1,11 +1,13 @@
 module PPP  = Pipit_Plugin_Preprocess
 module PPT  = Pipit_Plugin_Lift
 
-module FPA  = FStar_Parser_AST
-module FPAU = FStar_Parser_AST_Util
-module FPPI = FStar_Parser_ParseIt
+open Fstarcompiler
 
-let parse_decls (contents: string) (r: FStar_Compiler_Range.range)
+module FPA  = FStarC_Parser_AST
+module FPAU = FStarC_Parser_AST_Util
+module FPPI = FStarC_Parser_ParseIt
+
+let parse_decls (contents: string) (r: FStarC_Range.range)
 : (FPAU.error_message, FPA.decl list) FStar_Pervasives.either =
   let res = FPPI.parse_fstar_incrementally.parse_decls contents r in
   match res with
