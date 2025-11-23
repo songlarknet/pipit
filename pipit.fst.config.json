@@ -1,4 +1,4 @@
 { "fstar_exe":"_opam/bin/fstar.exe",
   "options":["--cache_dir", "_build/cache"],
-  "include_dirs":["example", "example/ttcan", "pipit/rts/fstar", "pipit/abstract", "pipit/base", "pipit/core", "pipit/extract", "pipit/source", "pipit/test"]
+  "include_dirs":["example", "example/ttcan", "pipit/rts/fstar", "pipit/abstract", "pipit/base", "pipit/core", "pipit/extract", "pipit/source", "pipit/test", "pipit/plugin/fst", "pipit/plugin/_build/default", "pipit/plugin-test"]
 }

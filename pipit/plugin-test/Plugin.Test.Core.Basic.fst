@@ -17,7 +17,7 @@ instance has_stream_int: Pipit.Sugar.Shallow.Base.has_stream int = {
 }
 
 instance has_stream_option (#a: eqtype) {| PSSB.has_stream a |}: PSSB.has_stream (option a) = {
-  ty_id       = `%Pervasives.option :: PSSB.ty_id #a;
+  ty_id       = `%Pervasives.Native.option :: PSSB.ty_id #a;
   val_default = None;
 }
 
