@@ -1,6 +1,7 @@
 _build/
 .fst.config.json
 .vscode/
+.github/
 *.DS_Store
 _opam
 shelve/
