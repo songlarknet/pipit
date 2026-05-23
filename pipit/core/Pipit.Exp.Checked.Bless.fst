@@ -15,8 +15,6 @@ module PM = Pipit.Prop.Metadata
 
 module List = FStar.List.Tot
 
-open FStar.Squash
-
 #set-options "--fuel 1 --ifuel 1 --split_queries always"
 
 (*** Bindings and substitution ***)
@@ -181,9 +179,10 @@ let rec lemma_bless_of_bigstep_always (#t: table) (#c: context t) (streams: list
   match streams with
   | [] -> ()
   | s :: s' ->
-    let hB: squash (bigstep (s :: s') e true) = () in
-    let hB: squash (bigstep streams (bless e) true) =
-      (bind_squash hB (fun hB -> return_squash (lemma_bless_of_bigstep hB)))
+    let hB: bigstep_prop (s :: s') e true = () in
+    let hB: bigstep_prop streams (bless e) true =
+      FStar.Classical.exists_elim (bigstep_prop streams (bless e) true) hB (fun (hB': bigstep (s :: s') e true) ->
+        FStar.Classical.exists_intro (fun (h: bigstep streams (bless e) true) -> True) (lemma_bless_of_bigstep hB'))
     in
     lemma_bless_of_bigstep_always s' e;
     ()
@@ -214,8 +213,20 @@ let lemma_bigsteps_prop_of_bless (#t: table) (#c: context t) (#a: t.ty)
       bigsteps_prop streams e vs
     ))
     =
-    bind_squash () (fun (hB: (bigsteps streams (bless e) vs)) ->
-      return_squash (lemma_bigsteps_of_bless streams e vs hB))
+    let hB: bigsteps_prop streams (bless e) vs = () in
+    FStar.Classical.exists_elim (bigsteps_prop streams e vs) hB (fun (hBS: bigsteps streams (bless e) vs) ->
+      FStar.Classical.exists_intro (fun (h: bigsteps streams e vs) -> True) (lemma_bigsteps_of_bless streams e vs hBS))
+
+let lemma_bigsteps_same_length_of_bless (#t: table) (#c: context t) (#a: t.ty)
+  (streams: list (row c))
+  (e: exp t c a)
+  (vs: list (t.ty_sem a)):
+  Lemma
+    (requires (bigsteps_same_length streams (bless e) vs))
+    (ensures (bigsteps_same_length streams e vs))
+    =
+    lemma_bigsteps_prop_of_bless streams e vs;
+    assert (List.length streams == List.length vs)
 
 (*** Checked semantics properties ***)
 let rec lemma_check_bless (#t: table) (#c: context t) (#a: t.ty) (streams: list (row c)) (e: exp t c a):
@@ -300,29 +311,29 @@ let lemma_check_all_bless_contract (#t: table u#i u#j) (#c: context t) (#a: t.ty
   :
   Lemma (ensures check_all PM.check_mode_valid (XContract PM.PSUnknown r (bless g) (bless b))) =
   introduce forall rows.
-    (PM.prop_status_contains PM.check_mode_valid PM.PSUnknown ==> bigstep_always rows r) /\
-    check PM.check_mode_valid rows r /\
-    (bigstep_always rows r ==>
-      (forall (vs: list (t.ty_sem a) { bigsteps_prop rows (bless b) vs}).
-        (PM.prop_status_contains PM.check_mode_valid PM.PSValid ==>
-          bigstep_always (CR.extend1 vs rows) (bless g)) /\
-        check PM.check_mode_valid (CR.extend1 vs rows) (bless g) /\
-        check PM.check_mode_valid rows (bless b)))
+    check PM.check_mode_valid rows (XContract PM.PSUnknown r (bless g) (bless b))
   with (
+    assert (check PM.check_mode_valid rows r);
     introduce bigstep_always rows r ==>
-      (forall (vs: list (t.ty_sem a) { bigsteps_prop rows (bless b) vs}).
+      (forall (vs: list (t.ty_sem a) { bigsteps_same_length rows (bless b) vs }).
         (PM.prop_status_contains PM.check_mode_valid PM.PSValid ==>
           bigstep_always (CR.extend1 vs rows) (bless g)) /\
         check PM.check_mode_valid (CR.extend1 vs rows) (bless g) /\
         check PM.check_mode_valid rows (bless b))
     with pf. (
-      introduce forall (vs: list (t.ty_sem a) { bigsteps_prop rows (bless b) vs}).
+      introduce forall (vs: list (t.ty_sem a) { bigsteps_same_length rows (bless b) vs }).
         bigstep_always (CR.extend1 vs rows) (bless g) /\
         check PM.check_mode_valid (CR.extend1 vs rows) (bless g) /\
         check PM.check_mode_valid rows (bless b)
       with (
-        lemma_bigsteps_prop_of_bless rows b vs;
-        assert (bigstep_always (CR.extend1 vs rows) g);
+        lemma_bigsteps_same_length_of_bless rows b vs;
+        assert (check PM.check_mode_valid rows b);
+        assert (check PM.check_mode_valid (CR.extend1 vs rows) g);
+        assert (
+          check PM.check_mode_unknown rows b /\
+          check PM.check_mode_unknown (CR.extend1 vs rows) g /\
+          bigstep_always (CR.extend1 vs rows) g
+        );
         lemma_check_bless rows b;
         lemma_check_bless (CR.extend1 vs rows) g;
         lemma_bless_of_bigstep_always (CR.extend1 vs rows) g

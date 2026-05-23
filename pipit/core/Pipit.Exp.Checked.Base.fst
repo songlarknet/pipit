@@ -28,12 +28,12 @@ let rec check (#t: table u#i u#j) (#c: context t) (#a: t.ty)
     check mode rows e1
   | XMu e1 ->
     // Extend environment to include recursive value of e1; check subexpression
-    forall (vs: list (t.ty_sem a) { bigsteps_prop rows (XMu e1) vs }).
+    forall (vs: list (t.ty_sem a) { bigsteps_same_length rows (XMu e1) vs }).
       check mode (CR.extend1 vs rows) e1
   | XLet b e1 e2 ->
     // Check e1, then use e1's values to check e2
     check mode rows e1 /\
-    (forall (vs: list (t.ty_sem b) { bigsteps_prop rows e1 vs}).
+    (forall (vs: list (t.ty_sem b) { bigsteps_same_length rows e1 vs }).
       check mode (CR.extend1 vs rows) e2)
   | XCheck ps e1 ->
     // Check that property evaluates to trues.
@@ -52,7 +52,7 @@ let rec check (#t: table u#i u#j) (#c: context t) (#a: t.ty)
     check mode rows rely /\
     // Contract definition assumes rely is trues:
     (bigstep_always rows rely ==>
-      (forall (vs: list (t.ty_sem a) { bigsteps_prop rows body vs}).
+      (forall (vs: list (t.ty_sem a) { bigsteps_same_length rows body vs }).
         // If rely and we are in contract-check-definition mode, then guarantee is trues
         bigstep_always (CR.extend1 vs rows) guar /\
         // If rely is trues and any mode, then check sub-properties of guar
@@ -83,7 +83,7 @@ let check_all_apps (#t: table u#i u#j) (#c: context t) (#a: funty t.ty) (mode: P
 let contract_valid (#t: table u#i u#j) (#c: context t) (#a: t.ty)
   (rely: exp t c t.propty) (guar: exp t (a::c) t.propty) (body: exp t c a): prop =
   forall (streams: list (row c)).
-  forall (vs: list (t.ty_sem a) { bigsteps_prop streams body vs }).
+  forall (vs: list (t.ty_sem a) { bigsteps_same_length streams body vs }).
   check PM.check_mode_valid streams rely ==>
   check PM.check_mode_valid streams body ==>
   check PM.check_mode_valid (CR.extend1 vs streams) guar ==>
