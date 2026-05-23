@@ -38,13 +38,13 @@ let rec fir (coeffs: list int):
   bibo_contract (sum_abs coeffs) =
   match coeffs with
   | [] ->
-    let ret = Check.exp_of_stream1 (fun _ -> const 0) in
+    let unfold ret = Check.exp_of_stream1 (fun _ -> const 0) in
 
     assert (Check.contract_system_induct_k1' bibo_rely (bibo_guar 0) ret) by (T.norm_full ["Fir"]);
     Check.contract_of_exp1 _ _ ret
   | c :: coeffs' ->
     let fir': bibo_contract (sum_abs coeffs') = fir coeffs' in
-    let ret = Check.exp_of_stream1 (fun input ->
+    let unfold ret = Check.exp_of_stream1 (fun input ->
       (input *^ const c) +^ Check.stream_of_contract1 fir' (fby 0 input)) in
 
     assert (sum_abs coeffs == r_abs c + sum_abs coeffs');

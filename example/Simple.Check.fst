@@ -36,7 +36,7 @@ let count_when_prop_body (e: bools): units =
   check "count_when e     <= count_when true"  (count_when_e     <=^ count_when_true)
 
 let count_when_prop: bools -> units =
-  let e = Check.exp_of_stream1 count_when_prop_body in
+  let unfold e = Check.exp_of_stream1 count_when_prop_body in
   assert (Check.system_induct_k1 e) by (T.norm_full ["Simple"]);
   Check.stream_of_checked1 e
 
@@ -45,9 +45,9 @@ type sum_contract = Check.contract Vanilla.table [Vanilla.TInt] Vanilla.TInt
   (Check.exp_of_stream2 (fun sum i -> sum >^ (0 `fby` sum)))
 
 let sum: sum_contract =
-  let r = (Check.exp_of_stream1 (fun i -> i >^ z0)) in
-  let g = (Check.exp_of_stream2 (fun sum i -> sum >^ (0 `fby` sum))) in
-  let e = Check.exp_of_stream1 (fun i ->
+  let unfold r = (Check.exp_of_stream1 (fun i -> i >^ z0)) in
+  let unfold g = (Check.exp_of_stream2 (fun sum i -> sum >^ (0 `fby` sum))) in
+  let unfold e = Check.exp_of_stream1 (fun i ->
     rec' (fun sum -> (0 `fby` sum) +^ i)
   ) in
   assert (Check.contract_system_induct_k1' r g e) by (T.norm_full ["Simple"]);
@@ -59,7 +59,7 @@ let test_sum (i: ints) =
   check "sum is increasing" (sarg >^ (0 `fby` sarg))
 
 let test_sum_ =
-  let e = Check.exp_of_stream1 test_sum in
+  let unfold e = Check.exp_of_stream1 test_sum in
   assert (Check.system_induct_k1 e) by (T.norm_full ["Simple"]);
   Check.stream_of_checked1 e
 

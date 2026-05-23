@@ -4,7 +4,7 @@ MAKEFLAGS := --jobs=$(NUM_JOBS)
 ROOT_DIR = $(realpath .)
 export ROOT_DIR
 
-all: abstract base core plugin plugin-test source rts
+all: abstract base core plugin plugin-test source test example rts
 .PHONY: all abstract base core extract plugin plugin-test source test rts example
 
 clean:
@@ -53,12 +53,12 @@ source: core abstract
 source-%:
 	@$(MAKE) -C pipit/source $(patsubst source-%,%,$@)
 
-test: extract source
+test: source
 	@$(MAKE) -C pipit/test
 test-%:
 	@$(MAKE) -C pipit/test $(patsubst test-%,%,$@)
 
-example: extract source
+example: source
 	@$(MAKE) -C example
 example-%:
 	@$(MAKE) -C example $(patsubst example-%,%,$@)
