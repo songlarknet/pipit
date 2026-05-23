@@ -101,7 +101,7 @@ let prim_arith_sem (p: prim_arith) (at: arithtype): funty_sem ty_sem (prim_arith
   (match p with
   | P'A'Add -> fun x y -> x + y
   | P'A'Sub -> fun x y -> x - y
-  | P'A'Mul -> fun x y -> Prims.op_Multiply x y
+  | P'A'Mul -> fun x y -> x * y
   | P'A'Lt  -> fun x y -> x <  y
   | P'A'Le  -> fun x y -> x <= y
   | P'A'Gt  -> fun x y -> x >  y

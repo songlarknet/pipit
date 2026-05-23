@@ -182,8 +182,8 @@ let bigsteps_prop (#t: table u#i u#j) (#c: context t) (#a: t.ty)
   (rows: list (row c))
   (e: exp t c a)
   (vs: list (t.ty_sem a)) =
-  List.length rows == List.length vs /\
-  squash (bigsteps rows e vs)
+  squash (List.length rows == List.length vs) &
+  bigsteps rows e vs
 
 let rec bigstep_always (#t: table u#i u#j) (#c: context t)
   (rows: list (row c))

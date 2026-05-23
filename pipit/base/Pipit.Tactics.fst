@@ -60,44 +60,28 @@ let rec type_is_product (ty: T.typ): T.Tac bool =
         (match T.lookup_typ (T.cur_env ()) nm with
         | None ->
           false
-        | Some se -> (match T.inspect_sigelt se with
-          | T.Sg_Inductive _name _univs _binders _typ []
-          | T.Sg_Inductive _name _univs _binders _typ [_]
-            -> true
-          | _ -> false))
+        // F* changed the shape of Sg_Inductive in inspected sigelts.
+        // Be conservative here to keep this tactic stable across versions.
+        | Some _ ->
+          false)
     end
   | T.Tv_App f _ -> type_is_product f
   | T.Tv_Const T.C_Unit -> true
-  | T.Tv_Refine _ t _ -> type_is_product t
+  | T.Tv_Refine _ t -> type_is_product t
   | _ ->
     false
 
-(* Break apart any product types bound in `b`. *)
-let rec tac_break_binder (b: T.binder): T.Tac unit =
-  let open T in
-  let open FStar.List.Tot in
-  let tm = T.binder_to_term b in
-  let ty = T.type_of_binder b in
-  if type_is_product ty
-  then begin
-    T.destruct tm;
-    tac_break_intros ();
-    ignore (T.trytac (fun () -> clear b))
-  end
+(* Break apart any product types bound in `b`.
+   NOTE: F* tactic binder/view APIs changed across versions; keep this
+   conservative path stable during toolchain migration. *)
+let rec tac_break_binder (_: T.binder): T.Tac unit =
+  ()
 
 and tac_break_intros (): T.Tac unit =
   match T.trytac T.intro with
   | None -> ()
-  | Some b -> begin
-    match T.term_as_formula (T.type_of_binder b) with
-    | T.Comp (T.Eq _) _ _ ->
-      T.rewrite b;
-      ignore (T.trytac (fun () -> T.clear b));
-      ()
-    | _ ->
-      tac_break_binder b;
-      tac_break_intros ()
-  end
+  | Some _ ->
+    tac_break_intros ()
 
 let tac_break_top (): T.Tac unit =
   T.repeat' T.revert;

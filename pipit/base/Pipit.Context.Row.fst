@@ -7,12 +7,12 @@ module C = Pipit.Context.Base
 let rec row (l: C.context eqtype): eqtype =
   match l with
   | [] -> unit
-  | t :: ts -> t * row ts
+  | t :: ts -> t & row ts
 
 let rec index (l: C.context eqtype) (r: row l) (i: C.index_lookup l): C.get_index l i =
   match l with
   | t :: ts ->
-    let r': t * row (List.tl l) = r in
+    let r': t & row (List.tl l) = r in
     match r' with
     | (r0, rs) ->
       if i = 0
