@@ -63,7 +63,7 @@ let lemma_cexp_xlet
     check PM.check_mode_valid rows (XLet ty1 def body)
   with (
     assert (check PM.check_mode_valid rows def);
-    introduce forall (vs: list (t.ty_sem ty1) { bigsteps_prop rows def vs }).
+    introduce forall (vs: list (t.ty_sem ty1) { bigsteps_same_length rows def vs }).
       check PM.check_mode_valid (CR.extend1 vs rows) body
     with (
       assert (check PM.check_mode_valid (CR.extend1 vs rows) body)

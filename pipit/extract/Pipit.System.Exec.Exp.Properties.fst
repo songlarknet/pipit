@@ -42,7 +42,7 @@ let rec system_of_exp_invariant
     let s: SB.option_type_sem (SB.type_join (Some (t.ty_sem a)) (EX.estate_of_exp e2)) = s in
     (match rows with
     | [] -> SB.type_join_fst s == v1
-    | _ :: _ -> XB.bigstep rows e2 (SB.type_join_fst s)) /\ system_of_exp_invariant rows e2 (SB.type_join_snd s)
+    | _ :: _ -> XB.bigstep_prop rows e2 (SB.type_join_fst s)) /\ system_of_exp_invariant rows e2 (SB.type_join_snd s)
 
   | XMu e1 ->
     system_of_exp_invariant (CR.extend1 (XC.lemma_bigsteps_total_vs rows e) rows) e1 s
@@ -88,11 +88,9 @@ let rec step_invariant_init
     | XBase _ -> ()
 
     | XApps e1 ->
-      step_apps_invariant_init e1 (fun r () -> r);
-      let t' = E.esystem_with_input (fun r -> ((), r)) (EX.esystem_of_exp_apps e1 (fun r () -> r)) in
-      assert (EX.esystem_of_exp (XApps e1) == t')
-        by (T.norm [delta; nbe; primops; iota; zeta];
-            T.trefl ());
+      let f0: funty_sem t.ty_sem (FTVal a) -> unit -> funty_sem t.ty_sem (FTVal a) = SX.system_of_exp_apps_const in
+      step_apps_invariant_init e1 f0;
+      assert_norm ((EX.esystem_of_exp (XApps e1)).init == (EX.esystem_of_exp_apps e1 f0).init);
       ()
 
     | XFby v1 e2 ->

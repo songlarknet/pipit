@@ -5,8 +5,6 @@ open Pipit.Prim.Table
 open Pipit.Exp.Base
 open Pipit.System.Exp.Check.Base
 
-open FStar.Squash
-
 module SXCA = Pipit.System.Exp.Check.Assumptions
 module SXCO = Pipit.System.Exp.Check.Obligations
 
@@ -151,7 +149,7 @@ let rec check_of_sealed
   | XMu e1 ->
     let rows' = CR.extend1 (XC.lemma_bigsteps_total_vs rows (XMu e1)) rows in
     check_of_sealed rows' e1;
-    introduce forall (vs: list (t.ty_sem a) { XB.bigsteps_prop rows (XMu e1) vs }).
+    introduce forall (vs: list (t.ty_sem a) { XB.bigsteps_same_length rows (XMu e1) vs }).
       XK.check PM.check_mode_unknown (CR.extend1 vs rows) e1
     with
       XB.bigsteps_deterministic_squash rows (XMu e1) vs (XC.lemma_bigsteps_total_vs rows (XMu e1));
@@ -160,7 +158,7 @@ let rec check_of_sealed
     check_of_sealed rows e1;
     let rows' = CR.extend1 (XC.lemma_bigsteps_total_vs rows e1) rows in
     check_of_sealed rows' e2;
-    introduce forall (vs: list (t.ty_sem b) { XB.bigsteps_prop rows e1 vs }).
+    introduce forall (vs: list (t.ty_sem b) { XB.bigsteps_same_length rows e1 vs }).
       XK.check PM.check_mode_unknown (CR.extend1 vs rows) e2
     with
       XB.bigsteps_deterministic_squash rows e1 vs (XC.lemma_bigsteps_total_vs rows e1);
@@ -174,7 +172,7 @@ let rec check_of_sealed
     assert (XB.bigstep_always rows' eg);
     check_of_sealed rows eb;
     check_of_sealed rows' eg;
-    introduce forall (vs: list (t.ty_sem a) { XB.bigsteps_prop rows eb vs }).
+    introduce forall (vs: list (t.ty_sem a) { XB.bigsteps_same_length rows eb vs }).
       XK.check PM.check_mode_unknown (CR.extend1 vs rows) eg
     with
       XB.bigsteps_deterministic_squash rows eb vs (XC.lemma_bigsteps_total_vs rows eb);
@@ -229,7 +227,7 @@ let rec check_base_unknown_of_check_invariant
 
     check_base_unknown_of_check_invariant rows' e1;
 
-    introduce forall (vs: list (t.ty_sem a) { XB.bigsteps_prop rows (XMu e1) vs }).
+    introduce forall (vs: list (t.ty_sem a) { XB.bigsteps_same_length rows (XMu e1) vs }).
       XK.check PM.check_mode_unknown (CR.extend1 vs rows) e1
     with
       XB.bigsteps_deterministic_squash rows (XMu e1) vs (XC.lemma_bigsteps_total_vs rows (XMu e1));
@@ -243,7 +241,7 @@ let rec check_base_unknown_of_check_invariant
     assert (check_invariant PM.check_mode_unknown rows' e2);
     check_base_unknown_of_check_invariant rows' e2;
 
-    introduce forall (vs: list (t.ty_sem b) { XB.bigsteps_prop rows e1 vs }).
+    introduce forall (vs: list (t.ty_sem b) { XB.bigsteps_same_length rows e1 vs }).
       XK.check PM.check_mode_unknown (CR.extend1 vs rows) e2
     with
       XB.bigsteps_deterministic_squash rows e1 vs (XC.lemma_bigsteps_total_vs rows e1);
@@ -258,7 +256,7 @@ let rec check_base_unknown_of_check_invariant
     let rows' = CR.extend1 (XC.lemma_bigsteps_total_vs rows eb) rows in
     check_base_unknown_of_check_invariant rows' eg;
 
-    introduce forall (vs: list (t.ty_sem a) { XB.bigsteps_prop rows eb vs }).
+    introduce forall (vs: list (t.ty_sem a) { XB.bigsteps_same_length rows eb vs }).
       XK.check PM.check_mode_unknown (CR.extend1 vs rows) eg
     with
       XB.bigsteps_deterministic_squash rows eb vs (XC.lemma_bigsteps_total_vs rows eb);
