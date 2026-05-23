@@ -27,8 +27,8 @@ There are examples available in the `example` subdirectory ([readme](example/rea
 Pipit requires F\* and Karamel for generating C code.
 Pipit uses [opam](https://opam.ocaml.org/), the OCaml package manager.
 
-Pipit requires a recent development version of F\*.
-We maintain a fork with the right version at [https://github.com/songlarknet/FStar/tree/pipit](songlarknet/FStar).
+Pipit requires development versions of F\* and Karamel.
+The `make dev-init` target pins both dependencies to explicit commit hashes for reproducibility.
 
 ### Dependency installation
 
@@ -38,6 +38,13 @@ If you are running a modern Linux distribution, such as the latest release of Ub
 The makefile target `make dev-init` will initialise a local development environment.
 This will print a message telling you which versions of Z3 to install.
 You can install them by running [FStar:.scripts/get_fstar_z3](https://github.com/FStarLang/FStar/blob/master/.scripts/get_fstar_z3.sh).
+
+The pinned dependency commits are configured in `make/include/dev-init.mk` via:
+
+* `FSTAR_PIN_REPO` and `FSTAR_PIN_HASH`
+* `KARAMEL_PIN_REPO` and `KARAMEL_PIN_HASH`
+
+To bump dependencies, update those hash variables to the desired commits.
 
 #### MacOS
 

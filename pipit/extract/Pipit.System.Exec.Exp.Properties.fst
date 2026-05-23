@@ -234,7 +234,10 @@ and step_apps_invariant_step
   | XApp e1 e2 ->
     let XB.BSApp _ _ _ v1 v2 hBS1 hBS2 = hBS in
     let f' = SX.system_of_exp_apps_distr f in
+    assert_norm (EX.estate_of_exp_apps (XApp e1 e2) == SB.type_join (EX.estate_of_exp e2) (EX.estate_of_exp_apps e1));
     let s: SB.option_type_sem (SB.type_join (EX.estate_of_exp e2) (EX.estate_of_exp_apps e1)) = s in
+    assert (system_of_exp_invariant rows e2 (SB.type_join_fst s));
+    assert (system_of_exp_apps_invariant rows e1 (SB.type_join_snd s));
     step_invariant_step      rows row1 e2 v2 hBS2 (SB.type_join_fst s);
     step_apps_invariant_step rows row1 e1 v1 hBS1 f' (v2, inp0) (SB.type_join_snd s)
 
