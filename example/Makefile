@@ -1,9 +1,8 @@
 ROOT_DIR 				?= ..
 PIPIT_DIR 			?= ../pipit
 COMPONENT   		?= example
-FSTAR_INC_DIRS 	?= base core rts/fstar abstract source extract
+FSTAR_INC_DIRS 	?= base core rts/fstar abstract extract source
 FSTAR_SRC_DIRS 	?= . ttcan
-FSTAR_SRCS 		?= Fir.Check.fst Fir.CheckN.fst Pump.Check.fst Pump.Extract.fst Simple.Check.fst Simple.Extract.fst $(wildcard ttcan/*.fst)
 FSTAR_ALREADY_CACHED ?=
 
 
