@@ -9,8 +9,6 @@ module Network.TTCan.Abstract.Schedule
 
 module List       = FStar.List.Tot
 
-open FStar.Mul
-
 #push-options "--fuel 1 --ifuel 1"
 
 (*

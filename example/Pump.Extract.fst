@@ -1,5 +1,8 @@
 (* Compiling a simple example to C.
    The program to translate is defined in Pump.Check.fst. *)
+(* NOTE: Extraction currently requires substantial boilerplate; this got worse
+   with recent toolchain upgrades. We plan to generate this wrapper code
+   automatically soon. *)
 module Pump.Extract
 
 module Pump = Pump.Check

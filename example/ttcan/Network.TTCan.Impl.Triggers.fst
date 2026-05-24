@@ -66,9 +66,11 @@ instance has_stream_fetch_result: S.has_stream fetch_result = {
 }
 
 (**** Non-streaming helper functions ****)
+noextract
 let trigger_load_raw (cfg: config) (ix: trigger_index): trigger =
   cfg.triggers.trigger_read ix
 
+noextract
 let trigger_load (cfg: config) (ix: trigger_index) (ref_trigger_offset: ref_offset): trigger =
   // do not inline index function into use-sites for extraction
   // XXX: this should not be necessary if we ensure extraction doesn't inline trigger_load / trigger_offset
