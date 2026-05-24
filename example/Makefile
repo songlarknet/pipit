@@ -1,9 +1,9 @@
 ROOT_DIR 				?= ..
 PIPIT_DIR 			?= ../pipit
 COMPONENT   		?= example
-FSTAR_INC_DIRS 	?= base core rts/fstar abstract source
+FSTAR_INC_DIRS 	?= base core rts/fstar abstract source extract
 FSTAR_SRC_DIRS 	?= .
-FSTAR_SRCS 		?= ./Fir.Check.fst ./Fir.CheckN.fst ./Pump.Check.fst ./Simple.Check.fst
+FSTAR_SRCS 		?= ./Fir.Check.fst ./Fir.CheckN.fst ./Pump.Check.fst ./Pump.Extract.fst ./Simple.Check.fst ./Simple.Extract.fst
 FSTAR_ALREADY_CACHED ?=
 
 
