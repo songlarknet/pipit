@@ -42,11 +42,12 @@ let core_lifted_prim = ()
 irreducible
 let proof_induct1 = ()
 
-(* Negative-test variant of `proof_induct1`. Synthesises the same
-  `__check_<id>` binding but tags it with `[@@expect_failure]`, so the
-  module typechecks only when 1-induction fails to discharge the source's
-  `check`s. Useful for confirming that the synthesised check actually
-  rejects bogus properties. *)
+(* Modifier for a `proof_*` attribute: the synthesised proof obligation is
+  expected to *fail*. The synthesised `__check_<id>` is tagged with
+  `[@@expect_failure]`, so the module typechecks only when the proof
+  method fails to discharge the source's `check`s. Useful for confirming
+  that a property is genuinely not provable by the chosen method.
+  Usage: `[@@proof_induct1; proof_expect_failure]`. *)
 irreducible
-let proof_induct1_expect_failure = ()
+let proof_expect_failure = ()
 

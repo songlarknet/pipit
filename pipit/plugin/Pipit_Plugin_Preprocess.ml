@@ -290,16 +290,13 @@ let pre_decl (r: FStarC_Range.range) (d: FPA.decl) =
       let tm = pre_term tm in
       (* prerr_endline (FPA.term_to_string tm); *)
       let splice = { d with d = mk_splice pat pm; attrs = []; quals = [] } in
-      let src_attrs =
-        Pipit_Plugin_Support.drop_proof_induct1_attr
-          (Pipit_Plugin_Support.drop_proof_induct1_expect_failure_attr d.attrs)
-      in
+      let parsed = Pipit_Plugin_Attributes.parse_attributes d.attrs in
+      let src_attrs = Pipit_Plugin_Attributes.drop_plugin_attrs d.attrs in
       let proof_check =
-        if Pipit_Plugin_Support.has_proof_induct1_attr d.attrs
-        then [mk_check_induct1_decl pat pm false r]
-        else if Pipit_Plugin_Support.has_proof_induct1_expect_failure_attr d.attrs
-        then [mk_check_induct1_decl pat pm true r]
-        else []
+        match parsed.proof with
+        | Some Pipit_Plugin_Attributes.Induct1 ->
+          [mk_check_induct1_decl pat pm parsed.proof_expect_failure r]
+        | None -> []
       in
       Inr ([{ d with d = TopLevelLet (NoLetQualifier, [pp, tm]); attrs = attr :: src_attrs };
             splice] @ proof_check)

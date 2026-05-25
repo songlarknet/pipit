@@ -51,9 +51,10 @@ let count_when_prop_body2 (e f: stream bool): stream unit =
 
 (* Negative test: this property is *not* an invariant of count_when
   (count_when e starts at 0, so count_when e > 0 is false at step 0).
-  [@@proof_induct1_expect_failure] synthesises a __check binding tagged
-  with [@@expect_failure], so the module typechecks iff the check fails. *)
-[@@proof_induct1_expect_failure]
+  [@@proof_induct1; proof_expect_failure] synthesises a __check binding
+  tagged with [@@expect_failure], so the module typechecks iff the check
+  fails. *)
+[@@proof_induct1; proof_expect_failure]
 let count_when_prop_body_fail (e: stream bool): stream unit =
   let count_when_e = count_when e in
   check (count_when_e > 0)
