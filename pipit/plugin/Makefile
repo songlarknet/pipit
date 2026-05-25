@@ -22,7 +22,7 @@ plugin: $(BUILD)/plugin/fst.extract
 
 $(BUILD)/plugin/fst.extract: $(ALL_CHECKED_FILES)
 	@echo "[$(COMPONENT)] Extracting F*"
-	$(Q)$(FSTAR_EXE) $(FSTAR_OPT) --extract $(FSTAR_EXTRACT_MODULES) --codegen Plugin --odir $(BUILD)/plugin/fst $(FSTAR_ALL_SRCS)
+	$(Q)$(FSTAR_EXE) $(FSTAR_OPT) --ext fly_deps=false --extract $(FSTAR_EXTRACT_MODULES) --codegen Plugin --odir $(BUILD)/plugin/fst $(FSTAR_ALL_SRCS)
 	@touch $@
 
 

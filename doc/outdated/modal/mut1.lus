@@ -1,0 +1,41 @@
+
+
+fby (c: const 'a; d: 'a)
+returns (e: 'a)
+let
+  r: ref 'a = rec c {
+    d;
+  };
+  e = !(pre r);
+tel
+
+buf.update1(sz: const nat; c: const 'a; ix: nat; val: 'a)
+returns (bf: buf sz 'a)
+let
+  ...
+tel
+
+
+circ_buf (sz: const nat; c: const 'a; d: 'a)
+returns (circ: ro circ_buf 'a)
+let
+  ix: nat = (0 fby ix + 1) % sz;
+
+  r: buf sz 'a = buf.update1 sz c {
+    ix -> d;
+  }
+  
+  circ = (ro r, ix, sz)
+tel
+
+circ_ix (circ: ro circ_buf 'a; ix: nat)
+returns (elt: 'a)
+let
+  elt = circ.buf((circ.ix + ix) % circ.sz)
+tel
+
+map_inc(b: ro buf nat)
+let
+  incs: buf nat = buf.unstream {{ b(countfrom(0)) + 1 }}
+  xs: buf nat = incs
+tel

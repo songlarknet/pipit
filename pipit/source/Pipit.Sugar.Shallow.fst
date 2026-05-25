@@ -166,6 +166,6 @@ module Lift = Pipit.Sugar.Shallow.Tactics.Lift
 *)
 [@@Lift.lifted; Lift.of_source(`%Lift.lemma_pattern)]
 let lemma_pattern: stream unit -> stream unit =
-  let e = Check.exp_of_stream1 (fun pat -> check "" (pat = const ())) in
+  let unfold e = Check.exp_of_stream1 (fun pat -> check "" (pat = const ())) in
   assert (Check.system_induct_k 0 e) by (T.norm_full []);
   Check.stream_of_checked1 e

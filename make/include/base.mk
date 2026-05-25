@@ -31,7 +31,7 @@ all: verify
 .PHONY: all
 
 
-%/deps.mk: $(FSTAR_SRCS)
+%/deps.mk: $(FSTAR_SRCS) Makefile $(ROOT_DIR)/make/include/base.mk
 	@echo "[$(COMPONENT)] Updating dependencies"
 	@mkdir -p $(dir $@)
 	$(Q) $(FSTAR_EXE) $(FSTAR_DEP_OPT) --dep full $(FSTAR_SRCS) -o $@

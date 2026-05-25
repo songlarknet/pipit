@@ -29,8 +29,8 @@ let eg_check_trivial (x: int) =
 
 [@@core_of_source (`%eg_check_trivial) (ModeFun Stream true Stream)]
 let eg_check_trivial_check: PXB.exp PPS.table [PSSB.shallow int] (PSSB.shallow int) =
-  let e = eg_check_trivial_core in
-  let sys = SX.system_of_exp e in
+  let unfold e = eg_check_trivial_core in
+  let unfold sys = SX.system_of_exp e in
   assert (SI.induct1 sys) by (PT.norm_full []);
   PXCB.bless e
 
@@ -45,9 +45,11 @@ let eg_check_false (x: int) =
 
 [@@core_of_source (`%eg_check_false) (ModeFun Stream true Stream); expect_failure]
 let eg_check_false_check: PXB.exp PPS.table [PSSB.shallow int] (PSSB.shallow int) =
-  let e = eg_check_false_core in
-  let sys = SX.system_of_exp e in
-  assert (SI.induct1 sys) by (PT.norm_full []);
+  let unfold e = eg_check_false_core in
+  let unfold sys = SX.system_of_exp e in
+  assert (SI.induct1 sys) by (
+    PT.norm_full []
+  );
   PXCB.bless e
 
 // Lemma instantiation not supported; use a pattern instead

@@ -13,8 +13,6 @@ module UInt8      = FStar.UInt8
 module UInt64     = FStar.UInt64
 module Cast       = FStar.Int.Cast
 
-open FStar.Mul
-
 (* We assume a total, safe indexing function for triggers.
   The actual implementation will likely be backed by a read-only array. Since
   we only support at most 64 triggers, it doesn't really hurt to allocate space

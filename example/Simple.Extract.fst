@@ -1,14 +1,17 @@
 (* Compiling a simple example to C.
    The program to translate is defined in Simple.Check.fst. *)
+(* NOTE: Extraction currently requires substantial boilerplate; this got worse
+   with recent toolchain upgrades. We plan to generate this wrapper code
+   automatically soon. *)
 module Simple.Extract
 
 module Simple = Simple.Check
 
 module XX  = Pipit.Exec.Exp
-module XL  = Pipit.Exec.LowStar
-
+module XL  = Pipit.Exec.Pulse
 
 module Tac = FStar.Tactics
+
 
 module SugarBase = Pipit.Sugar.Base
 module Sugar = Pipit.Sugar.Vanilla
@@ -44,13 +47,12 @@ let system: XX.esystem (bool & unit) int result =
   assert_norm (XX.extractable expr);
   XX.exec_of_exp expr
 
-
 (* Define the reset function, which takes a pointer to the internal state and
    initialises it. *)
 [@@(Tac.postprocess_with (XL.tac_extract ["Simple"]))]
-let reset = XL.mk_reset system
+let reset = XL.mk_reset (XL.mk_init system)
 
 (* Define the step function, which takes two input booleans and a pointer to the
    internal state, and returns the result as a pair. *)
 [@@(Tac.postprocess_with (XL.tac_extract ["Simple"]))]
-let step (inp: bool) = XL.mk_step system (inp, ())
+let step (inp: bool) = XL.mk_step (fun i st -> XL.mk_step_pure system (i, ()) st) inp

@@ -126,11 +126,9 @@ let rec invariant_init
   | XBase _ -> ()
 
   | XApps e1 ->
-    step_apps_invariant_init e1 (fun r () -> r);
-    let t' = SB.system_with_input (fun r -> ((), r)) (SX.system_of_exp_apps e1 (fun r () -> r)) in
-    assert (SX.system_of_exp (XApps e1) == t')
-      by (T.norm [delta; nbe; primops; iota; zeta];
-          T.trefl ());
+    let f0: funty_sem t.ty_sem (FTVal a) -> unit -> funty_sem t.ty_sem (FTVal a) = SX.system_of_exp_apps_const in
+    step_apps_invariant_init e1 f0;
+    assert_norm ((SX.system_of_exp (XApps e1)).init == (SX.system_of_exp_apps e1 f0).init);
     ()
 
   | XFby v1 e2 ->
@@ -222,6 +220,8 @@ and step_apps_oracle
     let orcl1 = step_apps_oracle rows e1 in
     SB.type_join_tup #(SX.oracle_of_exp e2) #(SX.oracle_of_exp_apps e1) orcl2 orcl1
 
+#push-options "--z3rlimit_factor 5"
+
 let rec invariant_step
   (#t: table) (#c: context t) (#a: t.ty)
   (rows: list (row c))
@@ -236,7 +236,10 @@ let rec invariant_step
   | XBase _ -> ()
 
   | XApps e1 ->
-    invariant_step_apps rows row1 e1 SX.system_of_exp_apps_const () s
+    assert_norm (SX.state_of_exp (XApps e1) == SX.state_of_exp_apps e1);
+    let s: SB.option_type_sem (SX.state_of_exp_apps e1) = s in
+    let f0: funty_sem t.ty_sem (FTVal a) -> unit -> funty_sem t.ty_sem (FTVal a) = SX.system_of_exp_apps_const in
+    invariant_step_apps rows row1 e1 f0 () s
 
   | XFby v1 e2 ->
     let s: SB.option_type_sem (SB.type_join (Some (t.ty_sem a)) (SX.state_of_exp e2)) = s in
@@ -298,6 +301,8 @@ and invariant_step_apps
       let stp = (SX.system_of_exp_apps e f).step (inp0, row1) (step_apps_oracle (row1 :: rows) e) s in
       system_of_exp_apps_invariant (row1 :: rows) e stp.s);
     ()
+
+#pop-options
 
 
 let rec system_invariant_many

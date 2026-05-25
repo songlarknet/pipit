@@ -171,19 +171,31 @@ type bigsteps (#t: table u#i u#j) (#c: context t) (#a: t.ty): list (row c) -> ex
     vs: list (t.ty_sem a)               ->
     row: row c                          ->
     v: t.ty_sem a                       ->
-    bigsteps        rows  e      vs     ->
+    bigsteps       rows  e      vs     ->
     bigstep  (row :: rows) e  v         ->
     bigsteps (row :: rows) e (v :: vs)
 
-
-(* Many-bigstep is a Type, but a prop is useful for extending the context.
-  Extending the context also requires the lengths to match *)
 let bigsteps_prop (#t: table u#i u#j) (#c: context t) (#a: t.ty)
   (rows: list (row c))
   (e: exp t c a)
   (vs: list (t.ty_sem a)) =
-  List.length rows == List.length vs /\
-  squash (bigsteps rows e vs)
+  exists (h: bigsteps rows e vs). True
+
+
+(* Many-bigstep is a Type, but a prop is useful for extending the context.
+  Extending the context also requires the lengths to match *)
+let bigsteps_same_length (#t: table u#i u#j) (#c: context t) (#a: t.ty)
+  (rows: list (row c))
+  (e: exp t c a)
+  (vs: list (t.ty_sem a)) =
+  bigsteps_prop rows e vs /\
+  List.length rows == List.length vs
+
+let bigstep_prop (#t: table u#i u#j) (#c: context t) (#a: t.ty)
+  (rows: list (row c))
+  (e: exp t c a)
+  (v: t.ty_sem a) =
+  exists (h: bigstep rows e v). True
 
 let rec bigstep_always (#t: table u#i u#j) (#c: context t)
   (rows: list (row c))
@@ -191,19 +203,17 @@ let rec bigstep_always (#t: table u#i u#j) (#c: context t)
   match rows with
   | [] -> True
   | row1 :: rows' ->
-    // XXX: squash: bigstep_always shows up in refinements, so it's useful to have it as prop.
-    // If this causes issues, try lifting to Type; requires changing Pipit.Exp.Checked.Base too
-    squash (bigstep rows e true) /\
+    bigstep_prop rows e true /\
     bigstep_always rows' e
 
 let bigstep_always_cons (#t: table u#i u#j) (#c: context t)
   (rows: list (row c))
   (row1: row c)
   (e: exp t c t.propty): Lemma
-    (bigstep_always (row1 :: rows) e <==> (squash (bigstep (row1 :: rows) e true) /\ bigstep_always rows e))
+    (bigstep_always (row1 :: rows) e <==> (bigstep_prop (row1 :: rows) e true /\ bigstep_always rows e))
     [SMTPat (bigstep_always (row1 :: rows) e)]
      =
-  assert (bigstep_always (row1 :: rows) e <==> (squash (bigstep (row1 :: rows) e true) /\ bigstep_always rows e))
+  assert (bigstep_always (row1 :: rows) e <==> (bigstep_prop (row1 :: rows) e true /\ bigstep_always rows e))
     by (FStar.Tactics.norm [delta_only [`%bigstep_always]; zeta; iota]);
   ()
 
@@ -319,12 +329,12 @@ let bigstep_deterministic_squash
   (e: exp t c a)
   (v1 v2: t.ty_sem a):
     Lemma
-      (requires (bigstep streams e v1 /\ bigstep streams e v2))
+      (requires (bigstep_prop streams e v1 /\ bigstep_prop streams e v2))
       (ensures (v1 == v2)) =
-  FStar.Squash.bind_squash #(bigstep streams e v1) ()
-    (fun (a: bigstep streams e v1) ->
-  FStar.Squash.bind_squash #(bigstep streams e v2) #(v1 == v2) ()
-    (fun (b: bigstep streams e v2) ->
+  let h1: bigstep_prop streams e v1 = () in
+  let h2: bigstep_prop streams e v2 = () in
+  FStar.Classical.exists_elim (v1 == v2) h1 (fun (a: bigstep streams e v1) ->
+    FStar.Classical.exists_elim (v1 == v2) h2 (fun (b: bigstep streams e v2) ->
       bigstep_deterministic a b))
 
 
@@ -336,10 +346,10 @@ let bigsteps_deterministic_squash
   (e: exp t c a)
   (vs1 vs2: list (t.ty_sem a)):
     Lemma
-      (requires (bigsteps streams e vs1 /\ bigsteps streams e vs2))
+      (requires (bigsteps_prop streams e vs1 /\ bigsteps_prop streams e vs2))
       (ensures (vs1 == vs2)) =
-  FStar.Squash.bind_squash #(bigsteps streams e vs1) ()
-    (fun (a: bigsteps streams e vs1) ->
-  FStar.Squash.bind_squash #(bigsteps streams e vs2) #(vs1 == vs2) ()
-    (fun (b: bigsteps streams e vs2) ->
+  let h1: bigsteps_prop streams e vs1 = () in
+  let h2: bigsteps_prop streams e vs2 = () in
+  FStar.Classical.exists_elim (vs1 == vs2) h1 (fun (a: bigsteps streams e vs1) ->
+    FStar.Classical.exists_elim (vs1 == vs2) h2 (fun (b: bigsteps streams e vs2) ->
       bigsteps_proof_equivalence a b))

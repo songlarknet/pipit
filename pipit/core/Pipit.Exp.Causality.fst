@@ -663,7 +663,7 @@ let lemma_bigstep_total_v
   (#c: context t)
   (#a: t.ty)
   (rows: list (row c) { Cons? rows }) (e: exp t c a { causal e }):
-    v: t.ty_sem a { bigstep rows e v } =
+    v: t.ty_sem a { bigstep_prop rows e v } =
   let (| v, _ |) = lemma_bigstep_total rows e in
   v
 

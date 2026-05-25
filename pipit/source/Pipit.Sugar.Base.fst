@@ -18,10 +18,12 @@ module Pipit.Sugar.Base
 open Pipit.Prim.Table
 
 open Pipit.Exp.Base
+open Pipit.Exp.Bigstep
 open Pipit.Exp.Checked.Base
 open Pipit.Exp.Checked.Compound
 
 module C  = Pipit.Context.Base
+module CR = Pipit.Context.Row
 module CX = Pipit.Exp.Checked.Compound
 module CB = Pipit.Exp.CollectBinds
 module PM = Pipit.Prop.Metadata
@@ -46,6 +48,27 @@ let _state0 (t: table): _state t = { fresh = 0; } // binds = []; }
 
 type _m      (t: table) (a: Type)       = _state t -> (a & _state t)
 type _s_apps (t: table) (a: funty t.ty) = _m t (cexp_apps t [] a)
+
+let lemma_cexp_xlet
+  (#t: table) (#c: context t) (#ty1 #ty2: t.ty)
+  (def: cexp t c ty1)
+  (body: cexp t (ty1 :: c) ty2)
+  : Lemma
+      (ensures
+        check_all PM.check_mode_valid (XLet ty1 def body) /\
+        sealed true (XLet ty1 def body))
+  =
+  assert (sealed true (XLet ty1 def body));
+  introduce forall (rows: list (row c)).
+    check PM.check_mode_valid rows (XLet ty1 def body)
+  with (
+    assert (check PM.check_mode_valid rows def);
+    introduce forall (vs: list (t.ty_sem ty1) { bigsteps_same_length rows def vs }).
+      check PM.check_mode_valid (CR.extend1 vs rows) body
+    with (
+      assert (check PM.check_mode_valid (CR.extend1 vs rows) body)
+    )
+  )
 
 (**** Exposed types: delayed streams and primitives ****)
 type stream  (t: table) (a: t.ty)       = _m t (cexp      t [] a)
@@ -83,14 +106,13 @@ let _freshs (#t: table) (ty: t.ty): stream t ty =
 //       (XBase (XVar x), s)
 
 [@@"opaque_to_smt"]
-let _mk_let (#t: table) (#ty1 #ty2: t.ty) (def: cexp t [] ty1) (body: cexp t [ty1] ty2): _m t (cexp t [] ty2) =
+let _mk_let (#t: table) (#c: context t) (#ty1 #ty2: t.ty) (def: cexp t c ty1) (body: cexp t (ty1 :: c) ty2): _m t (cexp t c ty2) =
   fun s ->
     (*See note: disable CSE*)
     // let (def', s) = _mk_bind def s in
     // (CX.subst1 body def', s)
     let e = XLet _ def body in
-    assert (sealed true e);
-    assert (check_all PM.check_mode_valid e);
+    lemma_cexp_xlet def body;
     (e, s)
 
 (*See note: disable CSE*)
@@ -177,10 +199,7 @@ let stream_of_exp1 (#t: table) (#a #b: t.ty) (e: cexp t [a] b) (sa: stream t a):
     (*See note: disable CSE*)
     // let (ax, s) = _mk_bind ax s in
     // (CX.subst1 e ax, s)
-    let e' = XLet a ax e in
-    assert (sealed true e');
-    assert (check_all PM.check_mode_valid e');
-    (e', s)
+    _mk_let ax e s
 
 [@@"opaque_to_smt"]
 let stream_of_exp2 (#t: table) (#a #b #c: t.ty) (e: cexp t [a; b] c) (sa: stream t a) (sb: stream t b): stream t c =
@@ -189,10 +208,9 @@ let stream_of_exp2 (#t: table) (#a #b #c: t.ty) (e: cexp t [a; b] c) (sa: stream
     // let (ax, s) = _mk_bind ax s in
     let (bx, s) = sb s in
     // let (bx, s) = _mk_bind bx s in
-    let ex = XLet b bx (XLet a (CX.weaken [b] ax) e) in
+    let (ex0, s) = _mk_let (CX.weaken [b] ax) e s in
+    let (ex, s)  = _mk_let bx ex0 s in
     // let ex = CX.subst1 (CX.subst1 e (CX.weaken [b] ax)) bx in
-    assert (sealed true ex);
-    assert (check_all PM.check_mode_valid ex);
     (ex, s)
 
 [@@"opaque_to_smt"]
@@ -205,13 +223,9 @@ let stream_of_exp3 (#t: table) (#a #b #c #d: t.ty) (e: cexp t [a; b; c] d) (sa: 
     let (cx, s) = sc s in
     // let (cx, s) = _mk_bind cx s in
     // let ex      = CX.subst1 (CX.subst1 (CX.subst1 e (CX.weaken [b; c] ax)) (CX.weaken [c] bx)) cx in
-    let ex0 = XLet a (CX.weaken [b; c] ax) e in
-    let ex1 = XLet b (CX.weaken [c] bx) ex0 in
-    let ex2 = XLet c cx ex1 in
-    assert (sealed true ex2);
-    assert (check_all PM.check_mode_valid ex0);
-    assert (check_all PM.check_mode_valid ex1);
-    assert (check_all PM.check_mode_valid ex2);
+    let (ex0, s) = _mk_let (CX.weaken [b; c] ax) e s in
+    let (ex1, s) = _mk_let (CX.weaken [c] bx) ex0 s in
+    let (ex2, s) = _mk_let cx ex1 s in
     (ex2, s)
 
 (**** Binding combinators ****)

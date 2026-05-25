@@ -162,7 +162,7 @@ let entailment_contract_all
     ))
   =
     introduce
-      forall (rows: list (row c)) (vs: list (t.ty_sem a) { XB.bigsteps_prop rows b vs }).
+      forall (rows: list (row c)) (vs: list (t.ty_sem a) { XB.bigsteps_same_length rows b vs }).
       XB.bigstep_always rows r ==>
       XK.check PM.check_mode_valid rows r ==>
       XK.check PM.check_mode_valid rows b ==>

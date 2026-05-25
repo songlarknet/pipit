@@ -1,0 +1,17 @@
+const CONST_I: int = 255;
+
+type T = subrange [0, CONST_I] of int;
+
+node TupleAssignmentWithWeirdSubrange(
+  reset_ck:           bool;
+) returns (
+  trigger_enabled:    bool;
+  trigger_index:      T;
+  next_enabled:       bool;
+  next_index:         T;
+)
+let
+  (trigger_enabled, trigger_index) =
+    (next_enabled, next_index) ->
+    pre (trigger_enabled, trigger_index);
+tel

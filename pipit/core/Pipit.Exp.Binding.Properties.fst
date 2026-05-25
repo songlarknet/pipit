@@ -126,6 +126,7 @@ let lemma_lift_subst_distribute_le_base (#a: ('t).ty) (#c: context 't) (e: exp_b
   | XVal _ -> ()
   | XVar _ -> ()
   | XBVar i -> ()
+  | _ -> ()
 
 #pop-options
 

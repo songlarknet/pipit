@@ -1,18 +1,18 @@
 (* Compiling a simple example to C.
    The program to translate is defined in Pump.Check.fst. *)
+(* NOTE: Extraction currently requires substantial boilerplate; this got worse
+   with recent toolchain upgrades. We plan to generate this wrapper code
+   automatically soon. *)
 module Pump.Extract
 
 module Pump = Pump.Check
 
 module XX  = Pipit.Exec.Exp
-module XL  = Pipit.Exec.LowStar
+module XL  = Pipit.Exec.Pulse
 
 module Tac = FStar.Tactics
 
 module SugarBase = Pipit.Sugar.Base
-module Sugar = Pipit.Sugar.Vanilla
-
-module PPV = Pipit.Prim.Vanilla
 
 (* We will translate just the controller node with two input streams (estop and
    level). We do not want the expression's internal representation to show up in
@@ -49,12 +49,24 @@ let system: XX.esystem (bool & (bool & unit)) state result =
   assert_norm (XX.extractable expr);
   XX.exec_of_exp expr
 
+let tac_extract_full_pump () =
+   XL.tac_extract_full_strong_generic ["Pump"] [] ()
+
+[@@(Tac.postprocess_with tac_extract_full_pump)]
+noextract
+inline_for_extraction
+let step_apply (inp: input) (st: state): (state & result) =
+   XL.mk_step_pure system (inp.estop, (inp.level_low, ())) st
+
+let tac_specialize_pump () =
+   XL.tac_specialize_strong_generic ["Pump"] [] ()
+
 (* Define the reset function, which takes a pointer to the internal state and
    initialises it. *)
-[@@(Tac.postprocess_with (XL.tac_extract ["Pump"]))]
-let reset = XL.mk_reset system
+[@@(Tac.postprocess_with tac_specialize_pump)]
+let reset = XL.mk_reset_sys system
 
 (* Define the step function, which takes two input booleans and a pointer to the
    internal state, and returns the result as a pair. *)
-[@@(Tac.postprocess_with (XL.tac_extract ["Pump"]))]
-let step (inp: input) = XL.mk_step system (inp.estop, (inp.level_low, ()))
+[@@(Tac.postprocess_with tac_specialize_pump)]
+let step (inp: input) = XL.mk_step step_apply inp
