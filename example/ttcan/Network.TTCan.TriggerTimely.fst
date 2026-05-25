@@ -58,6 +58,7 @@ let time_mark_sorted_req (triggers: trigger_array): prop =
   marks must be far enough apart that we have time to iterate through the
   indices from i to j.
 *)
+unfold
 let adequate_spacing (triggers: trigger_array) (i j: nat) (c: cycle): prop =
   i < triggers.size                  ==>
   j < triggers.size                  ==>
@@ -66,6 +67,7 @@ let adequate_spacing (triggers: trigger_array) (i j: nat) (c: cycle): prop =
   triggers.enabled j c               ==>
   (triggers.time_mark j - triggers.time_mark i) >= (j - i)
 
+unfold
 let adequate_spacing_req (triggers: trigger_array): prop =
   forall (i j: nat). forall (c: cycle).
     adequate_spacing triggers i j c
