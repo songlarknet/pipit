@@ -34,3 +34,10 @@ let core_lifted = ()
 irreducible
 let core_lifted_prim = ()
 
+(* Mark a source function as one whose `check`s should be discharged
+  automatically by 1-induction. The preprocessor synthesises a
+  `__check_<id>` binding that asserts `induct1 (system_of_exp __core_<id>)`
+  by normalisation and then blesses the core expression. *)
+irreducible
+let proof_induct1 = ()
+

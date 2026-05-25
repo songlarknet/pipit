@@ -205,6 +205,67 @@ let mk_splice (pat: FPA.pattern) (mode: Pipit_Plugin_Support.mode): FPA.decl' =
   } in
   Splice (false, [fresh], tac_abs)
 
+(* Look up the source identifier of a top-level let pattern. *)
+let rec id_of_pat (p: FPA.pattern): FI.ident =
+  let open FPA in
+  match p.pat with
+  | PatApp (p, _) -> id_of_pat p
+  | PatVar (i, _, _) -> i
+  | PatAscribed (p, _) -> id_of_pat p
+  | _ -> FI.mk_ident ("error_pat_not_found", p.prange)
+
+(* Build the synthesised `__check_<id>` declaration for `[@@proof_induct1]`.
+
+  It expands to roughly:
+    [@@core_of_source (`%<id>) <mode>]
+    let __check_<id> =
+      assert (induct1 (system_of_exp __core_<id>)) by (norm_full []);
+      bless __core_<id>
+*)
+let mk_check_induct1_decl
+    (pat: FPA.pattern)
+    (mode: Pipit_Plugin_Support.mode)
+    (drange: FStarC_Range.range): FPA.decl =
+  let open FPA in
+  let range = pat.prange in
+  let level = Expr in
+  let id = id_of_pat pat in
+  let core_id  = FI.mk_ident ("__core_"  ^ FI.string_of_id id, range) in
+  let check_id = FI.mk_ident ("__check_" ^ FI.string_of_id id, range) in
+  let core_var = { tm = Var (FI.lid_of_ids [core_id]); range; level } in
+  let mk_lid_var lid =
+    { tm = Var (lid range); range; level }
+  in
+  let sys_expr   = mkExplicitApp (mk_lid_var Pipit_Plugin_Support.system_of_exp_lid) [core_var] range in
+  let ind_expr   = mkExplicitApp (mk_lid_var Pipit_Plugin_Support.induct1_lid)        [sys_expr] range in
+  let nil_list   = { tm = ListLiteral []; range; level } in
+  let norm_call  = mkExplicitApp (mk_lid_var Pipit_Plugin_Support.norm_full_lid)      [nil_list] range in
+  (* thunk2 expansion: fun _ -> (); norm_full [] *)
+  let unit_const = { tm = Const FC.Const_unit; range; level } in
+  let thunk_body = { tm = Seq (unit_const, norm_call); range; level } in
+  let thunk_term = {
+    tm = Abs ([{ pat = PatWild (None, []); prange = range }], thunk_body);
+    range; level
+  } in
+  let assert_call = mkExplicitApp (mk_lid_var Pipit_Plugin_Support.assert_by_tactic_lid) [ind_expr; thunk_term] range in
+  let bless_call  = mkExplicitApp (mk_lid_var Pipit_Plugin_Support.bless_lid)            [core_var] range in
+  let body = { tm = Seq (assert_call, bless_call); range; level } in
+  let check_pat = { pat = PatVar (check_id, None, []); prange = range } in
+  let let_decl = TopLevelLet (NoLetQualifier, [(check_pat, body)]) in
+  let src_vquote = {
+    tm = VQuote { tm = Var (FI.lid_of_ids [id]); range; level };
+    range; level
+  } in
+  let mode_term = Pipit_Plugin_Support.quote_mode mode range in
+  let attr = mkExplicitApp (mk_lid_var Pipit_Plugin_Support.core_of_source_lid) [src_vquote; mode_term] range in
+  {
+    d = let_decl;
+    drange;
+    quals = [];
+    attrs = [attr];
+    interleaved = false;
+  }
+
 let pre_decl (r: FStarC_Range.range) (d: FPA.decl) =
   match d.d with
   | TopLevelLet (NoLetQualifier, [pat, tm]) ->
@@ -215,8 +276,14 @@ let pre_decl (r: FStarC_Range.range) (d: FPA.decl) =
       let tm = pre_term tm in
       (* prerr_endline (FPA.term_to_string tm); *)
       let splice = { d with d = mk_splice pat pm; attrs = []; quals = [] } in
-      Inr [{ d with d = TopLevelLet (NoLetQualifier, [pp, tm]); attrs = attr :: d.attrs };
-          splice]
+      let src_attrs = Pipit_Plugin_Support.drop_proof_induct1_attr d.attrs in
+      let proof_check =
+        if Pipit_Plugin_Support.has_proof_induct1_attr d.attrs
+        then [mk_check_induct1_decl pat pm r]
+        else []
+      in
+      Inr ([{ d with d = TopLevelLet (NoLetQualifier, [pp, tm]); attrs = attr :: src_attrs };
+            splice] @ proof_check)
     end
     else
       Inr [d]

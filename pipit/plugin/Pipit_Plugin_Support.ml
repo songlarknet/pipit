@@ -18,6 +18,14 @@ let lift_tac_lid = FI.lid_of_path ["Pipit"; "Plugin"; "Lift"; "lift_tac"]
 let core_of_source_lid = src_lid "core_of_source"
 let extract_lid = src_lid "extract"
 let source_mode_lid = src_lid "source_mode"
+let proof_induct1_lid = src_lid "proof_induct1"
+
+(* Targets used by the synthesised `__check_<id>` binding. *)
+let assert_by_tactic_lid = FI.lid_of_path ["FStar"; "Tactics"; "Effect"; "assert_by_tactic"]
+let induct1_lid          = FI.lid_of_path ["Pipit"; "System"; "Ind"; "induct1"]
+let system_of_exp_lid    = FI.lid_of_path ["Pipit"; "System"; "Exp"; "system_of_exp"]
+let bless_lid            = FI.lid_of_path ["Pipit"; "Exp"; "Checked"; "Base"; "bless"]
+let norm_full_lid        = FI.lid_of_path ["Pipit"; "Tactics"; "norm_full"]
 
 let mStream_lid = src_lid "Stream"
 let mStatic_lid = src_lid "Static"
@@ -26,6 +34,29 @@ let mModeFun_lid = src_lid "ModeFun"
 let match_lid (f: range -> FI.lident) (i: FI.lident): bool =
   let ii = f dummyRange in
   FI.lid_equals i ii
+
+(* Match an attribute term against `proof_induct1`. The preprocessor runs
+  before name resolution so we accept both the unqualified ident and the
+  fully-qualified [Pipit.Plugin.Interface.proof_induct1]. *)
+let attr_is_proof_induct1 (t: term): bool =
+  let rec head_lid (t: term) =
+    match t.tm with
+    | Paren t -> head_lid t
+    | App (f, _, _) -> head_lid f
+    | Var l | Name l -> Some l
+    | _ -> None
+  in
+  match head_lid t with
+  | Some l ->
+    let s = FI.string_of_lid l in
+    s = "proof_induct1" || s = "Pipit.Plugin.Interface.proof_induct1"
+  | None -> false
+
+let has_proof_induct1_attr (attrs: term list): bool =
+  List.exists attr_is_proof_induct1 attrs
+
+let drop_proof_induct1_attr (attrs: term list): term list =
+  List.filter (fun t -> not (attr_is_proof_induct1 t)) attrs
 
 type mode_fun_qualifier = bool
 let mf'implicit = false
