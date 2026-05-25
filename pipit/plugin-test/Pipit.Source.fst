@@ -43,6 +43,12 @@ assume val check (prop: bool): unit
 let check_core: PXB.exp PPS.table [PSSB.shallow bool] (PSSB.shallow unit) =
   PXB.XCheck Pipit.Prop.Metadata.PSUnknown (PXB.XBase (PXB.XBVar 0))
 
+(* Bool implication. Shadows [Prims.op_Equals_Equals_Greater] (which is
+  prop-typed and so cannot be auto-lifted) with a bool-typed version that
+  the lift mechanism turns into an ordinary stream primitive. *)
+unfold
+let ( ==> ) (a b: bool): bool = if a then b else true
+
 
 // specialise if-then-else? maybe we should generate better expressions for if-then-else.
 // for streaming conditionals, it might be better to generate simple folds functions and reuse them...

@@ -20,18 +20,14 @@ instance has_stream_int: PSSB.has_stream int = {
 let min (a b: stream int): stream int =
   if a <= b then a else b
 
-(* Bool implication. Avoids `==>` (which is a prop-level operator). *)
-let implies (a b: stream bool): stream bool =
-  if a then b else true
-
 (* Temporal: once p   == p has been true at some point so far. *)
 let once (p: stream bool): stream bool =
-  let rec r = if p then true else (false `fby` r) in
+  let rec r = p || (false `fby` r) in
   r
 
 (* Temporal: sofar p  == p has been true at every step so far. *)
 let sofar (p: stream bool): stream bool =
-  let rec r = if p then (true `fby` r) else false in
+  let rec r = p && (true `fby` r) in
   r
 
 (* --- countsecutive --------------------------------------------------- *)
@@ -55,7 +51,7 @@ let lastn (n: int) (p: stream bool): stream bool =
   countsecutive p >= n
 
 let anyn (n: int) (p: stream bool): stream bool =
-  countsecutive (if p then false else true) < n
+  countsecutive (not p) < n
 
 (* --- controller ------------------------------------------------------ *)
 
@@ -64,12 +60,66 @@ let stuck_time:  int = 6000
 
 [@@proof_induct1]
 let controller_body (estop level_low: stream bool): stream unit =
-  let sol_try   = lastn settle_time (implies estop false && level_low) in
+  let sol_try   = lastn settle_time (not estop && level_low) in
   let nok_stuck = once (lastn stuck_time sol_try) in
-  let sol_en    = sol_try && (if nok_stuck then false else true) in
-  check (implies estop (if sol_en then false else true));
-  check (implies (if level_low then false else true) (if sol_en then false else true))
+  let sol_en    = sol_try && not nok_stuck in
+  check (estop ==> not sol_en);
+  check (not level_low ==> not sol_en)
 
-(* TODO: port reservoir_model / spec / spec_any once `sofar`+`abs` integrate
-  cleanly here. The original spec required a manual CSE invariant to be
-  provable by 1-induction. *)
+(* --- reservoir / spec (no proofs) ------------------------------------ *)
+
+(* Simple reservoir model. The level is the integral of inflow minus
+  outflow, where the outflow is gated by [sol_en]: when the solenoid is
+  closed (sol_en = false) any positive inflow still enters but a negative
+  inflow (drain) is forced to zero. *)
+let reservoir_model (flow: stream int) (sol_en: stream bool): stream int =
+  let rec level =
+    (0 `fby` level) + (if sol_en then flow else min flow 0)
+  in
+  level
+
+let max_flow:            int = 10
+let level_low_threshold: int = 80
+let max_level:           int = 100
+
+(* Full system spec. In the original Pump.Check this was provable by
+  1-induction; here we record the [check] body but leave the proof
+  obligation deferred.
+
+  NOTE: the reservoir computation is inlined rather than calling
+  [reservoir_model flow sol_en] because the plugin's cross-function
+  lifting currently mismatches shallow type aliases when a callee mixes
+  int and bool stream arguments. The standalone [reservoir_model] above
+  still lifts and verifies. *)
+let spec_body (flow: stream int) (estop level_low: stream bool): stream unit =
+  let sol_try   = lastn settle_time (not estop && level_low) in
+  let nok_stuck = once (lastn stuck_time sol_try) in
+  let sol_en    = sol_try && not nok_stuck in
+  let rec level =
+    (0 `fby` level) + (if sol_en then flow else min flow 0)
+  in
+  check
+    (sofar (abs flow < max_flow) ==>
+    (sofar (level > level_low_threshold ==> not level_low) ==>
+    (level < max_level)))
+
+(* Variant that introduces a manual CSE invariant
+  countsecutive (x && y) <= countsecutive y. With the extra invariant the
+  original example/Pump.Check version went through 1-induction; we leave
+  the proof deferred here for now. Reservoir inlined for the same reason
+  as [spec_body]. *)
+let spec_any_needs_extra_invariant_manual_cse
+    (flow: stream int) (estop level_low: stream bool): stream unit =
+  let sol_try_c   = countsecutive (not estop && level_low) in
+  let level_low_c = countsecutive level_low in
+  let sol_try     = sol_try_c >= settle_time in
+  let nok_stuck   = once (lastn stuck_time sol_try) in
+  let sol_en      = sol_try && not nok_stuck in
+  let rec level =
+    (0 `fby` level) + (if sol_en then flow else min flow 0)
+  in
+  check (sol_try_c <= level_low_c);
+  check
+    (sofar (abs flow < max_flow) ==>
+    (sofar (level > level_low_threshold ==> (level_low_c < settle_time)) ==>
+    (level < max_level)))
