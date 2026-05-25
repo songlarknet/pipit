@@ -188,7 +188,10 @@ let mk_splice (pat: FPA.pattern) (mode: Pipit_Plugin_Support.mode): FPA.decl' =
    | _ -> FI.mk_ident ("error_pat_not_found", range)
   in
   let id = get_pat pat in
-  let fresh = FI.gen' (FI.string_of_id id ^ "_ppt_core") range in
+  (* Use a deterministic name so consumers (e.g. _check bindings) can refer to
+    the spliced core expression. The "_core" suffix matches the convention used
+    by [PPL.lift_tac1]. *)
+  let fresh = FI.mk_ident (FI.string_of_id id ^ "_core", range) in
   let mk_id_str i = { tm = Const (FC.Const_string (FI.string_of_id i, range)); range; level } in
   let tac =
     mkExplicitApp
