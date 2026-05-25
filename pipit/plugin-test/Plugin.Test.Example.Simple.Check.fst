@@ -49,6 +49,15 @@ let count_when_prop_body2 (e f: stream bool): stream unit =
   check (count_when_e <= count_when_true);
   check (count_when_f <= count_when_true)
 
+(* Negative test: this property is *not* an invariant of count_when
+  (count_when e starts at 0, so count_when e > 0 is false at step 0).
+  [@@proof_induct1_expect_failure] synthesises a __check binding tagged
+  with [@@expect_failure], so the module typechecks iff the check fails. *)
+[@@proof_induct1_expect_failure]
+let count_when_prop_body_fail (e: stream bool): stream unit =
+  let count_when_e = count_when e in
+  check (count_when_e > 0)
+
 (* Keep rely/guarantee pieces as plain stream predicates for now. *)
 let sum_rely (i: stream int): stream bool =
   i > 0

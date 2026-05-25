@@ -225,10 +225,15 @@ let rec id_of_pat (p: FPA.pattern): FI.ident =
   This is arity-polymorphic in the source function: `bless` and
   `system_of_exp` accept any cexp context, so the same shape works whether
   `<id>` has 1, 2, 3, ... stream arguments.
+
+  If `expect_failure` is true, the synthesised check additionally carries
+  `[@@expect_failure]` so the module typechecks only when the check fails.
+  This is used by `[@@proof_induct1_expect_failure]` for negative tests.
 *)
 let mk_check_induct1_decl
     (pat: FPA.pattern)
     (mode: Pipit_Plugin_Support.mode)
+    (expect_failure: bool)
     (drange: FStarC_Range.range): FPA.decl =
   let open FPA in
   let range = pat.prange in
@@ -262,11 +267,16 @@ let mk_check_induct1_decl
   } in
   let mode_term = Pipit_Plugin_Support.quote_mode mode range in
   let attr = mkExplicitApp (mk_lid_var Pipit_Plugin_Support.core_of_source_lid) [src_vquote; mode_term] range in
+  let attrs =
+    if expect_failure
+    then [attr; mk_lid_var Pipit_Plugin_Support.expect_failure_lid]
+    else [attr]
+  in
   {
     d = let_decl;
     drange;
     quals = [];
-    attrs = [attr];
+    attrs;
     interleaved = false;
   }
 
@@ -280,10 +290,15 @@ let pre_decl (r: FStarC_Range.range) (d: FPA.decl) =
       let tm = pre_term tm in
       (* prerr_endline (FPA.term_to_string tm); *)
       let splice = { d with d = mk_splice pat pm; attrs = []; quals = [] } in
-      let src_attrs = Pipit_Plugin_Support.drop_proof_induct1_attr d.attrs in
+      let src_attrs =
+        Pipit_Plugin_Support.drop_proof_induct1_attr
+          (Pipit_Plugin_Support.drop_proof_induct1_expect_failure_attr d.attrs)
+      in
       let proof_check =
         if Pipit_Plugin_Support.has_proof_induct1_attr d.attrs
-        then [mk_check_induct1_decl pat pm r]
+        then [mk_check_induct1_decl pat pm false r]
+        else if Pipit_Plugin_Support.has_proof_induct1_expect_failure_attr d.attrs
+        then [mk_check_induct1_decl pat pm true r]
         else []
       in
       Inr ([{ d with d = TopLevelLet (NoLetQualifier, [pp, tm]); attrs = attr :: src_attrs };

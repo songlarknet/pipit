@@ -42,3 +42,11 @@ let core_lifted_prim = ()
 irreducible
 let proof_induct1 = ()
 
+(* Negative-test variant of `proof_induct1`. Synthesises the same
+  `__check_<id>` binding but tags it with `[@@expect_failure]`, so the
+  module typechecks only when 1-induction fails to discharge the source's
+  `check`s. Useful for confirming that the synthesised check actually
+  rejects bogus properties. *)
+irreducible
+let proof_induct1_expect_failure = ()
+

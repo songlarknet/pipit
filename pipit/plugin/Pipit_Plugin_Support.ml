@@ -19,6 +19,10 @@ let core_of_source_lid = src_lid "core_of_source"
 let extract_lid = src_lid "extract"
 let source_mode_lid = src_lid "source_mode"
 let proof_induct1_lid = src_lid "proof_induct1"
+let proof_induct1_expect_failure_lid = src_lid "proof_induct1_expect_failure"
+
+(* `[@@expect_failure]` is exported from FStar.Attributes (auto-opened). *)
+let expect_failure_lid = FI.lid_of_path ["FStar"; "Attributes"; "expect_failure"]
 
 (* Targets used by the synthesised `__check_<id>` binding. *)
 let assert_by_tactic_lid = FI.lid_of_path ["FStar"; "Tactics"; "Effect"; "assert_by_tactic"]
@@ -57,6 +61,28 @@ let has_proof_induct1_attr (attrs: term list): bool =
 
 let drop_proof_induct1_attr (attrs: term list): term list =
   List.filter (fun t -> not (attr_is_proof_induct1 t)) attrs
+
+(* Same, for `proof_induct1_expect_failure`. *)
+let attr_is_proof_induct1_expect_failure (t: term): bool =
+  let rec head_lid (t: term) =
+    match t.tm with
+    | Paren t -> head_lid t
+    | App (f, _, _) -> head_lid f
+    | Var l | Name l -> Some l
+    | _ -> None
+  in
+  match head_lid t with
+  | Some l ->
+    let s = FI.string_of_lid l in
+    s = "proof_induct1_expect_failure"
+    || s = "Pipit.Plugin.Interface.proof_induct1_expect_failure"
+  | None -> false
+
+let has_proof_induct1_expect_failure_attr (attrs: term list): bool =
+  List.exists attr_is_proof_induct1_expect_failure attrs
+
+let drop_proof_induct1_expect_failure_attr (attrs: term list): term list =
+  List.filter (fun t -> not (attr_is_proof_induct1_expect_failure t)) attrs
 
 type mode_fun_qualifier = bool
 let mf'implicit = false
