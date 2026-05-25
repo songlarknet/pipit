@@ -45,7 +45,7 @@ let count_when_prop_body (e: stream bool): stream unit =
 [@@core_of_source (`%count_when_prop_body) (ModeFun Stream true Stream)]
 let count_when_prop_body_check
   : PXB.exp PPS.table [PSSB.shallow bool] (PSSB.shallow unit) =
-  let unfold e = count_when_prop_body_core in
+  let unfold e = __core_count_when_prop_body in
   let unfold sys = SX.system_of_exp e in
   assert (SI.induct1 sys) by (PT.norm_full []);
   PXCB.bless e
@@ -68,7 +68,7 @@ let test_sum_checked_impl (i: stream int): stream int =
 [@@core_of_source (`%test_sum_checked_impl) (ModeFun Stream true Stream)]
 let test_sum_checked_impl_check
   : PXB.exp PPS.table [PSSB.shallow int] (PSSB.shallow int) =
-  let unfold e = test_sum_checked_impl_core in
+  let unfold e = __core_test_sum_checked_impl in
   let unfold sys = SX.system_of_exp e in
   assert (SI.induct1 sys) by (PT.norm_full []);
   PXCB.bless e
