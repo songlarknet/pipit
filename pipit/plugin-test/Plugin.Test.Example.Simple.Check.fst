@@ -39,6 +39,16 @@ let count_when_prop_body (e: stream bool): stream unit =
   check (count_when_false <= count_when_e);
   check (count_when_e <= count_when_true)
 
+(* Two-argument variant exercising arity-2 of the synthesised __check binding.
+  Mirrors Pump.Check.controller_body in shape (two stream-bool inputs). *)
+[@@proof_induct1]
+let count_when_prop_body2 (e f: stream bool): stream unit =
+  let count_when_e = count_when e in
+  let count_when_f = count_when f in
+  let count_when_true = count_when true in
+  check (count_when_e <= count_when_true);
+  check (count_when_f <= count_when_true)
+
 (* Keep rely/guarantee pieces as plain stream predicates for now. *)
 let sum_rely (i: stream int): stream bool =
   i > 0

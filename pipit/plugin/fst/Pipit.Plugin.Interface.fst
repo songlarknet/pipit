@@ -37,7 +37,8 @@ let core_lifted_prim = ()
 (* Mark a source function as one whose `check`s should be discharged
   automatically by 1-induction. The preprocessor synthesises a
   `__check_<id>` binding that asserts `induct1 (system_of_exp __core_<id>)`
-  by normalisation and then blesses the core expression. *)
+  by normalisation and then blesses the core expression. The shape is
+  arity-polymorphic, so it works for any number of stream arguments. *)
 irreducible
 let proof_induct1 = ()
 

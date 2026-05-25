@@ -221,6 +221,10 @@ let rec id_of_pat (p: FPA.pattern): FI.ident =
     let __check_<id> =
       assert (induct1 (system_of_exp __core_<id>)) by (norm_full []);
       bless __core_<id>
+
+  This is arity-polymorphic in the source function: `bless` and
+  `system_of_exp` accept any cexp context, so the same shape works whether
+  `<id>` has 1, 2, 3, ... stream arguments.
 *)
 let mk_check_induct1_decl
     (pat: FPA.pattern)
