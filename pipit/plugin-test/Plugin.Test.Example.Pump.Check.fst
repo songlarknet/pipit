@@ -54,12 +54,13 @@ let settle_time: int = 1000
 let stuck_time:  int = 6000
 
 [@@proof_induct1]
-let controller_body (estop level_low: stream bool): stream unit =
+let controller_body (estop level_low: stream bool): stream (bool & bool) =
   let sol_try   = lastn settle_time (not estop && level_low) in
   let nok_stuck = once (lastn stuck_time sol_try) in
   let sol_en    = sol_try && not nok_stuck in
   check (estop ==>^ not sol_en);
-  check (not level_low ==>^ not sol_en)
+  check (not level_low ==>^ not sol_en);
+  (sol_en, nok_stuck)
 
 (* --- reservoir / spec (no proofs) ------------------------------------ *)
 
@@ -77,14 +78,12 @@ let max_flow:            int = 10
 let level_low_threshold: int = 80
 let max_level:           int = 100
 
-(* Full system spec. In the original Pump.Check this was provable by
-  1-induction; here we record the [check] body but leave the proof
-  obligation deferred. *)
+(* Full system spec. Calls [controller_body] (whose own [check]s get
+  inlined into the induction obligation) and reuses its [sol_en] output. *)
+[@@proof_induct1]
 let spec_body (flow: stream int) (estop level_low: stream bool): stream unit =
-  let sol_try   = lastn settle_time (not estop && level_low) in
-  let nok_stuck = once (lastn stuck_time sol_try) in
-  let sol_en    = sol_try && not nok_stuck in
-  let level     = reservoir_model flow sol_en in
+  let (sol_en, _) = controller_body estop level_low in
+  let level       = reservoir_model flow sol_en in
   check
     (sofar (abs flow < max_flow) ==>^
     (sofar (level > level_low_threshold ==>^ not level_low) ==>^
@@ -92,8 +91,8 @@ let spec_body (flow: stream int) (estop level_low: stream bool): stream unit =
 
 (* Variant that introduces a manual CSE invariant
   countsecutive (x && y) <= countsecutive y. With the extra invariant the
-  original example/Pump.Check version went through 1-induction; we leave
-  the proof deferred here for now. *)
+  original example/Pump.Check version goes through 1-induction. *)
+[@@proof_induct1]
 let spec_any_needs_extra_invariant_manual_cse
     (flow: stream int) (estop level_low: stream bool): stream unit =
   let sol_try_c   = countsecutive (not estop && level_low) in
