@@ -15,6 +15,8 @@ let src_lid i = FI.lid_of_path (mod_path @ [i])
 (* let lid_stream = src_lid "stream" *)
 let rec_lid = src_lid "rec'"
 let lift_tac_lid = FI.lid_of_path ["Pipit"; "Plugin"; "Lift"; "lift_tac"]
+let derive_has_stream_tac_lid =
+  FI.lid_of_path ["Pipit"; "Sugar"; "Shallow"; "Tactics"; "Derive"; "derive_has_stream"]
 let core_of_source_lid = src_lid "core_of_source"
 let extract_lid = src_lid "extract"
 let source_mode_lid = src_lid "source_mode"

@@ -15,11 +15,13 @@ type attr_proof_method =
 type attrs = {
   proof : attr_proof_method option;
   proof_expect_failure : bool;
+  derive_has_stream : bool;
 }
 
 let empty : attrs = {
   proof = None;
   proof_expect_failure = false;
+  derive_has_stream = false;
 }
 
 (* Get the head lident of an attribute term (peeling [Paren]/[App]). *)
@@ -45,6 +47,8 @@ let parse_attributes (terms: FPA.term list) : attrs =
     then { acc with proof = Some Induct1 }
     else if attr_matches "proof_expect_failure" t
     then { acc with proof_expect_failure = true }
+    else if attr_matches "derive_has_stream" t
+    then { acc with derive_has_stream = true }
     else acc
   ) empty terms
 
@@ -54,4 +58,5 @@ let drop_plugin_attrs (terms: FPA.term list) : FPA.term list =
   List.filter (fun t ->
     not (attr_matches "proof_induct1" t)
     && not (attr_matches "proof_expect_failure" t)
+    && not (attr_matches "derive_has_stream" t)
   ) terms

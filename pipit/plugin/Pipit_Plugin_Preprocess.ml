@@ -205,6 +205,38 @@ let mk_splice (pat: FPA.pattern) (mode: Pipit_Plugin_Support.mode): FPA.decl' =
   } in
   Splice (false, [fresh], tac_abs)
 
+(* Build a [%splice[has_stream_<id>] (fun () -> derive_has_stream "<id>")]
+  decl for the tycon with short name [id]. The tactic itself does the
+  arity / single-ctor validation, so we don't replicate it here. *)
+let mk_derive_has_stream_splice
+    (id: FI.ident)
+    (drange: FStarC_Range.range)
+    : FPA.decl
+  =
+  let open FPA in
+  let range = drange in
+  let level = Expr in
+  let id_str = FI.string_of_id id in
+  let inst_id = FI.mk_ident ("has_stream_" ^ id_str, range) in
+  let id_const = { tm = Const (FC.Const_string (id_str, range)); range; level } in
+  let tac =
+    mkExplicitApp
+      { tm = Var (Pipit_Plugin_Support.derive_has_stream_tac_lid range); range; level }
+      [id_const]
+      range
+  in
+  let tac_abs = {
+    tm = Abs ([{ pat = PatWild (None, []); prange = range }], tac);
+    range; level
+  } in
+  {
+    d = Splice (false, [inst_id], tac_abs);
+    drange;
+    quals = [];
+    attrs = [];
+    interleaved = false;
+  }
+
 (* Look up the source identifier of a top-level let pattern. *)
 let rec id_of_pat (p: FPA.pattern): FI.ident =
   let open FPA in
@@ -308,6 +340,27 @@ let pre_decl (r: FStarC_Range.range) (d: FPA.decl) =
   | TopLevelLet (Rec, ps) ->
     (* TODO: check that it is not a stream definition *)
     Inr [d]
+
+  | Tycon (is_effect, is_class, tycons) ->
+    let parsed = Pipit_Plugin_Attributes.parse_attributes d.attrs in
+    if parsed.derive_has_stream
+    then
+      let src_attrs = Pipit_Plugin_Attributes.drop_plugin_attrs d.attrs in
+      let ident_of_tycon (tc: FPA.tycon): FI.ident = match tc with
+        | TyconAbstract (i, _, _)
+        | TyconAbbrev   (i, _, _, _)
+        | TyconRecord   (i, _, _, _, _)
+        | TyconVariant  (i, _, _, _) -> i
+      in
+      let derived =
+        List.map (fun tc ->
+          mk_derive_has_stream_splice (ident_of_tycon tc) d.drange
+        ) tycons
+      in
+      Inr ({ d with d = Tycon (is_effect, is_class, tycons); attrs = src_attrs }
+           :: derived)
+    else
+      Inr [d]
 
   (* TODO: check that streams aren't used in bad positions? *)
   | _ -> Inr [d]

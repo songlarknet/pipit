@@ -51,3 +51,10 @@ let proof_induct1 = ()
 irreducible
 let proof_expect_failure = ()
 
+(* Attribute on a type definition: ask the preprocessor to splice a
+  `has_stream <T>` instance for the type. Currently supports single-
+  constructor inductives (records and data classes). Multi-constructor
+  types should keep using `derive_has_stream_with_default` explicitly. *)
+irreducible
+let derive_has_stream = ()
+
