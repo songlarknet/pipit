@@ -17,8 +17,11 @@ module PT  = Pipit.Tactics
 module Tac = FStar.Tactics
 
 (* Namespace prefix passed to the extraction tactics. Any name beginning
-  with this prefix is unfolded during normalization. *)
-unfold let ns: list string = ["Plugin.Test.Example.Simple"]
+  with this prefix is unfolded during normalization. [noextract] because
+  this is a tactic-time helper that should not appear in the generated C. *)
+noextract
+unfold
+let ns: list string = ["Plugin.Test.Example.Simple"]
 
 (* The lifted core expression for [Simple.count_when]. We re-bind it so the
   rest of the file does not have to mention the internal [__core_*] name.
@@ -30,9 +33,11 @@ unfold let ns: list string = ["Plugin.Test.Example.Simple"]
   conservatively reject the program. [simplify] is intended to be
   semantics-preserving; the bigstep preservation proof is future work.
 
-  [unfold] so that downstream [norm_full] sees through to the literal
-  simplified core. *)
-unfold
+  [@@postprocess_with norm_full ns] together with [noextract] means F* sees
+  through to the simplified core during downstream normalization, while
+  KaRaMeL skips the binding entirely. *)
+[@@(Tac.postprocess_with (XL.tac_normalize_pure ns))]
+noextract
 let expr = SL.simplify Simple.__core_count_when
 
 (* State type for the system. The postprocess pass inlines
