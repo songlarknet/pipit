@@ -20,9 +20,11 @@
   if you want a typo guard.
 
   The input row and result types are inferred from the source binding's
-  arrow type by stripping the [stream] type constructor. Only the
-  single-stream-argument case is supported in this first cut; multi-input
-  bindings will raise an explicit error. *)
+  arrow type by stripping the [stream] type constructor. Multiple stream
+  inputs are supported: for [f (a: stream A) (b: stream B): stream R] the
+  generated [<nm>_step] takes [a] and [b] as separate arguments, the
+  internal input row is [A & (B & unit)], and the system is
+  [XX.esystem (A & (B & unit)) <nm>_state R]. *)
 module Pipit.Plugin.Extract
 
 module Tac = FStar.Tactics.V2
@@ -36,6 +38,38 @@ module SL  = Pipit.Exp.SimplifyLet
 module XX  = Pipit.Exec.Exp
 module XL  = Pipit.Exec.Pulse
 module PT  = Pipit.Tactics
+
+
+(* -------------------------------------------------------------------- *)
+(* Local extraction tactic                                              *)
+(* -------------------------------------------------------------------- *)
+
+(* Variant of [XL.tac_extract] that additionally unfolds
+  [FStar.Pervasives.coerce_eq]. The recursive case of
+  [Pipit.Context.Row.index] wraps its recursive call in [coerce_eq] to
+  reconcile two index-list views; without unfolding the coercion the
+  recursion stalls and surfaces in extracted C as a call to an
+  unimplemented [Pipit_Context_Row_index]. This shows up only for
+  bindings with two or more inputs, because index 0 returns the head
+  directly without recursing. *)
+let tac_extract (namespaces: list string) () : Tac.Tac unit =
+  Tac.norm [
+    zeta_full;
+    iota;
+    primops;
+    delta_namespace namespaces;
+    delta_only [
+      `%XL.mk_init;
+      `%XL.mk_step_pure;
+      `%XL.mk_reset;
+      `%XL.mk_step;
+      `%XL.mk_reset_sys;
+      `%XL.mk_step_sys;
+      `%Pipit.Context.Row.index;
+      `%FStar.Pervasives.coerce_eq;
+    ]
+  ];
+  Tac.trefl ()
 
 
 (* -------------------------------------------------------------------- *)
@@ -79,10 +113,10 @@ let rec list_init #a (xs: list a): Tac.Tac (list a) =
   | [_] -> []
   | x :: tl -> x :: list_init tl
 
-(* Split a (post-plugin) source-binding type into stripped input types and
-  a stripped result type. We use [Tac.collect_arr] to get the binder sorts,
-  then strip [stream] from each. *)
-let split_stream_arrow (ty: Tac.term): Tac.Tac (list Tac.term & Tac.term) =
+(* Split a (post-plugin) source-binding type into stripped inputs and a
+  stripped result type. Each input carries its source ppname (for the
+  generated step function's parameter names) alongside its stripped type. *)
+let split_stream_arrow (ty: Tac.term): Tac.Tac (list (string & Tac.term) & Tac.term) =
   let binders, comp = Tac.collect_arr_bs ty in
   let result =
     match comp with
@@ -90,9 +124,27 @@ let split_stream_arrow (ty: Tac.term): Tac.Tac (list Tac.term & Tac.term) =
     | _ -> Tac.fail "split_stream_arrow: expected pure arrow result"
   in
   let inputs =
-    Tac.map (fun (b: Tac.binder) -> strip_stream b.sort) binders
+    Tac.map
+      (fun (b: Tac.binder) -> Tac.name_of_binder b, strip_stream b.sort)
+      binders
   in
   inputs, strip_stream result
+
+(* Right-nested product type [t1 & (t2 & ... & (tN & unit))]; [[]] -> [unit]. *)
+let rec mk_input_row_ty (tys: list Tac.term): Tac.Tac Tac.term =
+  match tys with
+  | [] -> `unit
+  | t :: rest ->
+    let r = mk_input_row_ty rest in
+    `((`#t) & (`#r))
+
+(* Right-nested tuple expression [(v1, (v2, ..., (vN, ())))]; [[]] -> [()]. *)
+let rec mk_input_tuple (vs: list Tac.term): Tac.Tac Tac.term =
+  match vs with
+  | [] -> `()
+  | v :: rest ->
+    let r = mk_input_tuple rest in
+    `((`#v, `#r))
 
 
 (* -------------------------------------------------------------------- *)
@@ -156,15 +208,36 @@ let extract (nm_src_fqn: string): Tac.Tac (list Tac.sigelt) =
   let src_lb = PTB.lookup_lb_top tac_env src_qn in
   let inputs, result_ty = split_stream_arrow src_lb.lb_typ in
 
-  (* Only single-input bindings supported in this first iteration. *)
+  (* Zero-input stream functions don't have a meaningful step signature. *)
   (match inputs with
-    | [_] -> ()
-    | _ ->
-      Tac.fail ("Pipit.Plugin.Extract.extract: only single-input stream "
-                ^ "functions are supported (got "
-                ^ string_of_int (List.length inputs) ^ " inputs for "
-                ^ nm_src_fqn ^ ")"));
-  let input_ty = list_last inputs in
+    | [] ->
+      Tac.fail ("Pipit.Plugin.Extract.extract: source binding "
+                ^ nm_src_fqn ^ " has no stream inputs")
+    | _ -> ());
+
+  (* Build a fresh namedv per input so we can refer to it in both the
+    abstraction (binder) and the body (variable). Source ppnames are
+    preserved so the generated step function uses the same parameter names
+    as the source binding. *)
+  let input_nvs: list (Tac.namedv & Tac.term) =
+    Tac.map
+      (fun (nm, ty) ->
+        let nv: Tac.namedv = {
+          uniq   = Tac.fresh ();
+          sort   = Tac.seal ty;
+          ppname = Ref.as_ppname nm;
+        } in
+        nv, ty)
+      inputs
+  in
+  let input_tys = Tac.map (fun (_, ty) -> ty) input_nvs in
+  (* The Pipit lifter pushes binders innermost-first, so the row's
+    head ([Row.index 0]) corresponds to the LAST source argument. Reverse
+    the source-order input list when building the row type and the value
+    we hand to [mk_step_pure]. The N-arg abstraction itself stays in source
+    order so the generated [<nm>_step] takes parameters in the same order
+    as the source binding. *)
+  let input_tys_rev = Tac.fold_left (fun acc t -> t :: acc) [] input_tys in
 
   (* The namespace passed to [tac_normalize_pure] / [tac_extract]: covers
     both the source module (so [__core_*] and [__prim_*] unfold) and the
@@ -205,7 +278,8 @@ let extract (nm_src_fqn: string): Tac.Tac (list Tac.sigelt) =
     `(FStar.Tactics.postprocess_with (XL.tac_normalize_pure (`#ns_term)))
   in
   let attr_extract: Tac.term =
-    `(FStar.Tactics.postprocess_with (XL.tac_extract (`#ns_term)))
+    `(FStar.Tactics.postprocess_with
+        (Pipit.Plugin.Extract.tac_extract (`#ns_term)))
   in
 
   (* ---- state ---- *)
@@ -214,7 +288,7 @@ let extract (nm_src_fqn: string): Tac.Tac (list Tac.sigelt) =
   let se_state = mk_let_sigelt state_qn state_ty state_body [] [attr_norm] in
 
   (* ---- system ---- *)
-  let input_row: Tac.term = `((`#input_ty) & unit) in
+  let input_row: Tac.term = mk_input_row_ty input_tys_rev in
   let system_ty: Tac.term =
     `(XX.esystem (`#input_row) (`#state_term) (`#result_ty))
   in
@@ -279,12 +353,37 @@ let extract (nm_src_fqn: string): Tac.Tac (list Tac.sigelt) =
   let reset_ty: Tac.term = Tac.pack Tac.Tv_Unknown in
   let se_reset = mk_let_sigelt reset_qn reset_ty reset_body [] [attr_extract] in
 
-  (* ---- step ---- *)
+  (* ---- step ----
+    Body shape for N inputs:
+      [fun (a1: t1) ... (aN: tN) ->
+         XL.mk_step
+           (fun i st -> XL.mk_step_pure system i st)
+           (aN, (aN-1, ..., (a1, ())))]
+
+    The N-arg abstraction follows source order so the generated step
+    function takes parameters in the same order as the source binding.
+    The row passed to [mk_step_pure] is REVERSED because the Pipit lifter
+    pushes binders innermost-first ([Row.index 0] = last source argument).
+
+    Built bottom-up: the inner [mk_step] call references each binder via
+    [Tv_Var] in reversed order, then [Tv_Abs] is folded right-to-left
+    over the source-order binders. *)
+  let input_vars_rev: list Tac.term =
+    Tac.fold_left
+      (fun acc (nv, _) -> Tac.pack (Tac.Tv_Var nv) :: acc)
+      [] input_nvs
+  in
+  let input_tuple: Tac.term = mk_input_tuple input_vars_rev in
+  let step_call: Tac.term =
+    `(XL.mk_step
+        (fun i st -> XL.mk_step_pure (`#system_term) i st)
+        (`#input_tuple))
+  in
   let step_body: Tac.term =
-    `(fun (inp: (`#input_ty)) ->
-        XL.mk_step
-          (fun i st -> XL.mk_step_pure (`#system_term) (i, ()) st)
-          inp)
+    Tac.fold_right
+      (fun (nv, ty) body ->
+        Tac.pack (Tac.Tv_Abs (Tac.namedv_to_binder nv ty) body))
+      input_nvs step_call
   in
   let step_ty: Tac.term = Tac.pack Tac.Tv_Unknown in
   let se_step = mk_let_sigelt step_qn step_ty step_body [] [attr_extract] in
