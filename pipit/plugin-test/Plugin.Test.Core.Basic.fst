@@ -22,6 +22,9 @@ type ctor = | Ctor: x: int -> y: int -> ctor
 type record = { x: int; y: int; }
 %splice[has_stream_record] (derive_has_stream "record")
 
+type sum = | SumA | SumB: x: int -> sum
+%splice[has_stream_sum] (derive_has_stream_with_default "sum" "SumA")
+
 
 [@@source_mode (ModeFun Stream true Stream)]
 let eg_inc_left_strm (x: int) =

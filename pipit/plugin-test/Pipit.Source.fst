@@ -15,6 +15,11 @@ module PSSD = Pipit.Sugar.Shallow.Tactics.Derive
 (* Splice [has_stream] instances for single-constructor inductive types. *)
 let derive_has_stream = PSSD.derive_has_stream
 
+(* Splice [has_stream] for multi-constructor inductive types; the user
+  picks one constructor (by short name) whose application supplies the
+  [val_default] value. *)
+let derive_has_stream_with_default = PSSD.derive_has_stream_with_default
+
 (*** Public Attributes ***)
 
 (* Do not check properties immediately: defer them for the consumer to check *)

@@ -1,18 +1,25 @@
 (* Splice tactics for auto-generating [has_stream] instances for user-defined
   types.
 
-  Phase 1 supports monomorphic single-constructor inductives (records and
-  data classes / structs). Each constructor argument must itself have a
-  [has_stream] instance in scope; the synthesised instance fills each
-  position with [PSSB.val_default] and lets F* resolve the typeclass.
+  Supported (currently monomorphic only):
+    * single-constructor inductives (records, data classes / structs) via
+      [derive_has_stream "T"].
+    * multi-constructor inductives where the user picks a default ctor by
+      name via [derive_has_stream_with_default "T" "Ctor"].
+
+  Each constructor argument must itself have a [has_stream] instance in
+  scope; the synthesised instance fills each ctor argument with
+  [PSSB.val_default] and lets F* resolve the typeclass per position.
 
   Usage from a [#lang-pipit] module:
 
     type my_record = { x: int; y: int; }
     %splice[has_stream_my_record] (derive_has_stream "my_record")
 
-  Polymorphic types and multi-constructor sums are out of scope here; see
-  the project notes for follow-up phases. *)
+    type my_sum = | A | B: int -> my_sum
+    %splice[has_stream_my_sum] (derive_has_stream_with_default "my_sum" "A")
+
+  Polymorphic inductives are not yet supported; see project notes. *)
 module Pipit.Sugar.Shallow.Tactics.Derive
 
 module Tac  = FStar.Tactics.V2
@@ -39,9 +46,9 @@ let rec mk_default_app (head: Tac.term) (bs: list Tac.binder): Tac.Tac Tac.term 
     mk_default_app app bs'
 
 
-(* Generate a [has_stream T] instance for a single-constructor inductive
-  [T] defined in the current module. *)
-let derive_has_stream (nm: string): Tac.Tac (list Tac.sigelt) =
+(* Look up an inductive definition in the current module. Fails with a
+  useful error if [nm] is not an [Sg_Inductive] or is polymorphic. *)
+let lookup_monomorphic_inductive (nm: string): Tac.Tac (Tac.name & list (Tac.name & Tac.typ)) =
   let m       = Tac.cur_module () in
   let ty_name = List.append m [nm] in
   let env     = Tac.top_env () in
@@ -50,22 +57,27 @@ let derive_has_stream (nm: string): Tac.Tac (list Tac.sigelt) =
       Tac.fail ("derive_has_stream: type not found in current module: " ^ nm)
     | Some se -> se
   in
-  let nm_inductive, ctor_nm, ctor_ty =
-    match Tac.inspect_sigelt se with
-    | Sg_Inductive { nm = nm_ind; params; ctors } ->
-      if Cons? params then
-        Tac.fail ("derive_has_stream: " ^ nm ^
-                  ": polymorphic types are not yet supported (Phase 3)")
-      else
-        (match ctors with
-         | [(cn, ct)] -> nm_ind, cn, ct
-         | _ ->
-           Tac.fail ("derive_has_stream: " ^ nm ^
-                     ": only single-constructor inductives are supported, got " ^
-                     string_of_int (List.length ctors) ^ " constructors"))
-    | _ ->
-      Tac.fail ("derive_has_stream: " ^ nm ^ ": expected an inductive type")
-  in
+  match Tac.inspect_sigelt se with
+  | Sg_Inductive { nm = nm_ind; params; ctors } ->
+    if Cons? params then
+      Tac.fail ("derive_has_stream: " ^ nm ^
+                ": polymorphic types are not yet supported")
+    else
+      nm_ind, ctors
+  | _ ->
+    Tac.fail ("derive_has_stream: " ^ nm ^ ": expected an inductive type")
+
+
+(* Build the [Sg_Let] sigelt for [instance has_stream_<short_nm>], given
+  the resolved type name, the chosen ctor, and the ctor's type. *)
+let mk_instance_sigelt
+  (short_nm: string)
+  (nm_inductive: Tac.name)
+  (ctor_nm: Tac.name)
+  (ctor_ty: Tac.typ)
+  : Tac.Tac Tac.sigelt
+  =
+  let m = Tac.cur_module () in
   let bs, _ = Tac.collect_arr_bs ctor_ty in
   let ctor_hd  = Tac.pack (Tac.Tv_FVar (Tac.pack_fv ctor_nm)) in
   let default_app = mk_default_app ctor_hd bs in
@@ -75,7 +87,7 @@ let derive_has_stream (nm: string): Tac.Tac (list Tac.sigelt) =
     ty_id       = [(`#nm_str)];
     val_default = (`#default_app);
   } <: PSSB.has_stream (`#ty_hd)) in
-  let inst_nm = List.append m [ "has_stream_" ^ nm ] in
+  let inst_nm = List.append m [ "has_stream_" ^ short_nm ] in
   let lb: Tac.letbinding = {
     lb_fv  = Tac.pack_fv inst_nm;
     lb_us  = [];
@@ -84,5 +96,48 @@ let derive_has_stream (nm: string): Tac.Tac (list Tac.sigelt) =
   } in
   let sv: Tac.sigelt_view = Tac.Sg_Let { isrec = false; lbs = [lb] } in
   let se = Tac.pack_sigelt sv in
-  let se = Ref.set_sigelt_attrs [`FStar.Tactics.Typeclasses.tcinstance] se in
-  [se]
+  Ref.set_sigelt_attrs [`FStar.Tactics.Typeclasses.tcinstance] se
+
+
+(* True iff the qualified name [nm] ends in the short name [short]. *)
+let ctor_short_matches (short: string) (nm: Tac.name): bool =
+  match List.rev nm with
+  | hd :: _ -> hd = short
+  | [] -> false
+
+
+(* Generate a [has_stream T] instance for a single-constructor inductive
+  [T] defined in the current module. *)
+let derive_has_stream (nm: string): Tac.Tac (list Tac.sigelt) =
+  let nm_inductive, ctors = lookup_monomorphic_inductive nm in
+  let ctor_nm, ctor_ty = match ctors with
+    | [c] -> c
+    | _ ->
+      Tac.fail ("derive_has_stream: " ^ nm ^
+                ": expected exactly one constructor, got " ^
+                string_of_int (List.length ctors) ^
+                "; use derive_has_stream_with_default to pick one")
+  in
+  [mk_instance_sigelt nm nm_inductive ctor_nm ctor_ty]
+
+
+(* Generate a [has_stream T] instance for a multi-constructor inductive
+  [T] defined in the current module. The default value is built from the
+  constructor named [default_ctor] (short name) with [PSSB.val_default]
+  in each argument position; the nicest choice is usually a nullary ctor. *)
+let derive_has_stream_with_default
+  (nm: string)
+  (default_ctor: string)
+  : Tac.Tac (list Tac.sigelt)
+  =
+  let nm_inductive, ctors = lookup_monomorphic_inductive nm in
+  let chosen =
+    List.find (fun (cn, _) -> ctor_short_matches default_ctor cn) ctors
+  in
+  let ctor_nm, ctor_ty = match chosen with
+    | Some c -> c
+    | None ->
+      Tac.fail ("derive_has_stream_with_default: " ^ nm ^
+                ": no constructor named " ^ default_ctor)
+  in
+  [mk_instance_sigelt nm nm_inductive ctor_nm ctor_ty]
