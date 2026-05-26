@@ -43,11 +43,12 @@ assume val check (prop: bool): unit
 let check_core: PXB.exp PPS.table [PSSB.shallow bool] (PSSB.shallow unit) =
   PXB.XCheck Pipit.Prop.Metadata.PSUnknown (PXB.XBase (PXB.XBVar 0))
 
-(* Bool implication. Shadows [Prims.op_Equals_Equals_Greater] (which is
-  prop-typed and so cannot be auto-lifted) with a bool-typed version that
-  the lift mechanism turns into an ordinary stream primitive. *)
+(* Bool implication. The standard F* [==>] is prop-typed (and so cannot
+  be auto-lifted by the plugin); use [==>^] instead in #lang-pipit code.
+  The caret suffix follows the convention that stream-only operators
+  with no prop/F* counterpart are spelled with a trailing [^]. *)
 unfold
-let ( ==> ) (a b: bool): bool = if a then b else true
+let op_Equals_Equals_Greater_Hat (a b: bool): bool = if a then b else true
 
 
 // specialise if-then-else? maybe we should generate better expressions for if-then-else.

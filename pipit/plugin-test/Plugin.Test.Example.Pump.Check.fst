@@ -63,8 +63,8 @@ let controller_body (estop level_low: stream bool): stream unit =
   let sol_try   = lastn settle_time (not estop && level_low) in
   let nok_stuck = once (lastn stuck_time sol_try) in
   let sol_en    = sol_try && not nok_stuck in
-  check (estop ==> not sol_en);
-  check (not level_low ==> not sol_en)
+  check (estop ==>^ not sol_en);
+  check (not level_low ==>^ not sol_en)
 
 (* --- reservoir / spec (no proofs) ------------------------------------ *)
 
@@ -99,8 +99,8 @@ let spec_body (flow: stream int) (estop level_low: stream bool): stream unit =
     (0 `fby` level) + (if sol_en then flow else min flow 0)
   in
   check
-    (sofar (abs flow < max_flow) ==>
-    (sofar (level > level_low_threshold ==> not level_low) ==>
+    (sofar (abs flow < max_flow) ==>^
+    (sofar (level > level_low_threshold ==>^ not level_low) ==>^
     (level < max_level)))
 
 (* Variant that introduces a manual CSE invariant
@@ -120,6 +120,6 @@ let spec_any_needs_extra_invariant_manual_cse
   in
   check (sol_try_c <= level_low_c);
   check
-    (sofar (abs flow < max_flow) ==>
-    (sofar (level > level_low_threshold ==> (level_low_c < settle_time)) ==>
+    (sofar (abs flow < max_flow) ==>^
+    (sofar (level > level_low_threshold ==>^ (level_low_c < settle_time)) ==>^
     (level < max_level)))
