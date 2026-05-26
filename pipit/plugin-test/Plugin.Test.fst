@@ -7,11 +7,6 @@ module Plugin.Test
 open Pipit.Source
 module PSSB = Pipit.Sugar.Shallow.Base
 
-instance has_stream_int: PSSB.has_stream int = {
-  ty_id       = [`%Prims.int];
-  val_default = 0;
-}
-
 let fst (#a #b: eqtype) {| PSSB.has_stream a |} {| PSSB.has_stream b |} (x: stream (a & b)): stream a =
   fst x
 

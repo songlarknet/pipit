@@ -10,11 +10,6 @@ module Plugin.Test.Example.Pump.Check
 open Pipit.Source
 module PSSB = Pipit.Sugar.Shallow.Base
 
-instance has_stream_int: PSSB.has_stream int = {
-  ty_id       = [`%Prims.int];
-  val_default = 0;
-}
-
 (* --- Helpers --------------------------------------------------------- *)
 
 let min (a b: stream int): stream int =

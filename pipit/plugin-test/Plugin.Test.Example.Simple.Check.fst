@@ -4,11 +4,6 @@ module Plugin.Test.Example.Simple.Check
 open Pipit.Source
 module PSSB = Pipit.Sugar.Shallow.Base
 
-instance has_stream_int: PSSB.has_stream int = {
-  ty_id       = [`%Prims.int];
-  val_default = 0;
-}
-
 (* Count the number of times a predicate has been true. *)
 let count_when (p: stream bool): stream int =
   let rec count =

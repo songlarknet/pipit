@@ -28,11 +28,6 @@ module Plugin.Test.Example.Bug.Crossfunction
 open Pipit.Source
 module PSSB = Pipit.Sugar.Shallow.Base
 
-instance has_stream_int: PSSB.has_stream int = {
-  ty_id       = [`%Prims.int];
-  val_default = 0;
-}
-
 (* -- callees ----------------------------------------------------------- *)
 
 let inc_int (x: stream int): stream int =

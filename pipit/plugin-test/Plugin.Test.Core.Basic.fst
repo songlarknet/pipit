@@ -11,11 +11,6 @@ module PSSB = Pipit.Sugar.Shallow.Base
 #set-options "--ext pipit:lift:debug"
 #set-options "--print_implicits --print_bound_var_types --print_full_names"
 
-instance has_stream_int: Pipit.Sugar.Shallow.Base.has_stream int = {
-  ty_id       = [`%Prims.int];
-  val_default = 0;
-}
-
 instance has_stream_option (#a: eqtype) {| PSSB.has_stream a |}: PSSB.has_stream (option a) = {
   ty_id       = `%Pervasives.Native.option :: PSSB.ty_id #a;
   val_default = None;
