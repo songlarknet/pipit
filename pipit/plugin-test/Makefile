@@ -9,10 +9,15 @@ FSTAR_ALREADY_CACHED ?=
 include $(ROOT_DIR)/make/include/base.mk
 
 extract: $(BUILD)/Plugin.Test.Example.Simple.Extract.extract
+extract: $(BUILD)/Plugin.Test.Example.Pump.Extract.extract
 
 $(BUILD)/Plugin.Test.Example.Simple.Extract.extract: EXTRACT_MODULE=Plugin.Test.Example.Simple.Extract
 $(BUILD)/Plugin.Test.Example.Simple.Extract.extract: EXTRACT_NAME=Plugin.Test.Example.Simple
 $(BUILD)/Plugin.Test.Example.Simple.Extract.extract: EXTRACT_FILE=$(PIPIT_DIR)/plugin-test/Plugin.Test.Example.Simple.Extract.fst
+
+$(BUILD)/Plugin.Test.Example.Pump.Extract.extract: EXTRACT_MODULE=Plugin.Test.Example.Pump.Extract
+$(BUILD)/Plugin.Test.Example.Pump.Extract.extract: EXTRACT_NAME=Plugin.Test.Example.Pump
+$(BUILD)/Plugin.Test.Example.Pump.Extract.extract: EXTRACT_FILE=$(PIPIT_DIR)/plugin-test/Plugin.Test.Example.Pump.Extract.fst
 
 $(BUILD)/%.extract: $(BUILD)/cache/%.fst.checked
 	@rm -f $(BUILD)/extract/$(EXTRACT_NAME)/*.krml

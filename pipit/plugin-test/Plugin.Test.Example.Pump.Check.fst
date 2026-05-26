@@ -62,6 +62,13 @@ let controller_body (estop level_low: stream bool): stream (bool & bool) =
   check (not level_low ==>^ not sol_en);
   (sol_en, nok_stuck)
 
+(* Pair-input wrapper around [controller_body], suitable for the
+  [Pipit.Plugin.Extract.extract] splice which currently only supports
+  stream functions of a single argument. *)
+let controller (i: stream (bool & bool)): stream (bool & bool) =
+  let (estop, level_low) = i in
+  controller_body estop level_low
+
 (* --- reservoir / spec (no proofs) ------------------------------------ *)
 
 (* Simple reservoir model. The level is the integral of inflow minus
