@@ -10,6 +10,10 @@ module PSSB = Pipit.Sugar.Shallow.Base
 module PPS  = Pipit.Prim.Shallow
 module PPT  = Pipit.Prim.Table
 module PPL = Pipit.Plugin.Lift
+module PSSD = Pipit.Sugar.Shallow.Tactics.Derive
+
+(* Splice [has_stream] instances for single-constructor inductive types. *)
+let derive_has_stream = PSSD.derive_has_stream
 
 (*** Public Attributes ***)
 

@@ -17,16 +17,10 @@ instance has_stream_option (#a: eqtype) {| PSSB.has_stream a |}: PSSB.has_stream
 }
 
 type ctor = | Ctor: x: int -> y: int -> ctor
-instance has_stream_ctor: PSSB.has_stream ctor = {
-  ty_id       = [`%ctor];
-  val_default = Ctor PSSB.val_default PSSB.val_default;
-}
+%splice[has_stream_ctor] (derive_has_stream "ctor")
 
 type record = { x: int; y: int; }
-instance has_stream_record: PSSB.has_stream record = {
-  ty_id       = [`%record];
-  val_default = { x = 0; y = 0; };
-}
+%splice[has_stream_record] (derive_has_stream "record")
 
 
 [@@source_mode (ModeFun Stream true Stream)]
