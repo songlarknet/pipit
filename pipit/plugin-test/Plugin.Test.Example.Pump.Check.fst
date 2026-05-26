@@ -84,20 +84,12 @@ let max_level:           int = 100
 
 (* Full system spec. In the original Pump.Check this was provable by
   1-induction; here we record the [check] body but leave the proof
-  obligation deferred.
-
-  NOTE: the reservoir computation is inlined rather than calling
-  [reservoir_model flow sol_en] because the plugin's cross-function
-  lifting currently mismatches shallow type aliases when a callee mixes
-  int and bool stream arguments. The standalone [reservoir_model] above
-  still lifts and verifies. *)
+  obligation deferred. *)
 let spec_body (flow: stream int) (estop level_low: stream bool): stream unit =
   let sol_try   = lastn settle_time (not estop && level_low) in
   let nok_stuck = once (lastn stuck_time sol_try) in
   let sol_en    = sol_try && not nok_stuck in
-  let rec level =
-    (0 `fby` level) + (if sol_en then flow else min flow 0)
-  in
+  let level     = reservoir_model flow sol_en in
   check
     (sofar (abs flow < max_flow) ==>^
     (sofar (level > level_low_threshold ==>^ not level_low) ==>^
@@ -106,8 +98,7 @@ let spec_body (flow: stream int) (estop level_low: stream bool): stream unit =
 (* Variant that introduces a manual CSE invariant
   countsecutive (x && y) <= countsecutive y. With the extra invariant the
   original example/Pump.Check version went through 1-induction; we leave
-  the proof deferred here for now. Reservoir inlined for the same reason
-  as [spec_body]. *)
+  the proof deferred here for now. *)
 let spec_any_needs_extra_invariant_manual_cse
     (flow: stream int) (estop level_low: stream bool): stream unit =
   let sol_try_c   = countsecutive (not estop && level_low) in
@@ -115,9 +106,7 @@ let spec_any_needs_extra_invariant_manual_cse
   let sol_try     = sol_try_c >= settle_time in
   let nok_stuck   = once (lastn stuck_time sol_try) in
   let sol_en      = sol_try && not nok_stuck in
-  let rec level =
-    (0 `fby` level) + (if sol_en then flow else min flow 0)
-  in
+  let level       = reservoir_model flow sol_en in
   check (sol_try_c <= level_low_c);
   check
     (sofar (abs flow < max_flow) ==>^

@@ -866,7 +866,12 @@ and lift_tm_lifted_apps (e: env) (hd: Tac.term) (args: list Tac.argv) (m: mode) 
       "mode: " ^ Tac.term_to_string (quote_mode m)]
   | _, [] ->
     let (tys, _) = get_exp_context hd e in
-    let tm = lift_tm_lifted_apps_strm e hd ctx0 (List.rev strm_apps) tys tys in
+    (* [strm_apps] is reversed to source order (oldest binding first). The
+       callee's [tys] from [get_exp_context] are in DB order (newest binding
+       first), so reverse them to align with [strm_apps]. The outermost XLet
+       wrapping must bind the oldest (deepest-DB) variable first. With
+       same-type callees this misalignment was invisible. *)
+    let tm = lift_tm_lifted_apps_strm e hd ctx0 (List.rev strm_apps) (List.rev tys) tys in
     (m, tm)
 
 and lift_tm_lifted_apps_strm (e: env) (hd: Tac.term) (ctx0: Tac.term) (strm_apps: list Tac.term) (tys: list Tac.typ) (tys_all: list Tac.typ): Tac.Tac Tac.term =
