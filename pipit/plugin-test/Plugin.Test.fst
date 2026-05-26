@@ -75,11 +75,8 @@ let eg_mixed_ann (x: stream int) =
 let eg_pairs (x: stream int) (y: stream bool): stream int =
   0 `fby` fst (x, y)
 
+[@@derive_has_stream]
 type ctor = | Ctor: x: int -> y: int -> ctor
-instance has_stream_ctor: PSSB.has_stream ctor = {
-  ty_id       = [`%ctor];
-  val_default = Ctor PSSB.val_default PSSB.val_default;
-}
 
 let eg_ctor (add: stream int) =
   let rec rcd =
@@ -97,12 +94,8 @@ let eg_pairsrec (add: stream int) =
   in
   xy
 
+[@@derive_has_stream]
 type record = { x: int; y: int; }
-
-instance has_stream_record: PSSB.has_stream record = {
-  ty_id       = [`%record];
-  val_default = { x = 0; y = 0; };
-}
 
 let eg_record (add: stream int) =
   let x = 0 `fby` add in
