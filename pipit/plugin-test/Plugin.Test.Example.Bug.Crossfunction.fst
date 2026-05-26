@@ -46,6 +46,12 @@ let add_same (a b: stream int): stream int =
 let add_mixed (a: stream int) (b: stream bool): stream int =
   a + (if b then 0 else 1)
 
+(* 3-arg mixed-type callee: (int, bool, int) -> int. The middle bool
+  argument is placed between two ints so that any single-position swap
+  in the lift's argument/type alignment would surface as a type error. *)
+let add_mixed3 (a: stream int) (b: stream bool) (c: stream int): stream int =
+  (if b then a else c) + c
+
 (* -- callers: cases that WORK ----------------------------------------- *)
 
 (* 1-arg cross-call: OK. *)
@@ -59,3 +65,13 @@ let caller_same (x: stream int): stream int =
 (* 2-arg mixed-type cross-call: regression test for the ordering bug. *)
 let caller_mixed (x: stream int) (b: stream bool): stream int =
   add_mixed x b
+
+(* 3-arg mixed-type cross-call, args passed in source order. *)
+let caller_mixed3 (x: stream int) (b: stream bool) (y: stream int): stream int =
+  add_mixed3 x b y
+
+(* 3-arg mixed-type cross-call where the caller's args appear in a
+  different order than the callee expects. This exercises the lift's
+  per-position type alignment more thoroughly. *)
+let caller_mixed3_reordered (b: stream bool) (y: stream int) (x: stream int): stream int =
+  add_mixed3 x b y
