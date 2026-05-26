@@ -2,9 +2,7 @@
   a Pipit stream function to a transition system plus Pulse [reset]/[step].
 
   Usage:
-    [%splice [count_when_state; __extractable_count_when;
-              count_when_system; count_when_reset; count_when_step]
-       (Pipit.Plugin.Extract.extract `%count_when)]
+    [%splice [] (Pipit.Plugin.Extract.extract `%count_when)]
 
   The single argument is the fully-qualified name of the source binding
   (the form `[`%nm]` produces this string at typecheck time). The splice
@@ -15,6 +13,11 @@
     [<nm>_system]          : XX.esystem (<input-row>) <nm>_state <result-ty>
     [<nm>_reset]           : Pulse reset function
     [<nm>_step]            : Pulse step function
+
+  The empty bracket list [[]] means "do not constrain the generated names";
+  F* only checks that every *declared* name is actually produced, so [[]]
+  skips the check. You may instead list any subset of the five names above
+  if you want a typo guard.
 
   The input row and result types are inferred from the source binding's
   arrow type by stripping the [stream] type constructor. Only the
