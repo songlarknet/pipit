@@ -39,13 +39,9 @@ The Shallow primitive table also includes an axiom for partially-decidable equal
 
 ## Pipit.Sugar
 Syntactic sugar: surface syntax.
-### Pipit.Sugar.Check
-Helper functions for checking properties.
-This module includes some admitted proofs that the proof-obligations on the abstract transition systems relate to the checked semantics.
-These proofs are pending and do not affect the claims made in the paper.
 
-### Pipit.Sugar.Contract
-Helper functions for checking contracts.
+### Pipit.Sugar.Base
+Core stream combinators that the shallow surface builds on.
 
 ### Pipit.Sugar.Shallow.Base
 Low-level definitions used by both the `#lang-pipit` plugin pipeline and any
@@ -58,10 +54,11 @@ In the future, we wish to embed propositions without requiring such an axiom.
 Typeclass-deriving tactics used by the plugin pipeline.
 
 The older hand-written shallow-lift surface (`Pipit.Sugar.Shallow`,
-`Pipit.Sugar.Shallow.Tactics.Lift`, `Pipit.Sugar.Vanilla`) has been removed;
-new code should use the `#lang-pipit` plugin (see `pipit/plugin/` and
-`pipit/plugin-test/`). The history is preserved in git for anyone needing to
-revive `example/ttcan/`, which still references the old modules.
+`Pipit.Sugar.Shallow.Tactics.Lift`, `Pipit.Sugar.Vanilla`, `Pipit.Sugar.Check`,
+`Pipit.Sugar.Contract`) has been removed; new code should use the `#lang-pipit`
+plugin (see `pipit/plugin/` and `pipit/source/Pipit.Source.fst`). The history
+is preserved in git for anyone needing to revive `example/ttcan/`, which still
+references the old modules.
 
 ## Pipit.System
 Transition systems.
