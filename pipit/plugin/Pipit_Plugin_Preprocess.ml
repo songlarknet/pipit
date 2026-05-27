@@ -177,17 +177,23 @@ let rec pre_term (t: FPA.term): FPA.term =
     letrec
 
 
+(* Look up the source identifier of a top-level let pattern. Returns a
+  synthetic [error_pat_not_found] ident if the pattern shape is unexpected;
+  callers should treat that as a hard error at a later stage. *)
+let rec id_of_pat (p: FPA.pattern): FI.ident =
+  let open FPA in
+  match p.pat with
+  | PatApp (p, _) -> id_of_pat p
+  | PatVar (i, _, _) -> i
+  | PatAscribed (p, _) -> id_of_pat p
+  | _ -> FI.mk_ident ("error_pat_not_found", p.prange)
+
+
 let mk_splice (pat: FPA.pattern) (mode: Pipit_Plugin_Support.mode): FPA.decl' =
   let open FPA in
   let range = pat.prange in
   let level = Expr in
-  let rec get_pat p = match p.pat with
-   | PatApp (p, _) -> get_pat p
-   | PatVar (i, _, _) -> i
-   | PatAscribed (p, _) -> get_pat p
-   | _ -> FI.mk_ident ("error_pat_not_found", range)
-  in
-  let id = get_pat pat in
+  let id = id_of_pat pat in
   (* Use a deterministic but obviously-generated name so consumers (e.g.
     _check bindings) can temporarily refer to the spliced core expression.
     In the long term users should not need to mention this binding directly. *)
@@ -236,15 +242,6 @@ let mk_derive_has_stream_splice
     attrs = [];
     interleaved = false;
   }
-
-(* Look up the source identifier of a top-level let pattern. *)
-let rec id_of_pat (p: FPA.pattern): FI.ident =
-  let open FPA in
-  match p.pat with
-  | PatApp (p, _) -> id_of_pat p
-  | PatVar (i, _, _) -> i
-  | PatAscribed (p, _) -> id_of_pat p
-  | _ -> FI.mk_ident ("error_pat_not_found", p.prange)
 
 (* Build the synthesised `__check_<id>` declaration for `[@@proof_induct1]`.
 
