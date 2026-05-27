@@ -8,12 +8,13 @@ statically agree on. We implement the high-level driver logic, for which we can
 generate C, and prove some properties about an abstraction.
 [The readme has more information.](ttcan/readme.md)
 
-The TTCAN example lives under [`ttcan/`](ttcan/) and currently uses the older
-shallow-lift tactic (`Pipit.Sugar.Shallow.Tactics.Lift`). It is temporarily
-disabled while a pre-existing tactic failure in `Network.TTCan.TriggerTimely`
-(`tac_break_binder` stubbed during the F* migration) is being resolved.
-Re-enabling will likely coincide with porting it to the `#lang-pipit` plugin
-pipeline.
+The TTCAN example lives under [`ttcan/`](ttcan/) and was written against the
+older shallow-lift tactic (`Pipit.Sugar.Shallow`, `Pipit.Sugar.Shallow.Tactics.Lift`).
+Those modules have since been removed from the tree; the ttcan sources are
+preserved as a snapshot. Reviving the example will be done by porting it to the
+`#lang-pipit` plugin pipeline (the relevant pre-existing tactic failure in
+`Network.TTCan.TriggerTimely` — `tac_break_binder` stubbed during the F*
+migration — is part of the same migration).
 
 ## Smaller examples (under `pipit/plugin-test/`)
 
