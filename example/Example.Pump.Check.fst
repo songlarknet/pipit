@@ -1,4 +1,4 @@
-module Plugin.Test.Example.Pump.Check
+module Example.Pump.Check
 #lang-pipit
 
 (* A port of example/Pump.Check.fst using the #lang-pipit preprocessor.

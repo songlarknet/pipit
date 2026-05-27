@@ -1,4 +1,4 @@
-module Plugin.Test.Example.Simple.Check
+module Example.Simple.Check
 #lang-pipit
 
 open Pipit.Source

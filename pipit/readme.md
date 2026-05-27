@@ -30,7 +30,6 @@ This discrepancy / admission does not affect the claims made in the paper.
 Definitions of primitive tables.
 The core language is parametrised by the primitive table, which makes it easier to define new primitives and types.
 The Shallow primitive table allows users to define shallowly-embedded primitives from F\* functions.
-The Vanilla primitive table is a small deeply-embedded set of primitives.
 
 The primitive table requires that each type has a type identifier; it also requires that two types with equivalent identifiers are themselves equivalent, as this is used in substitution.
 The Shallow primitive table uses shallowly-embedded types, which do not have decidable equality.
@@ -38,25 +37,28 @@ To work around this, the Shallow table introduces an axiom that two variables wi
 This axiom is potentially unsafe, but it is limited to users of the Shallow primitive table.
 The Shallow primitive table also includes an axiom for partially-decidable equality of primitive operations, which is useful for common subexpression elimination.
 
-The Vanilla primitive table requires no axioms.
-
 ## Pipit.Sugar
 Syntactic sugar: surface syntax.
-### Pipit.Sugar.Check
-Helper functions for checking properties.
-This module includes some admitted proofs that the proof-obligations on the abstract transition systems relate to the checked semantics.
-These proofs are pending and do not affect the claims made in the paper.
 
-### Pipit.Sugar.Contract
-Helper functions for checking contracts.
+### Pipit.Sugar.Base
+Core stream combinators that the shallow surface builds on.
 
-### Pipit.Sugar.Shallow
-Syntactic sugar and helper functions specific to the Shallow primitive table.
-This module includes an axiom `unsafe_proposition_holds`, which is used to state `prop` propositions as checked Pipit properties.
-This module does not expose the axiom and limits users to a restricted, safe interface.
+### Pipit.Sugar.Shallow.Base
+Low-level definitions used by both the `#lang-pipit` plugin pipeline and any
+remaining shallow front-ends. Includes an axiom `unsafe_proposition_holds`,
+which is used to state `prop` propositions as checked Pipit properties.
+The axiom is not exposed directly; users see a restricted, safe interface.
 In the future, we wish to embed propositions without requiring such an axiom.
 
-This axiom is limited to users of the Shallow primitive table; it does not affect the soundness of translation for programs using the Vanilla primitive table.
+### Pipit.Sugar.Shallow.Tactics.Derive
+Typeclass-deriving tactics used by the plugin pipeline.
+
+The older hand-written shallow-lift surface (`Pipit.Sugar.Shallow`,
+`Pipit.Sugar.Shallow.Tactics.Lift`, `Pipit.Sugar.Vanilla`, `Pipit.Sugar.Check`,
+`Pipit.Sugar.Contract`) has been removed; new code should use the `#lang-pipit`
+plugin (see `pipit/plugin/` and `pipit/source/Pipit.Source.fst`). The history
+is preserved in git for anyone needing to revive `example/ttcan/`, which still
+references the old modules.
 
 ## Pipit.System
 Transition systems.

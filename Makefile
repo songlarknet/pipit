@@ -58,11 +58,13 @@ test: extract source
 test-%:
 	@$(MAKE) -C pipit/test $(patsubst test-%,%,$@)
 
-example: extract source
+example: extract source plugin
 	@$(MAKE) -C example
 example-%:
 	@$(MAKE) -C example $(patsubst example-%,%,$@)
 
+# The example/ttcan/ subdirectory is currently disabled (see example/readme.md)
+# and is not built by the example target.
 
 include make/include/dev-init.mk
 

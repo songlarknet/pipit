@@ -1,4 +1,4 @@
-module Plugin.Test.Example.Simple.Extract
+module Example.Simple.Extract
 
 (* Extraction of [Plugin.Test.Example.Simple.Check.count_when] to a Pulse
   [reset]/[step] pair, driven by the [Pipit.Plugin.Extract.extract] splice.
@@ -13,7 +13,7 @@ module Plugin.Test.Example.Simple.Extract
   This file used to contain the hand-written boilerplate; the splice now
   derives it mechanically from the source binding's type. *)
 
-open Plugin.Test.Example.Simple.Check
+open Example.Simple.Check
 
 %splice [
     count_when_state; __extractable_count_when;
