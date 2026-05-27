@@ -1,5 +1,3 @@
-// TODO move this to plugin/
-// TODO fix extraction for plugin
 module Pipit.Plugin.Lift
 
 open Pipit.Plugin.Interface

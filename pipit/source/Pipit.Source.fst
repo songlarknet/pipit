@@ -1,5 +1,3 @@
-// TODO move this to plugin/
-// TODO fix extraction for plugin
 module Pipit.Source
 
 // re-export plugin attributes

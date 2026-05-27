@@ -1,4 +1,3 @@
-// TODO move this to plugin/
 module Pipit.Plugin.Check
 
 module PPL = Pipit.Plugin.Lift

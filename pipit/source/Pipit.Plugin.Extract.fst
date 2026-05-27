@@ -199,7 +199,7 @@ let find_core_for_source (tac_env: Tac.env) (nm_src_fqn: string)
 
 
 (* Generate the four extraction sigelts for the source binding [nm_src_fqn]
-  (a fully-qualified name like ["Plugin.Test.Example.Simple.Check.count_when"]).
+  (a fully-qualified name like ["Example.Simple.Check.count_when"]).
 
   The lifted core expression is located via its [core_of_source] attribute
   (see [find_core_for_source]). *)
@@ -257,7 +257,7 @@ let extract (nm_src_fqn: string): Tac.Tac (list Tac.sigelt) =
     `(Cons #string (`#src_str) (Cons #string (`#tgt_str) (Nil #string)))
   in
 
-  (* The lifted core expression term, e.g. [Plugin.Test.Example.Simple.Check.__core_count_when]. *)
+  (* The lifted core expression term, e.g. [Example.Simple.Check.__core_count_when]. *)
   let core_term: Tac.term =
     Tac.pack (Tac.Tv_FVar (Tac.pack_fv core_qn))
   in

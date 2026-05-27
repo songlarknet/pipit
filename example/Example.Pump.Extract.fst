@@ -1,4 +1,4 @@
-module Plugin.Test.Example.Pump.Extract
+module Example.Pump.Extract
 
 (* Extraction of Pump.Check stream functions to Pulse [reset]/[step] pairs
   via the [Pipit.Plugin.Extract.extract] splice.
@@ -8,7 +8,7 @@ module Plugin.Test.Example.Pump.Extract
   wrapper that destructures a single [stream (bool & bool)] before
   delegating. Both work directly through the splice. *)
 
-open Plugin.Test.Example.Pump.Check
+open Example.Pump.Check
 
 %splice [
     controller_body_state; __extractable_controller_body;

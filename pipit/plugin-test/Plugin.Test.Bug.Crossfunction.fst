@@ -1,4 +1,4 @@
-module Plugin.Test.Example.Bug.Crossfunction
+module Plugin.Test.Bug.Crossfunction
 #lang-pipit
 
 (*

@@ -16,20 +16,21 @@ preserved as a snapshot. Reviving the example will be done by porting it to the
 `Network.TTCan.TriggerTimely` — `tac_break_binder` stubbed during the F*
 migration — is part of the same migration).
 
-## Smaller examples (under `pipit/plugin-test/`)
+## Smaller examples
 
-The small examples — `Pump`, `Simple`, and a few bug reproducers — now live in
-the plugin-test directory and are written using the `#lang-pipit` front-end:
+The small examples use the `#lang-pipit` plugin pipeline:
 
-- [Pump](../pipit/plugin-test/Plugin.Test.Example.Pump.Check.fst) — a
-  controller for a water reservoir. There is a video of the controller in
-  action on [YouTube](https://youtu.be/6IybbQFPOl8). Extraction:
-  [Plugin.Test.Example.Pump.Extract](../pipit/plugin-test/Plugin.Test.Example.Pump.Extract.fst).
-- [Simple](../pipit/plugin-test/Plugin.Test.Example.Simple.Check.fst) — a
-  collection of one-liner stream functions with small properties. Extraction:
-  [Plugin.Test.Example.Simple.Extract](../pipit/plugin-test/Plugin.Test.Example.Simple.Extract.fst).
-- [Bug.Crossfunction](../pipit/plugin-test/Plugin.Test.Example.Bug.Crossfunction.fst) —
-  a minimal regression test.
+- [Pump](Example.Pump.Check.fst) — a controller for a water reservoir. There
+  is a video of the controller in action on
+  [YouTube](https://youtu.be/6IybbQFPOl8). Extraction:
+  [Example.Pump.Extract](Example.Pump.Extract.fst).
+- [Simple](Example.Simple.Check.fst) — a collection of one-liner stream
+  functions with small properties. Extraction:
+  [Example.Simple.Extract](Example.Simple.Extract.fst).
+
+A minimal regression test for cross-function lifting lives alongside the
+plugin tests as
+[Plugin.Test.Bug.Crossfunction](../pipit/plugin-test/Plugin.Test.Bug.Crossfunction.fst).
 
 The legacy hand-written versions of Pump, Simple, and Fir (using the older
 shallow-lift tactic and the `Pipit.Sugar.Vanilla` primitive table) have been
