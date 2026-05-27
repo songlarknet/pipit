@@ -2,7 +2,9 @@
   a Pipit stream function to a transition system plus Pulse [reset]/[step].
 
   Usage:
-    [%splice [] (Pipit.Plugin.Extract.extract `%count_when)]
+    [%splice [ count_when_state; __extractable_count_when;
+               count_when_system; count_when_reset; count_when_step ]
+      (Pipit.Plugin.Extract.extract `%count_when)]
 
   The single argument is the fully-qualified name of the source binding
   (the form `[`%nm]` produces this string at typecheck time). The splice
@@ -14,10 +16,11 @@
     [<nm>_reset]           : Pulse reset function
     [<nm>_step]            : Pulse step function
 
-  The empty bracket list [[]] means "do not constrain the generated names";
-  F* only checks that every *declared* name is actually produced, so [[]]
-  skips the check. You may instead list any subset of the five names above
-  if you want a typo guard.
+  Listing all five names gives F* a typo guard: the splice fails at
+  elaboration time if any declared name is not produced. The empty
+  bracket list [[]] is also accepted (F* only checks that every declared
+  name is actually produced, so [[]] simply skips the check) but loses
+  that guard; prefer the explicit form.
 
   The input row and result types are inferred from the source binding's
   arrow type by stripping the [stream] type constructor. Multiple stream
@@ -38,38 +41,6 @@ module SL  = Pipit.Exp.SimplifyLet
 module XX  = Pipit.Exec.Exp
 module XL  = Pipit.Exec.Pulse
 module PT  = Pipit.Tactics
-
-
-(* -------------------------------------------------------------------- *)
-(* Local extraction tactic                                              *)
-(* -------------------------------------------------------------------- *)
-
-(* Variant of [XL.tac_extract] that additionally unfolds
-  [FStar.Pervasives.coerce_eq]. The recursive case of
-  [Pipit.Context.Row.index] wraps its recursive call in [coerce_eq] to
-  reconcile two index-list views; without unfolding the coercion the
-  recursion stalls and surfaces in extracted C as a call to an
-  unimplemented [Pipit_Context_Row_index]. This shows up only for
-  bindings with two or more inputs, because index 0 returns the head
-  directly without recursing. *)
-let tac_extract (namespaces: list string) () : Tac.Tac unit =
-  Tac.norm [
-    zeta_full;
-    iota;
-    primops;
-    delta_namespace namespaces;
-    delta_only [
-      `%XL.mk_init;
-      `%XL.mk_step_pure;
-      `%XL.mk_reset;
-      `%XL.mk_step;
-      `%XL.mk_reset_sys;
-      `%XL.mk_step_sys;
-      `%Pipit.Context.Row.index;
-      `%FStar.Pervasives.coerce_eq;
-    ]
-  ];
-  Tac.trefl ()
 
 
 (* -------------------------------------------------------------------- *)
@@ -279,7 +250,7 @@ let extract (nm_src_fqn: string): Tac.Tac (list Tac.sigelt) =
   in
   let attr_extract: Tac.term =
     `(FStar.Tactics.postprocess_with
-        (Pipit.Plugin.Extract.tac_extract (`#ns_term)))
+        (XL.tac_extract (`#ns_term)))
   in
 
   (* ---- state ---- *)

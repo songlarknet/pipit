@@ -125,9 +125,27 @@ fn mk_step_sys (#input #state #output: eqtype)
   out
 }
 
+(* Strong-enough normalization for extracting both single- and multi-input
+  Pulse systems. The deltas are written for the common case where the
+  result of [mk_step]/[mk_reset] is normalized down to plain Pulse with
+  no surviving [Pipit_Context_Row_index] / [coerce_eq__any_any] calls.
+
+  Two subtle requirements (both load-bearing for the multi-input case):
+
+  * [zeta_full] instead of plain [zeta]. The recursive case of
+    [Pipit.Context.Row.index] introduces a let-binding [ts = ...] via an
+    [iota]-match on the row list; plain [zeta] does not propagate that
+    binding deeply enough for the recursive [index] call to fire, so
+    the recursion stalls. With [zeta_full] the substitution happens and
+    the recursion fully unfolds.
+
+  * [FStar.Pervasives.coerce_eq] in [delta_only]. The recursive case of
+    [Row.index] wraps its result in [coerce_eq] to reconcile two
+    index-list views; without unfolding the coercion the wrapper
+    survives in C as an unimplemented [coerce_eq__any_any] call. *)
 let tac_extract (namespaces: list string) () =
   Tac.norm [
-    zeta;
+    zeta_full;
     iota;
     primops;
     delta_namespace namespaces;
@@ -138,7 +156,8 @@ let tac_extract (namespaces: list string) () =
       `%mk_step;
       `%mk_reset_sys;
       `%mk_step_sys;
-      `%Pipit.Context.Row.index
+      `%Pipit.Context.Row.index;
+      `%FStar.Pervasives.coerce_eq;
     ]
   ];
   Tac.trefl ()

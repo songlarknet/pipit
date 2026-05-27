@@ -10,9 +10,15 @@ module Plugin.Test.Example.Pump.Extract
 
 open Plugin.Test.Example.Pump.Check
 
-%splice []
+%splice [
+    controller_body_state; __extractable_controller_body;
+    controller_body_system; controller_body_reset; controller_body_step
+  ]
   (Pipit.Plugin.Extract.extract (`%controller_body))
 
-%splice []
+%splice [
+    controller_state; __extractable_controller;
+    controller_system; controller_reset; controller_step
+  ]
   (Pipit.Plugin.Extract.extract (`%controller))
 
