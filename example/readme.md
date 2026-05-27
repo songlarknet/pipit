@@ -27,6 +27,10 @@ The small examples use the `#lang-pipit` plugin pipeline:
 - [Simple](Example.Simple.Check.fst) — a collection of one-liner stream
   functions with small properties. Extraction:
   [Example.Simple.Extract](Example.Simple.Extract.fst).
+- [Fir](Example.Fir.Check.fst) — a small BIBO proof for a two-tap FIR
+  filter, plus commented-out sketches of `bibo3` (needs `proof_induct k`
+  for k>1) and `FirN` (needs a clean story for mixing F* list induction
+  with stream proofs).
 
 A minimal regression test for cross-function lifting lives alongside the
 plugin tests as
