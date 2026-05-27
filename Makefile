@@ -4,8 +4,8 @@ MAKEFLAGS := --jobs=$(NUM_JOBS)
 ROOT_DIR = $(realpath .)
 export ROOT_DIR
 
-all: abstract base core extract plugin plugin-test source test rts example
-.PHONY: all abstract base core extract plugin plugin-test source test rts example
+all: abstract base core extract plugin plugin-test source test rts
+.PHONY: all abstract base core extract plugin plugin-test source test rts
 
 clean:
 	@rm -rf _build
@@ -58,11 +58,10 @@ test: extract source
 test-%:
 	@$(MAKE) -C pipit/test $(patsubst test-%,%,$@)
 
-example: extract source
-	@$(MAKE) -C example
-example-%:
-	@$(MAKE) -C example $(patsubst example-%,%,$@)
-
+# User-facing examples have moved under pipit/plugin-test/Plugin.Test.Example.*
+# (built as part of the `plugin-test` target). The example/ttcan/ subdirectory
+# is currently disabled pending migration to the plugin pipeline; see
+# example/readme.md.
 
 include make/include/dev-init.mk
 
