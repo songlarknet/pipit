@@ -163,6 +163,15 @@ let core_sigelt (e: env) (attrs: list Tac.term) (nm_src nm_core: option string) 
   } in
   let sv: Tac.sigelt_view = Tac.Sg_Let {isrec=false; lbs=[lb_core]} in
   let se: Tac.sigelt = Tac.pack_sigelt sv in
+  (* The plugin-emitted bindings (__core_*, __prim_*, __check_*, shallow
+     type-signature stubs) are pure AST / proof artifacts used at type-level
+     or by tactic normalization only; they are never needed at runtime, and
+     their bodies reference shallow-stream helpers like
+     [Pipit.Sugar.Shallow.Base.shallow] that have no C implementation, so
+     extraction to KaRaMeL would fail with "no corresponding implementation"
+     errors. Mark them [NoExtract] so KaRaMeL skips them entirely while F*'s
+     normalizer still has full access to their bodies. *)
+  let se = Ref.set_sigelt_quals [Ref.NoExtract] se in
   let attrs = match nm_src with
     | Some nm -> (`core_of_source (`#(Tac.pack (Tac.Tv_Const (Ref.C_String nm)))) (`#(quote_mode m))) :: attrs
     | None -> attrs in
@@ -866,7 +875,12 @@ and lift_tm_lifted_apps (e: env) (hd: Tac.term) (args: list Tac.argv) (m: mode) 
       "mode: " ^ Tac.term_to_string (quote_mode m)]
   | _, [] ->
     let (tys, _) = get_exp_context hd e in
-    let tm = lift_tm_lifted_apps_strm e hd ctx0 (List.rev strm_apps) tys tys in
+    (* [strm_apps] is reversed to source order (oldest binding first). The
+       callee's [tys] from [get_exp_context] are in DB order (newest binding
+       first), so reverse them to align with [strm_apps]. The outermost XLet
+       wrapping must bind the oldest (deepest-DB) variable first. With
+       same-type callees this misalignment was invisible. *)
+    let tm = lift_tm_lifted_apps_strm e hd ctx0 (List.rev strm_apps) (List.rev tys) tys in
     (m, tm)
 
 and lift_tm_lifted_apps_strm (e: env) (hd: Tac.term) (ctx0: Tac.term) (strm_apps: list Tac.term) (tys: list Tac.typ) (tys_all: list Tac.typ): Tac.Tac Tac.term =

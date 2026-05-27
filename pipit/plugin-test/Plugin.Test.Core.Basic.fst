@@ -11,27 +11,29 @@ module PSSB = Pipit.Sugar.Shallow.Base
 #set-options "--ext pipit:lift:debug"
 #set-options "--print_implicits --print_bound_var_types --print_full_names"
 
-instance has_stream_int: Pipit.Sugar.Shallow.Base.has_stream int = {
-  ty_id       = [`%Prims.int];
-  val_default = 0;
-}
-
 instance has_stream_option (#a: eqtype) {| PSSB.has_stream a |}: PSSB.has_stream (option a) = {
   ty_id       = `%Pervasives.Native.option :: PSSB.ty_id #a;
   val_default = None;
 }
 
 type ctor = | Ctor: x: int -> y: int -> ctor
-instance has_stream_ctor: PSSB.has_stream ctor = {
-  ty_id       = [`%ctor];
-  val_default = Ctor PSSB.val_default PSSB.val_default;
-}
+%splice[has_stream_ctor] (derive_has_stream "ctor")
 
 type record = { x: int; y: int; }
-instance has_stream_record: PSSB.has_stream record = {
-  ty_id       = [`%record];
-  val_default = { x = 0; y = 0; };
-}
+%splice[has_stream_record] (derive_has_stream "record")
+
+type sum = | SumA | SumB: x: int -> sum
+%splice[has_stream_sum] (derive_has_stream_with_default "sum" "SumA")
+
+(* Same as [record], but using the [@@derive_has_stream] preprocessor
+  attribute instead of an explicit %splice — sanity check that the
+  attribute path emits an equivalent instance. *)
+[@@derive_has_stream]
+type record_derived = { rx: int; ry: int; }
+
+(* Same shape as [ctor], also via the attribute. *)
+[@@derive_has_stream]
+type ctor_derived = | CtorDerived: cx: int -> cy: int -> ctor_derived
 
 
 [@@source_mode (ModeFun Stream true Stream)]

@@ -29,6 +29,11 @@ instance has_stream_bool: has_stream bool = {
   val_default = false;
 }
 
+instance has_stream_int: has_stream int = {
+  ty_id       = [`%Prims.int];
+  val_default = 0;
+}
+
 instance has_stream_unit: has_stream unit = {
   ty_id       = [`%Prims.unit];
   val_default = ();

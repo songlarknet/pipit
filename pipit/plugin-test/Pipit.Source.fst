@@ -10,6 +10,15 @@ module PSSB = Pipit.Sugar.Shallow.Base
 module PPS  = Pipit.Prim.Shallow
 module PPT  = Pipit.Prim.Table
 module PPL = Pipit.Plugin.Lift
+module PSSD = Pipit.Sugar.Shallow.Tactics.Derive
+
+(* Splice [has_stream] instances for single-constructor inductive types. *)
+let derive_has_stream = PSSD.derive_has_stream
+
+(* Splice [has_stream] for multi-constructor inductive types; the user
+  picks one constructor (by short name) whose application supplies the
+  [val_default] value. *)
+let derive_has_stream_with_default = PSSD.derive_has_stream_with_default
 
 (*** Public Attributes ***)
 
@@ -42,6 +51,13 @@ assume val check (prop: bool): unit
 [@@core_lifted; core_of_source "Pipit.Source.check" (ModeFun Stream true Stream)]
 let check_core: PXB.exp PPS.table [PSSB.shallow bool] (PSSB.shallow unit) =
   PXB.XCheck Pipit.Prop.Metadata.PSUnknown (PXB.XBase (PXB.XBVar 0))
+
+(* Bool implication. The standard F* [==>] is prop-typed (and so cannot
+  be auto-lifted by the plugin); use [==>^] instead in #lang-pipit code.
+  The caret suffix follows the convention that stream-only operators
+  with no prop/F* counterpart are spelled with a trailing [^]. *)
+unfold
+let op_Equals_Equals_Greater_Hat (a b: bool): bool = if a then b else true
 
 
 // specialise if-then-else? maybe we should generate better expressions for if-then-else.

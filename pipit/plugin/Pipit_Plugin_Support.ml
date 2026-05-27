@@ -15,9 +15,21 @@ let src_lid i = FI.lid_of_path (mod_path @ [i])
 (* let lid_stream = src_lid "stream" *)
 let rec_lid = src_lid "rec'"
 let lift_tac_lid = FI.lid_of_path ["Pipit"; "Plugin"; "Lift"; "lift_tac"]
+let derive_has_stream_tac_lid =
+  FI.lid_of_path ["Pipit"; "Sugar"; "Shallow"; "Tactics"; "Derive"; "derive_has_stream"]
 let core_of_source_lid = src_lid "core_of_source"
 let extract_lid = src_lid "extract"
 let source_mode_lid = src_lid "source_mode"
+
+(* `[@@expect_failure]` is exported from FStar.Attributes (auto-opened). *)
+let expect_failure_lid = FI.lid_of_path ["FStar"; "Attributes"; "expect_failure"]
+
+(* Targets used by the synthesised `__check_<id>` binding. *)
+let assert_by_tactic_lid = FI.lid_of_path ["FStar"; "Tactics"; "Effect"; "assert_by_tactic"]
+let induct1_lid          = FI.lid_of_path ["Pipit"; "System"; "Ind"; "induct1"]
+let system_of_exp_lid    = FI.lid_of_path ["Pipit"; "System"; "Exp"; "system_of_exp"]
+let bless_lid            = FI.lid_of_path ["Pipit"; "Exp"; "Checked"; "Base"; "bless"]
+let norm_full_lid        = FI.lid_of_path ["Pipit"; "Tactics"; "norm_full"]
 
 let mStream_lid = src_lid "Stream"
 let mStatic_lid = src_lid "Static"

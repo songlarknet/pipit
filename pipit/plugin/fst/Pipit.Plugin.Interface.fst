@@ -34,3 +34,27 @@ let core_lifted = ()
 irreducible
 let core_lifted_prim = ()
 
+(* Mark a source function as one whose `check`s should be discharged
+  automatically by 1-induction. The preprocessor synthesises a
+  `__check_<id>` binding that asserts `induct1 (system_of_exp __core_<id>)`
+  by normalisation and then blesses the core expression. The shape is
+  arity-polymorphic, so it works for any number of stream arguments. *)
+irreducible
+let proof_induct1 = ()
+
+(* Modifier for a `proof_*` attribute: the synthesised proof obligation is
+  expected to *fail*. The synthesised `__check_<id>` is tagged with
+  `[@@expect_failure]`, so the module typechecks only when the proof
+  method fails to discharge the source's `check`s. Useful for confirming
+  that a property is genuinely not provable by the chosen method.
+  Usage: `[@@proof_induct1; proof_expect_failure]`. *)
+irreducible
+let proof_expect_failure = ()
+
+(* Attribute on a type definition: ask the preprocessor to splice a
+  `has_stream <T>` instance for the type. Currently supports single-
+  constructor inductives (records and data classes). Multi-constructor
+  types should keep using `derive_has_stream_with_default` explicitly. *)
+irreducible
+let derive_has_stream = ()
+
