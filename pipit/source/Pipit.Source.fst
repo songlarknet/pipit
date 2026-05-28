@@ -4,11 +4,11 @@ module Pipit.Source
 include Pipit.Plugin.Interface
 
 module PXB = Pipit.Exp.Base
-module PSSB = Pipit.Sugar.Shallow.Base
+module PSSB = Pipit.Prim.HasStream
 module PPS  = Pipit.Prim.Shallow
 module PPT  = Pipit.Prim.Table
 module PPL = Pipit.Plugin.Lift
-module PSSD = Pipit.Sugar.Shallow.Tactics.Derive
+module PSSD = Pipit.Prim.HasStream.Derive
 
 (* Splice [has_stream] instances for single-constructor inductive types. *)
 let derive_has_stream = PSSD.derive_has_stream

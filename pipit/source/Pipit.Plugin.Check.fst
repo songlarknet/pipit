@@ -13,7 +13,7 @@ module Range = FStar.Range
 
 module List = FStar.List.Tot
 
-module PSSB = Pipit.Sugar.Shallow.Base
+module PSSB = Pipit.Prim.HasStream
 module PPS  = Pipit.Prim.Shallow
 module PPT  = Pipit.Prim.Table
 module PXB  = Pipit.Exp.Base

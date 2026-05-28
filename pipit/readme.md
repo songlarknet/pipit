@@ -37,23 +37,20 @@ To work around this, the Shallow table introduces an axiom that two variables wi
 This axiom is potentially unsafe, but it is limited to users of the Shallow primitive table.
 The Shallow primitive table also includes an axiom for partially-decidable equality of primitive operations, which is useful for common subexpression elimination.
 
-## Pipit.Sugar
-Syntactic sugar: surface syntax.
+## Pipit.Prim.HasStream
+The `has_stream` typeclass and `shallow` function that bridge an F* `eqtype`
+into a `Pipit.Prim.Shallow.shallow_type` for the `#lang-pipit` plugin
+pipeline. `val_default` here is also used as the seed for `rec'` fixpoints
+in the executable transition system.
 
-### Pipit.Sugar.Base
-Core stream combinators that the shallow surface builds on.
+### Pipit.Prim.HasStream.Derive
+Typeclass-deriving tactics (`derive_has_stream`,
+`derive_has_stream_with_default`) used by the plugin pipeline to
+auto-generate `has_stream` instances for user-defined monomorphic
+inductives.
 
-### Pipit.Sugar.Shallow.Base
-Low-level definitions used by both the `#lang-pipit` plugin pipeline and any
-remaining shallow front-ends. Includes an axiom `unsafe_proposition_holds`,
-which is used to state `prop` propositions as checked Pipit properties.
-The axiom is not exposed directly; users see a restricted, safe interface.
-In the future, we wish to embed propositions without requiring such an axiom.
-
-### Pipit.Sugar.Shallow.Tactics.Derive
-Typeclass-deriving tactics used by the plugin pipeline.
-
-The older hand-written shallow-lift surface (`Pipit.Sugar.Shallow`,
+The older hand-written shallow-lift surface (`Pipit.Sugar.Base`,
+`Pipit.Sugar.Shallow.Base`, `Pipit.Sugar.Shallow`,
 `Pipit.Sugar.Shallow.Tactics.Lift`, `Pipit.Sugar.Vanilla`, `Pipit.Sugar.Check`,
 `Pipit.Sugar.Contract`) has been removed; new code should use the `#lang-pipit`
 plugin (see `pipit/plugin/` and `pipit/source/Pipit.Source.fst`). The history

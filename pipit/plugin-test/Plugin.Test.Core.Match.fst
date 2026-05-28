@@ -4,7 +4,7 @@ open Plugin.Test.Core.Basic
 
 open Pipit.Source
 module PPL = Pipit.Plugin.Lift
-module PSSB = Pipit.Sugar.Shallow.Base
+module PSSB = Pipit.Prim.HasStream
 
 // Useful for testing:
 // #set-options "--ext pipit:lift:debug"

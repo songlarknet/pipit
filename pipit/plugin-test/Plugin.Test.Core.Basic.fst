@@ -2,7 +2,7 @@ module Plugin.Test.Core.Basic
 
 open Pipit.Source
 module PPL = Pipit.Plugin.Lift
-module PSSB = Pipit.Sugar.Shallow.Base
+module PSSB = Pipit.Prim.HasStream
 
 // Don't warn on local let-recs; they're only for testing
 #set-options "--warn_error -242"

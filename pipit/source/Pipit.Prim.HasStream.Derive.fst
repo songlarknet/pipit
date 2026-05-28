@@ -20,13 +20,13 @@
     %splice[has_stream_my_sum] (derive_has_stream_with_default "my_sum" "A")
 
   Polymorphic inductives are not yet supported; see project notes. *)
-module Pipit.Sugar.Shallow.Tactics.Derive
+module Pipit.Prim.HasStream.Derive
 
 module Tac  = FStar.Tactics.V2
 module Ref  = FStar.Reflection.V2
 module List = FStar.List.Tot
 
-module PSSB = Pipit.Sugar.Shallow.Base
+module PSSB = Pipit.Prim.HasStream
 module PTB  = Pipit.Tactics.Base
 
 open FStar.Tactics.NamedView
