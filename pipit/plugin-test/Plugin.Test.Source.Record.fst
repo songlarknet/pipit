@@ -45,12 +45,8 @@ let manhattan (p: stream point): stream int =
 
 (*** 5. Record update using [with] syntax ***)
 
-(* TEMPORARILY DISABLED: the `{ p with px = ... }` record-update form is
-   not yet recognised by the new AST lifter. *)
-(*
 let shift_x (p: stream point) (dx: stream int): stream point =
   { p with px = p.px + dx }
-*)
 
 
 (*** 6. Nested records: project a field that is itself a record ***)
@@ -70,12 +66,8 @@ let mk_box (a: stream point) (b: stream point): stream box =
 
 (*** 8. [fby] on a whole record value ***)
 
-(* TEMPORARILY DISABLED: the new AST lifter requires the [fby] head to be
-   a primitive literal; record literals are not yet accepted. *)
-(*
 let prev_point (p: stream point): stream point =
   { px = 0; py = 0 } `fby` p
-*)
 
 
 (*** 9. Recursion across record fields ***)
@@ -90,9 +82,5 @@ let counter_xy (x: stream int) (y: stream int): stream point =
 
 (*** 10. Static (non-stream) record used inside a streaming function ***)
 
-(* TEMPORARILY DISABLED: static (non-stream) record arguments inside a
-   streaming function are not yet handled by the new AST lifter. *)
-(*
 let with_offset (off: point) (p: stream point): stream point =
   { px = p.px + off.px; py = p.py + off.py }
-*)

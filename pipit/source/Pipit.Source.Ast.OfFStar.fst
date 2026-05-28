@@ -106,6 +106,22 @@ let of_name_of_namedv (nv: T.namedv): T.Tac Ast.name =
   let ppname = T.unseal nv.ppname in
   ppname ^ "#" ^ string_of_int nv.uniq
 
+(*** Refinement stripping ***)
+
+(* Recursively replace every `Tv_Refine b _` with `b.sort`, dropping the
+   refinement predicate. Applied to types that flow into the core `exp`
+   layer (stream-binder sorts, prim argument/result types, ret_ty), which
+   doesn't represent dependent / refined types. Static binders that stay
+   as ordinary F* `Tv_Abs` wrappers do NOT go through this pass: their
+   refinements remain in scope and can mention prior parameters. *)
+let strip_refinements_visit (t: T.term): T.Tac T.term =
+  match T.inspect t with
+  | T.Tv_Refine b _ -> b.sort
+  | _ -> t
+
+let strip_refinements: T.term -> T.Tac T.term =
+  T.visit_tm strip_refinements_visit
+
 (*** Constants ***)
 
 let of_const (rng: R.range) (c: T.vconst): T.Tac (Ast.lit & PPI.mode) =
@@ -116,6 +132,8 @@ let of_const (rng: R.range) (c: T.vconst): T.Tac (Ast.lit & PPI.mode) =
     { Ast.lit_ty = `bool; Ast.lit_tm = T.pack (T.Tv_Const T.C_True) },  PPI.Static
   | T.C_False  ->
     { Ast.lit_ty = `bool; Ast.lit_tm = T.pack (T.Tv_Const T.C_False) }, PPI.Static
+  | T.C_Unit   ->
+    { Ast.lit_ty = `unit; Ast.lit_tm = T.pack (T.Tv_Const T.C_Unit) },  PPI.Static
   | _ ->
     T.fail "Pipit.Source.Ast.OfFStar: unsupported constant kind"
 
@@ -139,6 +157,8 @@ let of_prim_fv_applied (e: of_env) (fv: T.fv) (implicits: list T.argv): T.Tac As
   let ty     = T.tc e.oe_tac_env prim_fn in
   let (args, c) = T.collect_arr ty in
   let res_ty = PTB.returns_of_comp c in
+  let args   = T.map strip_refinements args in
+  let res_ty = strip_refinements res_ty in
   {
     Ast.prim_id      = Some nm_str;
     Ast.prim_arg_tys = args;
@@ -474,13 +494,15 @@ and lift_app_rec (e: of_env) (rng: R.range) (args: list T.argv): T.Tac (PPI.mode
 and lift_app_fby (e: of_env) (rng: R.range) (args: list T.argv): T.Tac (PPI.mode & Ast.ast) =
   match args with
   | [(v_tm, _); (e_tm, _)] ->
-    let (_, v_ast) = lift_tm e v_tm in
-    let lit = (match v_ast with
-      | Ast.ALit _ l -> l
-      | _ -> T.fail "Pipit.Source.Ast.OfFStar: fby head must be a literal in v0")
-    in
-    let (_, e_ast) = lift_tm e e_tm in
-    PPI.Stream, Ast.AFby rng lit e_ast
+    let (v_mode, _v_ast) = lift_tm e v_tm in
+    (match v_mode with
+     | PPI.Static ->
+       let v_ty = strip_refinements (T.tc e.oe_tac_env v_tm) in
+       let lit: Ast.lit = { Ast.lit_ty = v_ty; Ast.lit_tm = v_tm } in
+       let (_, e_ast) = lift_tm e e_tm in
+       PPI.Stream, Ast.AFby rng lit e_ast
+     | _ ->
+       T.fail "Pipit.Source.Ast.OfFStar: fby init must be a static value")
   | _ ->
     T.fail "Pipit.Source.Ast.OfFStar: fby expects two explicit arguments"
 
@@ -590,19 +612,33 @@ and lift_app_fv (e: of_env) (rng: R.range) (fv: T.fv) (implicits: list T.argv) (
   | Some m_lifted ->
     (* Another `#lang-pipit` binding: stream-aware call. Resolve the
        callee's source signature so that `Lower` can build the
-       `XLet`/`weaken` chain without re-typechecking. Source argument
-       types are returned in source-text order (outermost lambda first). *)
+       `XLet`/`weaken` chain without re-typechecking.
+
+       For polymorphic callees we must pre-apply the call-site
+       implicits (resolved by F* when elaborating the user-facing
+       call) to the FVar before `T.tc`, so that free type variables
+       like `#a` in `fst (#a #b: eqtype) ...` are replaced with
+       concrete types (`int`, `bool`, ...). Without this, `arg_tys`
+       would still mention the callee's type variables, which are not
+       in scope at the call site and break `Lower.context_term`.
+       Mirrors `of_prim_fv_applied`. *)
     let fv_tm = T.pack (T.Tv_FVar fv) in
-    let src_ty = T.tc e.oe_tac_env fv_tm in
+    let head_applied =
+      match implicits with
+      | [] -> fv_tm
+      | _  -> T.mk_app fv_tm implicits
+    in
+    let src_ty = T.tc e.oe_tac_env head_applied in
     let (arg_bs, _) = T.collect_arr_bs src_ty in
     let explicit_bs =
       L.filter (fun (b: T.binder) -> Ref.Q_Explicit? b.qual) arg_bs
     in
     let arg_tys: list Ast.sty = L.map (fun (b: T.binder) -> b.sort) explicit_bs in
     let br: Ast.binding_ref = {
-      Ast.br_fqn     = fqn;
-      Ast.br_mode    = m_lifted;
-      Ast.br_arg_tys = arg_tys;
+      Ast.br_fqn       = fqn;
+      Ast.br_mode      = m_lifted;
+      Ast.br_arg_tys   = arg_tys;
+      Ast.br_implicits = implicits;
     } in
     PPI.Stream, Ast.ACallStream rng br arg_asts
   | None ->
@@ -650,7 +686,7 @@ let lift_top_body (tac_env: T.env) (lifted: list (Ast.fqn & PPI.mode)) (body: T.
       let ob: of_binder = {
         ob_uniq = b.uniq;
         ob_name = nm;
-        ob_sty  = b.sort;
+        ob_sty  = strip_refinements b.sort;
         ob_mode = PPI.Stream;
       } in
       (of_push ob e, passthrough_rev)
@@ -662,6 +698,6 @@ let lift_top_body (tac_env: T.env) (lifted: list (Ast.fqn & PPI.mode)) (body: T.
       (e', b :: passthrough_rev)
   in
   let (e_final, passthrough_rev) = T.fold_left push_param (e0, []) bs in
-  let ret_ty: T.term = T.tc e_final.oe_tac_env body in
+  let ret_ty: T.term = strip_refinements (T.tc e_final.oe_tac_env body) in
   let (_, ast) = lift_tm e_final body in
   (L.rev passthrough_rev, e_final.oe_binders, ret_ty, ast)

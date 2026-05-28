@@ -291,6 +291,15 @@ let rec lower_stream env a =
     else
     let core_fqn = core_fqn_of br.Ast.br_fqn in
     let core_fv_tm = T.pack (T.Tv_FVar (T.pack_fv core_fqn)) in
+    (* Pre-apply the call-site implicits to the callee's `__core_*`
+       reference so polymorphic callees become monomorphic at this
+       call site. For ground callees `br_implicits` is empty and this
+       is a no-op. *)
+    let core_fv_tm =
+      match br.Ast.br_implicits with
+      | [] -> core_fv_tm
+      | _  -> T.mk_app core_fv_tm br.Ast.br_implicits
+    in
     (* Caller-side stream context (innermost first). *)
     let caller_stream_ctx = stream_ctx_of_binders env.binders in
     (* Callee context (innermost first) = reverse of source param tys. *)

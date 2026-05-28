@@ -114,12 +114,21 @@ type prim = {
    substitutes call-site arguments into the callee's `__core_*`
    expression. The return type is recoverable from the callee's
    signature but is not needed by `Lower` since the spliced sigelt
-   gets its `lb_typ` from the surrounding context. *)
+   gets its `lb_typ` from the surrounding context.
+
+   `br_implicits` are the call-site implicit/instance arguments that
+   F* resolved when typechecking the user-facing call (e.g. `#int`,
+   `#bool`, `#has_stream_int`, `#has_stream_bool` for `fst (x, y)`
+   on `stream int * stream bool`). They are pre-applied to the callee
+   `__core_*` reference by `Lower` so polymorphic callees become
+   monomorphic at each call site; if the callee is ground, this list
+   is empty. *)
 noeq
 type binding_ref = {
-  br_fqn:      fqn;
-  br_mode:     mode;
-  br_arg_tys:  list sty;
+  br_fqn:        fqn;
+  br_mode:       mode;
+  br_arg_tys:    list sty;
+  br_implicits:  list T.argv;
 }
 
 (*** AST ***)
