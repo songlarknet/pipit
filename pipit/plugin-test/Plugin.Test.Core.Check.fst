@@ -6,7 +6,7 @@ open Pipit.Source
 
 module PPL = Pipit.Plugin.Lift
 // module PPC = Pipit.Plugin.Check
-module PSSB = Pipit.Sugar.Shallow.Base
+module PSSB = Pipit.Prim.HasStream
 
 module PPS  = Pipit.Prim.Shallow
 module PPT  = Pipit.Prim.Table
@@ -25,7 +25,7 @@ let eg_check_trivial (x: int) =
   let prop = x < 0 || x >= 0 in
   check prop;
   x
-%splice[eg_check_trivial_core] (PPL.lift_tac1 "eg_check_trivial")
+%splice[eg_check_trivial_core] (PPL.lift_ast_tac1 "eg_check_trivial")
 
 [@@core_of_source (`%eg_check_trivial) (ModeFun Stream true Stream)]
 let eg_check_trivial_check: PXB.exp PPS.table [PSSB.shallow int] (PSSB.shallow int) =
@@ -41,7 +41,7 @@ let eg_check_false (x: int) =
   let prop = x > 0 in
   check prop;
   x
-%splice[] (PPL.lift_tac1 "eg_check_false")
+%splice[] (PPL.lift_ast_tac1 "eg_check_false")
 
 [@@core_of_source (`%eg_check_false) (ModeFun Stream true Stream); expect_failure]
 let eg_check_false_check: PXB.exp PPS.table [PSSB.shallow int] (PSSB.shallow int) =

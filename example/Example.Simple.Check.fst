@@ -2,7 +2,7 @@ module Example.Simple.Check
 #lang-pipit
 
 open Pipit.Source
-module PSSB = Pipit.Sugar.Shallow.Base
+module PSSB = Pipit.Prim.HasStream
 
 (* Count the number of times a predicate has been true. *)
 let count_when (p: stream bool): stream int =

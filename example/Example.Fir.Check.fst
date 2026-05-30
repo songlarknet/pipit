@@ -10,7 +10,7 @@ module Example.Fir.Check
    the lift and discharge the check with [@@proof_induct1]. *)
 
 open Pipit.Source
-module PSSB = Pipit.Sugar.Shallow.Base
+module PSSB = Pipit.Prim.HasStream
 
 (* Temporal: sofar p == p has held at every step so far. *)
 let sofar (p: stream bool): stream bool =

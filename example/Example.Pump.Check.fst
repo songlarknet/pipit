@@ -8,7 +8,7 @@ module Example.Pump.Check
   embedded [check]s by 1-induction (norm_full []). *)
 
 open Pipit.Source
-module PSSB = Pipit.Sugar.Shallow.Base
+module PSSB = Pipit.Prim.HasStream
 
 (* --- Helpers --------------------------------------------------------- *)
 

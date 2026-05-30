@@ -197,7 +197,7 @@ let mk_splice (pat: FPA.pattern) (mode: Pipit_Plugin_Support.mode): FPA.decl' =
   (* Use a deterministic but obviously-generated name so consumers (e.g.
     _check bindings) can temporarily refer to the spliced core expression.
     In the long term users should not need to mention this binding directly. *)
-  let fresh = FI.mk_ident ("__core_" ^ FI.string_of_id id, range) in
+  let fresh = FI.mk_ident (FI.string_of_id id ^ "_core", range) in
   let mk_id_str i = { tm = Const (FC.Const_string (FI.string_of_id i, range)); range; level } in
   let tac =
     mkExplicitApp
@@ -268,7 +268,7 @@ let mk_check_induct1_decl
   let range = pat.prange in
   let level = Expr in
   let id = id_of_pat pat in
-  let core_id  = FI.mk_ident ("__core_"  ^ FI.string_of_id id, range) in
+  let core_id  = FI.mk_ident (FI.string_of_id id ^ "_core",  range) in
   let check_id = FI.mk_ident ("__check_" ^ FI.string_of_id id, range) in
   let core_var = { tm = Var (FI.lid_of_ids [core_id]); range; level } in
   let mk_lid_var lid =

@@ -4,11 +4,11 @@ module Pipit.Source
 include Pipit.Plugin.Interface
 
 module PXB = Pipit.Exp.Base
-module PSSB = Pipit.Sugar.Shallow.Base
+module PSSB = Pipit.Prim.HasStream
 module PPS  = Pipit.Prim.Shallow
 module PPT  = Pipit.Prim.Table
 module PPL = Pipit.Plugin.Lift
-module PSSD = Pipit.Sugar.Shallow.Tactics.Derive
+module PSSD = Pipit.Prim.HasStream.Derive
 
 (* Splice [has_stream] instances for single-constructor inductive types. *)
 let derive_has_stream = PSSD.derive_has_stream
@@ -64,7 +64,7 @@ let op_Equals_Equals_Greater_Hat (a b: bool): bool = if a then b else true
 // let if_then_else (#a: eqtype) {| PSSB.has_stream a |} (p: bool) (t f: a): a =
 //   if p then t else f
 
-// %splice[] (PPL.lift_tac1 "if_then_else")
+// %splice[] (PPL.lift_ast_tac1 "if_then_else")
 
 // let rec' (#a: eqtype) {| PSSB.has_stream a |} (f: a -> a): a = admit ()
 

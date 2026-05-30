@@ -26,7 +26,7 @@ module Plugin.Test.Bug.Crossfunction
 *)
 
 open Pipit.Source
-module PSSB = Pipit.Sugar.Shallow.Base
+module PSSB = Pipit.Prim.HasStream
 
 (* -- callees ----------------------------------------------------------- *)
 

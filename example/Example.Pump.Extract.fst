@@ -4,9 +4,8 @@ module Example.Pump.Extract
   via the [Pipit.Plugin.Extract.extract] splice.
 
   [controller_body] is the two-stream-input form taking [estop] and
-  [level_low] as separate arguments; [controller] is the pair-input
-  wrapper that destructures a single [stream (bool & bool)] before
-  delegating. Both work directly through the splice. *)
+  [level_low] as separate arguments. [controller] is the pair-input
+  wrapper around it. *)
 
 open Example.Pump.Check
 

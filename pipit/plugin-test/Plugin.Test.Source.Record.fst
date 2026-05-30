@@ -6,7 +6,7 @@ module Plugin.Test.Source.Record
   records as input streams, and records as output streams. *)
 
 open Pipit.Source
-module PSSB = Pipit.Sugar.Shallow.Base
+module PSSB = Pipit.Prim.HasStream
 
 #set-options "--warn_error -242"
 
