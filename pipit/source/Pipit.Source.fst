@@ -64,7 +64,7 @@ let op_Equals_Equals_Greater_Hat (a b: bool): bool = if a then b else true
 // let if_then_else (#a: eqtype) {| PSSB.has_stream a |} (p: bool) (t f: a): a =
 //   if p then t else f
 
-// %splice[] (PPL.lift_tac1 "if_then_else")
+// %splice[] (PPL.lift_ast_tac1 "if_then_else")
 
 // let rec' (#a: eqtype) {| PSSB.has_stream a |} (f: a -> a): a = admit ()
 

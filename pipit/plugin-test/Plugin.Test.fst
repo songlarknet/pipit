@@ -105,7 +105,7 @@ let eg_record (add: stream int) =
 let eg_streaming_if (x: stream int) =
   if x >= 0 then x else -x
 
-// %splice[] (PPL.lift_tac1 "eg_streaming_if")
+// %splice[] (PPL.lift_ast_tac1 "eg_streaming_if")
 
 let eg_streaming_match_lets (x: stream int): stream int =
   let cond = x >= 0 in
@@ -127,7 +127,7 @@ let eg_static_match (consts: list int) (x: stream int) =
   | (c: int) :: _ -> c + x
 
 (* Refinement on `silly_id`'s return type is stripped by `strip_refinements`
-   in `Pipit.Source.Ast.OfFStar`, so `lb_typ` ends up with a plain `int`. *)
+   in `Pipit.Source.Ast.Reflect`, so `lb_typ` ends up with a plain `int`. *)
 let silly_id (x: int): y: int { x == y } = x
 
 let eg_refinement0 (x: stream int) =

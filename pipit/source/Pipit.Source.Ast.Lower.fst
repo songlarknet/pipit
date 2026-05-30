@@ -236,7 +236,7 @@ let fresh_nv (ppname: string) (ty: T.term): T.Tac T.namedv =
 
 (*** ALetMatch desugaring helpers ***)
 
-(* Walk an [Ast.pat] (built by [Pipit.Source.Ast.OfFStar.pat_of_fstar])
+(* Walk an [Ast.pat] (built by [Pipit.Source.Ast.Reflect.pat_of_fstar])
    and turn it into a chain of stream [Ast.ALet]s wrapping [body].
    Each leaf [PVar] becomes one [ALet] whose RHS is the appropriate
    projector application on [parent_nm]; nested [PCon] sub-patterns
@@ -291,7 +291,7 @@ let scrut_type_implicits (scrut_ty: T.term): T.Tac (list T.argv) =
   T.map (fun (a: T.argv) -> let (t, _) = a in (t, T.Q_Implicit)) ty_args
 
 (* Build an [Ast.prim] for a projector pre-applied to scrutinee type
-   implicits. Mirrors [Pipit.Source.Ast.OfFStar.of_prim_fv_applied]. *)
+   implicits. Mirrors [Pipit.Source.Ast.Reflect.of_prim_fv_applied]. *)
 let mk_proj_prim (env: T.env) (proj_fqn: Ast.fqn) (implicits: list T.argv): T.Tac Ast.prim =
   let proj_fv = T.pack_fv proj_fqn in
   let proj_tm = T.pack (T.Tv_FVar proj_fv) in
@@ -378,7 +378,7 @@ and pat_to_alet_chain_subs (rng: R.range) (ctor_fqn: Ast.fqn)
 
 (* Termination measures for walking a [T.pattern] when pushing static
    binders for the arms of an [AMatch AppPureConst]. Parallel to the
-   measures in [Pipit.Source.Ast.OfFStar] but separately named so they
+   measures in [Pipit.Source.Ast.Reflect] but separately named so they
    don't shadow the [pat_size] on [Ast.pat] above. *)
 let rec tpat_size (p: T.pattern): nat =
   match p with
@@ -393,7 +393,7 @@ and tpat_bool_subpats_size (ss: list (T.pattern & bool)): nat =
 (* Walk a [T.pattern] and push each leaf [Pat_Var] as a STATIC binder
    into [env], in pattern walk order (explicit subpats only). The
    pushed namedv is the pattern variable's original [bv.v] (preserving
-   the uniq), and the binder name is computed using OfFStar's
+   the uniq), and the binder name is computed using Reflect's
    convention ([ppname ^ "#" ^ string_of_int uniq]) so that the lifted
    body's name-based [AVar] lookups resolve to the namedv we just
    pushed. The arm's [T.pattern] can then be re-emitted verbatim
@@ -426,7 +426,7 @@ and push_static_pat_binders_subs (ss: list (T.pattern & bool)) (env: lower_env)
   | (_, true)  :: rest ->
     (* Implicit subpats — these correspond to elided type/dot
        arguments and don't introduce binders; skip them, matching the
-       walk order used by [pat_of_fstar] in OfFStar. *)
+       walk order used by [pat_of_fstar] in Reflect. *)
     push_static_pat_binders_subs rest env
   | (p, false) :: rest ->
     let env' = push_static_pat_binders p env in

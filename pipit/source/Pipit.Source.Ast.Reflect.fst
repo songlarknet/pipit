@@ -37,7 +37,7 @@
 
    Matches, contracts, ascriptions, and `Tv_Let true` (let-rec) are
    currently rejected with a `T.fail`. They will be added later. *)
-module Pipit.Source.Ast.OfFStar
+module Pipit.Source.Ast.Reflect
 
 module T   = FStar.Tactics.V2
 module R   = FStar.Range
@@ -135,7 +135,7 @@ let of_const (rng: R.range) (c: T.vconst): T.Tac (Ast.lit & PPI.mode) =
   | T.C_Unit   ->
     { Ast.lit_ty = `unit; Ast.lit_tm = T.pack (T.Tv_Const T.C_Unit) },  PPI.Static
   | _ ->
-    T.fail "Pipit.Source.Ast.OfFStar: unsupported constant kind"
+    T.fail "Pipit.Source.Ast.Reflect: unsupported constant kind"
 
 (*** Primitives ***)
 
@@ -317,7 +317,7 @@ let scrut_type_implicits (scrut_ty: T.term): T.Tac (list T.argv) =
    in the same module as the constructor. *)
 let projector_fqn (ctor_fqn: Ast.fqn) (field: Ast.name): T.Tac Ast.fqn =
   match L.rev ctor_fqn with
-  | [] -> T.fail "Pipit.Source.Ast.OfFStar: empty constructor FQN"
+  | [] -> T.fail "Pipit.Source.Ast.Reflect: empty constructor FQN"
   | ctor_nm :: rest_rev ->
     let proj_nm = "__proj__" ^ ctor_nm ^ "__item__" ^ field in
     L.rev (proj_nm :: rest_rev)
@@ -352,7 +352,7 @@ let rec pat_of_fstar (e: of_env) (binder_mode: PPI.mode)
     let field_names = ctor_field_names e.oe_tac_env pc.head in
     let exp_subs = explicit_subpats pc.subpats in
     (if L.length field_names <> L.length exp_subs then
-      T.fail "Pipit.Source.Ast.OfFStar: pattern arity mismatch (explicit subpats vs ctor fields)"
+      T.fail "Pipit.Source.Ast.Reflect: pattern arity mismatch (explicit subpats vs ctor fields)"
      else ());
     let implicits = scrut_type_implicits parent_ty in
     explicit_subpats_size_lemma pc.subpats;
@@ -365,7 +365,7 @@ let rec pat_of_fstar (e: of_env) (binder_mode: PPI.mode)
     e, Ast.PWild
 
   | _ ->
-    T.fail "Pipit.Source.Ast.OfFStar: unsupported irrefutable pattern shape"
+    T.fail "Pipit.Source.Ast.Reflect: unsupported irrefutable pattern shape"
 
 and pat_of_fstar_subs (e: of_env) (binder_mode: PPI.mode)
                        (ctor_fqn: Ast.fqn)
@@ -385,7 +385,7 @@ and pat_of_fstar_subs (e: of_env) (binder_mode: PPI.mode)
     let (e'', rest) = pat_of_fstar_subs e' binder_mode ctor_fqn fs ps implicits in
     e'', sub_pat :: rest
   | _, _ ->
-    T.fail "Pipit.Source.Ast.OfFStar: pattern/field arity mismatch (impossible)"
+    T.fail "Pipit.Source.Ast.Reflect: pattern/field arity mismatch (impossible)"
 
 let rec lift_tm e t =
   let rng: R.range = Ref.range_of_term t in
@@ -398,7 +398,7 @@ let rec lift_tm e t =
     (match of_lookup_uniq nv.uniq e.oe_binders with
      | Some b -> b.ob_mode, Ast.AVar rng b.ob_name b.ob_mode
      | None ->
-       T.fail ("Pipit.Source.Ast.OfFStar: free variable not in lift env: " ^
+       T.fail ("Pipit.Source.Ast.Reflect: free variable not in lift env: " ^
                T.unseal nv.ppname))
 
   | T.Tv_FVar fv ->
@@ -446,7 +446,7 @@ let rec lift_tm e t =
        else lift_match_general e rng scrut brs)
 
   | _ ->
-    T.fail ("Pipit.Source.Ast.OfFStar: unsupported term shape: " ^
+    T.fail ("Pipit.Source.Ast.Reflect: unsupported term shape: " ^
             T.term_to_string t)
 
 (* Lift an application `hd args` with implicits already partitioned
@@ -467,7 +467,7 @@ and lift_app (e: of_env) (rng: R.range) (hd: T.term) (implicits: list T.argv) (a
     then lift_app_check e rng args
     else lift_app_fv e rng fv implicits args
   | _ ->
-    T.fail ("Pipit.Source.Ast.OfFStar: application head not supported: " ^
+    T.fail ("Pipit.Source.Ast.Reflect: application head not supported: " ^
             T.term_to_string hd)
 
 and lift_app_rec (e: of_env) (rng: R.range) (args: list T.argv): T.Tac (PPI.mode & Ast.ast) =
@@ -487,9 +487,9 @@ and lift_app_rec (e: of_env) (rng: R.range) (args: list T.argv): T.Tac (PPI.mode
        let (_, body_ast) = lift_tm e' body in
        PPI.Stream, Ast.AMu rng nm sty body_ast
      | _ ->
-       T.fail "Pipit.Source.Ast.OfFStar: rec' applied to non-lambda")
+       T.fail "Pipit.Source.Ast.Reflect: rec' applied to non-lambda")
   | _ ->
-    T.fail "Pipit.Source.Ast.OfFStar: rec' expects exactly one explicit argument"
+    T.fail "Pipit.Source.Ast.Reflect: rec' expects exactly one explicit argument"
 
 and lift_app_fby (e: of_env) (rng: R.range) (args: list T.argv): T.Tac (PPI.mode & Ast.ast) =
   match args with
@@ -502,9 +502,9 @@ and lift_app_fby (e: of_env) (rng: R.range) (args: list T.argv): T.Tac (PPI.mode
        let (_, e_ast) = lift_tm e e_tm in
        PPI.Stream, Ast.AFby rng lit e_ast
      | _ ->
-       T.fail "Pipit.Source.Ast.OfFStar: fby init must be a static value")
+       T.fail "Pipit.Source.Ast.Reflect: fby init must be a static value")
   | _ ->
-    T.fail "Pipit.Source.Ast.OfFStar: fby expects two explicit arguments"
+    T.fail "Pipit.Source.Ast.Reflect: fby expects two explicit arguments"
 
 and lift_app_check (e: of_env) (rng: R.range) (args: list T.argv): T.Tac (PPI.mode & Ast.ast) =
   match args with
@@ -512,7 +512,7 @@ and lift_app_check (e: of_env) (rng: R.range) (args: list T.argv): T.Tac (PPI.mo
     let (_, prop_ast) = lift_tm e prop_tm in
     PPI.Stream, Ast.ACheck rng None prop_ast
   | _ ->
-    T.fail "Pipit.Source.Ast.OfFStar: check expects exactly one explicit argument"
+    T.fail "Pipit.Source.Ast.Reflect: check expects exactly one explicit argument"
 
 (* Lift an irrefutable single-arm match [match scrut with | pat -> body].
    Walk the F* pattern into an [Ast.pat] (which also extends the lift
@@ -526,7 +526,7 @@ and lift_match_irref (e: of_env) (rng: R.range) (scrut: T.term)
   (match m_scrut with
    | PPI.Stream -> ()
    | _ ->
-     T.fail "Pipit.Source.Ast.OfFStar: irrefutable match on non-stream scrutinee is not yet supported");
+     T.fail "Pipit.Source.Ast.Reflect: irrefutable match on non-stream scrutinee is not yet supported");
   let scrut_ty: Ast.sty = T.tc e.oe_tac_env scrut in
   let (e_after, pipit_pat) = pat_of_fstar e PPI.Stream pat scrut_ty in
   let (m_body, body_ast) = lift_tm e_after body in
@@ -562,7 +562,7 @@ and lift_ite (e: of_env) (rng: R.range) (scrut: T.term) (brs: list T.branch): T.
     | [(_, t); (T.Pat_Constant { c = T.C_False }, f)] -> (t, f)
     | [(_, f); (T.Pat_Constant { c = T.C_True  }, t)] -> (t, f)
     | _ ->
-      T.fail ("Pipit.Source.Ast.OfFStar: lift_ite called on non-ite shape (impossible: dispatch checks is_ite_shape)")
+      T.fail ("Pipit.Source.Ast.Reflect: lift_ite called on non-ite shape (impossible: dispatch checks is_ite_shape)")
   in
   let (mc, c_ast) = lift_tm e scrut in
   let (mt, t_ast) = lift_tm e t_tm in
@@ -602,7 +602,7 @@ and lift_match_general (e: of_env) (rng: R.range) (scrut: T.term)
   (match m_scrut with
    | PPI.Static -> ()
    | _ ->
-     T.fail "Pipit.Source.Ast.OfFStar: multi-arm match on non-static scrutinee is not yet supported");
+     T.fail "Pipit.Source.Ast.Reflect: multi-arm match on non-static scrutinee is not yet supported");
   let scrut_ty: Ast.sty = T.tc e.oe_tac_env scrut in
   let arms: list (T.pattern & Ast.ast) =
     T.map (fun ((pat, body): T.branch) ->

@@ -16,40 +16,42 @@ let eg_streaming_if_anf (x: int) =
   let m1 = x in
   let m2 = -x in
   if m0 then m1 else m2
-%splice[] (PPL.lift_tac1 "eg_streaming_if_anf")
+%splice[] (PPL.lift_ast_tac1 "eg_streaming_if_anf")
 
 [@@source_mode (ModeFun Stream true Stream)]
 let eg_streaming_if (x: int) =
   if x >= 0 then x else -x
-%splice[] (PPL.lift_tac1 "eg_streaming_if")
+%splice[] (PPL.lift_ast_tac1 "eg_streaming_if")
 
-[@@source_mode (ModeFun Stream true Stream)]
-let eg_streaming_match_option (x: option int) =
-  match x with
-  | None -> -1
-  | Some 0 -> 0
-  | Some 1 -> 1
-  | Some _ -> 2
-%splice[] (PPL.lift_tac1 "eg_streaming_match_option")
+// Not supported by the new AST-based pipeline yet: multi-arm match
+// on a non-static (stream) scrutinee.
+// [@@source_mode (ModeFun Stream true Stream)]
+// let eg_streaming_match_option (x: option int) =
+//   match x with
+//   | None -> -1
+//   | Some 0 -> 0
+//   | Some 1 -> 1
+//   | Some _ -> 2
+// %splice[] (PPL.lift_ast_tac1 "eg_streaming_match_option")
 
 
 [@@source_mode (ModeFun Stream true Stream)]
 let eg_streaming_match_ctor (xy: ctor) =
   let Ctor x y = xy in
   x + y
-%splice[] (PPL.lift_tac1 "eg_streaming_match_ctor")
+%splice[] (PPL.lift_ast_tac1 "eg_streaming_match_ctor")
 
 [@@source_mode (ModeFun Stream true Stream)]
 let eg_streaming_match_rcd (xy: ctor) =
   let {x; y} = xy in
   x + y
-%splice[] (PPL.lift_tac1 "eg_streaming_match_rcd")
+%splice[] (PPL.lift_ast_tac1 "eg_streaming_match_rcd")
 
 [@@source_mode (ModeFun Stream true Stream)]
 let eg_streaming_match_tup (xy: (int & int)) =
   let (x, y) = xy in
   x + y
-%splice[] (PPL.lift_tac1 "eg_streaming_match_tup")
+%splice[] (PPL.lift_ast_tac1 "eg_streaming_match_tup")
 
 // [@@source_mode (ModeFun Stream true (ModeFun Stream true Stream))]
 // let eg_pairs_destr (x: int) (y: bool): int =
@@ -57,7 +59,7 @@ let eg_streaming_match_tup (xy: (int & int)) =
 //   let (xz, yz) = xy in
 //   0 `fby` xz
 
-// %splice[] (PPL.lift_tac1 "eg_pairs_destr")
+// %splice[] (PPL.lift_ast_tac1 "eg_pairs_destr")
 
 // not supported yet, issue proving termination on the generated core
 // [@@source_mode (ModeFun Static true (ModeFun Stream true Stream))]
@@ -71,7 +73,7 @@ let eg_streaming_match_tup (xy: (int & int)) =
 //     let pre: int = 0 `fby` x in
 //     c * x + eg_fir cs pre
 
-// %splice[] (PPL.lift_tac1 "eg_fir")
+// %splice[] (PPL.lift_ast_tac1 "eg_fir")
 
 (*** Not supported examples ***)
 

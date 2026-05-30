@@ -40,54 +40,56 @@ type ctor_derived = | CtorDerived: cx: int -> cy: int -> ctor_derived
 let eg_inc_left_strm (x: int) =
   x + 1
 
-%splice[] (PPL.lift_tac1 "eg_inc_left_strm")
+%splice[] (PPL.lift_ast_tac1 "eg_inc_left_strm")
 
 [@@source_mode (ModeFun Stream true Stream)]
 let eg_inc_right_strm (x: int) =
   1 + x
 
-%splice[] (PPL.lift_tac1 "eg_inc_right_strm")
+%splice[] (PPL.lift_ast_tac1 "eg_inc_right_strm")
 
 
 [@@source_mode (ModeFun Stream true Stream)]
 let eg_additions_strm (x: int) =
   (x + x) + x
 
-%splice[] (PPL.lift_tac1 "eg_additions_strm")
+%splice[] (PPL.lift_ast_tac1 "eg_additions_strm")
 
 [@@source_mode (ModeFun Stream true Stream)]
 let eg_additions_strm_ret_ann (x: int): int =
   (x + x) + x
 
-%splice[] (PPL.lift_tac1 "eg_additions_strm_ret_ann")
+%splice[] (PPL.lift_ast_tac1 "eg_additions_strm_ret_ann")
 
 
 [@@source_mode (ModeFun Stream true Stream)]
 let eg_fby (x: int) =
   0 `fby` x
 
-%splice[] (PPL.lift_tac1 "eg_fby")
+%splice[] (PPL.lift_ast_tac1 "eg_fby")
 
 
 [@@source_mode (ModeFun Stream true Stream)]
 let eg_fby_inc (x: int) =
   0 `fby` x + 1
 
-%splice[] (PPL.lift_tac1 "eg_fby_inc")
+%splice[] (PPL.lift_ast_tac1 "eg_fby_inc")
 
-[@@source_mode (ModeFun Stream true Stream)]
-let eg_letrecfun (x: int): int =
-  let rec count x = if x > 0 then count (x - 1) else 0 in
-  count 0
-
-%splice[] (PPL.lift_tac1 "eg_letrecfun")
+// Not supported by the new AST-based pipeline (no `Tv_Let true` /
+// local recursive functions yet). Use top-level `rec'` instead.
+// [@@source_mode (ModeFun Stream true Stream)]
+// let eg_letrecfun (x: int): int =
+//   let rec count x = if x > 0 then count (x - 1) else 0 in
+//   count 0
+//
+// %splice[] (PPL.lift_ast_tac1 "eg_letrecfun")
 
 [@@source_mode (ModeFun Stream true Stream)]
 let eg_let_strm (x: int): int =
   let strm = x + 1 in
   strm + x
 
-%splice[] (PPL.lift_tac1 "eg_let_strm")
+%splice[] (PPL.lift_ast_tac1 "eg_let_strm")
 
 [@@source_mode (ModeFun Stream true Stream)]
 let eg_let_strm_ann (x: int): int =
@@ -95,21 +97,21 @@ let eg_let_strm_ann (x: int): int =
   let strm = 1 in
   strm + x
 
-%splice[] (PPL.lift_tac1 "eg_let_strm_ann")
+%splice[] (PPL.lift_ast_tac1 "eg_let_strm_ann")
 
 [@@source_mode (ModeFun Stream true Stream)]
 let eg_let_stat (x: int): int =
   let stat = 1 in
   x + stat
 
-%splice[] (PPL.lift_tac1 "eg_let_stat")
+%splice[] (PPL.lift_ast_tac1 "eg_let_stat")
 
 [@@source_mode (ModeFun Stream true Stream)]
 let eg_rec_strm (x: int) =
   let count = rec' (fun count -> 0 `fby` count + 1) in
   count
 
-%splice[] (PPL.lift_tac1 "eg_rec_strm")
+%splice[] (PPL.lift_ast_tac1 "eg_rec_strm")
 
 [@@source_mode (ModeFun Stream true Stream)]
 let eg_rec_strm_let_stat (x: int) =
@@ -117,7 +119,7 @@ let eg_rec_strm_let_stat (x: int) =
   let static1: int = 0 in
   count1 + static1
 
-%splice[] (PPL.lift_tac1 "eg_rec_strm_let_stat")
+%splice[] (PPL.lift_ast_tac1 "eg_rec_strm_let_stat")
 
 // slow!
 [@@source_mode (ModeFun Stream true Stream)]
@@ -135,13 +137,13 @@ let eg_mixed_ann (x: int) =
   let static2 = 0 in
   count1 + count2 + strm1 + strm2 + strm3 + static1 + static2
 
-%splice[] (PPL.lift_tac1 "eg_mixed_ann")
+%splice[] (PPL.lift_ast_tac1 "eg_mixed_ann")
 
 [@@source_mode (ModeFun Stream true (ModeFun Stream true Stream))]
 let eg_pairs (x: int) (y: bool): int =
   0 `fby` fst (x, y)
 
-%splice[] (PPL.lift_tac1 "eg_pairs")
+%splice[] (PPL.lift_ast_tac1 "eg_pairs")
 
 [@@source_mode (ModeFun Stream true Stream)]
 let eg_ctor (add: int) =
@@ -152,7 +154,7 @@ let eg_ctor (add: int) =
   in
   rcd
 
-%splice[] (PPL.lift_tac1 "eg_ctor")
+%splice[] (PPL.lift_ast_tac1 "eg_ctor")
 
 [@@source_mode (ModeFun Stream true Stream)]
 let eg_pairsrec (add: int) =
@@ -163,7 +165,7 @@ let eg_pairsrec (add: int) =
   in
   xy
 
-%splice[] (PPL.lift_tac1 "eg_pairsrec")
+%splice[] (PPL.lift_ast_tac1 "eg_pairsrec")
 
 
 [@@source_mode (ModeFun Stream true Stream)]
@@ -174,7 +176,7 @@ let eg_record (add: int) =
   xy.x
 
 
-%splice[] (PPL.lift_tac1 "eg_record")
+%splice[] (PPL.lift_ast_tac1 "eg_record")
 
 let silly_id (x: int): y: int { x == y } = x
 
@@ -182,4 +184,4 @@ let silly_id (x: int): y: int { x == y } = x
 let eg_refinement0 (x: int) =
   silly_id x
 
-%splice[] (PPL.lift_tac1 "eg_refinement0")
+%splice[] (PPL.lift_ast_tac1 "eg_refinement0")

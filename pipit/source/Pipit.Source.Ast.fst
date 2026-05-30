@@ -138,7 +138,7 @@ type binding_ref = {
 
 (* An irrefutable structural pattern used by `ALetMatch` (single-arm
    destructure of a tuple / record / single-ctor data value). The
-   walker in `Pipit.Source.Ast.OfFStar` only emits these for patterns
+   walker in `Pipit.Source.Ast.Reflect` only emits these for patterns
    that bind variables (or wildcards) under any sequence of nested
    data constructors. Multi-arm matching is not represented yet.
 
