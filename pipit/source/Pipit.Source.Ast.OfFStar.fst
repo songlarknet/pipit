@@ -205,18 +205,17 @@ let app_mode_of (margs: list (PPI.mode & Ast.ast)): PPI.mode & Ast.app_mode =
 
    `let (a, b) = scrut in body` and friends. F* desugars these to a
    `Tv_Match` with a single arm whose pattern is a constructor pattern
-   wrapping variable binders. We desugar to a chain of stream `ALet`s
-   whose definitions are primitive projector applications, e.g.
+   wrapping variable binders. We translate the F* pattern into an
+   `Ast.pat` (PWild / PVar / PCon) and emit an `Ast.ALetMatch`; the
+   `Pipit.Source.Ast.Lower` pass walks the `Ast.pat` and emits the
+   corresponding chain of `XLet`s with projector applications.
 
-     match scrut with | Mktuple2 a b -> body
-     ~~>
-     let _scrut = scrut in
-     let a = Mktuple2?._1 _scrut in
-     let b = Mktuple2?._2 _scrut in
-     body
+   This walker is responsible for:
 
-   Nested constructor patterns introduce intermediate bindings of the
-   form `let _dst = Ctor?.field _parent in <recurse on subpat>`.
+   * computing each `PVar`'s source type (taken from the parent
+     constructor's field projector's return type), and
+   * pushing each `PVar` into the lift env so that the body lifts
+     correctly under the new binders.
 
    The scheme handles tuples (which desugar to `Mktuple2`/`Mktuple3`/...),
    records (single-constructor data types whose field projectors share
@@ -308,14 +307,15 @@ let projector_fqn (ctor_fqn: Ast.fqn) (field: Ast.name): T.Tac Ast.fqn =
     let proj_nm = "__proj__" ^ ctor_nm ^ "__item__" ^ field in
     L.rev (proj_nm :: rest_rev)
 
-(* Walk an irrefutable pattern; emit ALet definitions (in source
-   order, i.e. outermost binder first) for each leaf variable and for
-   each intermediate name introduced by a nested constructor. The
-   "source" of each binding is [parent_nm: parent_ty], an in-scope
-   stream binder we project from. *)
-let rec bind_pat (e: of_env) (rng: R.range) (pat: T.pattern)
-                  (parent_nm: Ast.name) (parent_ty: Ast.sty)
-    : T.Tac (of_env & list (Ast.name & PPI.mode & Ast.sty & Ast.ast))
+(* Walk an irrefutable F* pattern; produce a Pipit `Ast.pat` and
+   extend the lift env with one binder per leaf [Pat_Var]. The
+   [parent_ty] is the source type of the (sub)value being matched
+   against this (sub)pattern; for a top-level call this is the
+   scrutinee's type, and for a sub-call it is the corresponding
+   field's type as recovered from the parent constructor's
+   projector. *)
+let rec pat_of_fstar (e: of_env) (pat: T.pattern) (parent_ty: Ast.sty)
+    : T.Tac (of_env & Ast.pat)
       (decreases (pat_size pat))
 =
   match pat with
@@ -327,8 +327,7 @@ let rec bind_pat (e: of_env) (rng: R.range) (pat: T.pattern)
       ob_sty  = parent_ty;
       ob_mode = PPI.Stream;
     } in
-    let def = Ast.AVar rng parent_nm PPI.Stream in
-    of_push ob e, [(nm, PPI.Stream, parent_ty, def)]
+    of_push ob e, Ast.PVar nm parent_ty PPI.Stream
 
   | T.Pat_Cons pc ->
     let ctor_fqn = T.inspect_fv pc.head in
@@ -339,15 +338,21 @@ let rec bind_pat (e: of_env) (rng: R.range) (pat: T.pattern)
      else ());
     let implicits = scrut_type_implicits parent_ty in
     explicit_subpats_size_lemma pc.subpats;
-    bind_pat_ctor e rng ctor_fqn field_names exp_subs implicits parent_nm
+    let (e', sub_pats) =
+      pat_of_fstar_subs e ctor_fqn field_names exp_subs implicits
+    in
+    e', Ast.PCon ctor_fqn sub_pats
+
+  | T.Pat_Dot_Term _ ->
+    e, Ast.PWild
 
   | _ ->
     T.fail "Pipit.Source.Ast.OfFStar: unsupported irrefutable pattern shape"
 
-and bind_pat_ctor (e: of_env) (rng: R.range) (ctor_fqn: Ast.fqn)
-                   (fields: list Ast.name) (subs: list T.pattern)
-                   (implicits: list T.argv) (parent_nm: Ast.name)
-    : T.Tac (of_env & list (Ast.name & PPI.mode & Ast.sty & Ast.ast))
+and pat_of_fstar_subs (e: of_env) (ctor_fqn: Ast.fqn)
+                       (fields: list Ast.name) (subs: list T.pattern)
+                       (implicits: list T.argv)
+    : T.Tac (of_env & list Ast.pat)
       (decreases (subpats_size subs))
 =
   match fields, subs with
@@ -357,37 +362,9 @@ and bind_pat_ctor (e: of_env) (rng: R.range) (ctor_fqn: Ast.fqn)
     let proj_fv  = T.pack_fv proj_fqn in
     let proj_prim = of_prim_fv_applied e proj_fv implicits in
     let field_ty: Ast.sty = proj_prim.Ast.prim_ret_ty in
-    let parent_ref = Ast.AVar rng parent_nm PPI.Stream in
-    let proj_def: Ast.ast = Ast.APrim rng Ast.AppPureStream proj_prim [parent_ref] in
-    (match p with
-     | T.Pat_Var bv ->
-       let nm = of_name_of_namedv bv.v in
-       let ob: of_binder = {
-         ob_uniq = bv.v.uniq;
-         ob_name = nm;
-         ob_sty  = field_ty;
-         ob_mode = PPI.Stream;
-       } in
-       let e' = of_push ob e in
-       let (e'', rest) = bind_pat_ctor e' rng ctor_fqn fs ps implicits parent_nm in
-       e'', (nm, PPI.Stream, field_ty, proj_def) :: rest
-     | T.Pat_Cons _ ->
-       (* Bind an intermediate name to the projection, then recurse. *)
-       let mid_nm = "_dst#" ^ string_of_int (T.fresh ()) in
-       let mid_b: of_binder = {
-         ob_uniq = T.fresh ();
-         ob_name = mid_nm;
-         ob_sty  = field_ty;
-         ob_mode = PPI.Stream;
-       } in
-       let e_mid = of_push mid_b e in
-       let (e_inner, inner_lets) = bind_pat e_mid rng p mid_nm field_ty in
-       let (e'', rest_lets) =
-         bind_pat_ctor e_inner rng ctor_fqn fs ps implicits parent_nm
-       in
-       e'', (mid_nm, PPI.Stream, field_ty, proj_def) :: (L.append inner_lets rest_lets)
-     | _ ->
-       T.fail "Pipit.Source.Ast.OfFStar: unsupported nested subpattern")
+    let (e', sub_pat) = pat_of_fstar e p field_ty in
+    let (e'', rest) = pat_of_fstar_subs e' ctor_fqn fs ps implicits in
+    e'', sub_pat :: rest
   | _, _ ->
     T.fail "Pipit.Source.Ast.OfFStar: pattern/field arity mismatch (impossible)"
 
@@ -515,11 +492,10 @@ and lift_app_check (e: of_env) (rng: R.range) (args: list T.argv): T.Tac (PPI.mo
     T.fail "Pipit.Source.Ast.OfFStar: check expects exactly one explicit argument"
 
 (* Lift an irrefutable single-arm match [match scrut with | pat -> body].
-   The pure structural work (walking the pattern, generating projector
-   applications) is in [bind_pat] / [bind_pat_ctor] above; here we
-   just bind the scrutinee to a fresh AST-only stream binder, run the
-   walk, lift the body in the resulting env, and wrap the body with
-   the generated [ALet] chain (outermost binder first). *)
+   Walk the F* pattern into an [Ast.pat] (which also extends the lift
+   env with the bound names), lift the body in the extended env, and
+   emit [ALetMatch]. The Lower pass walks [Ast.pat] and emits the
+   corresponding chain of [XLet]s with projector applications. *)
 and lift_match_irref (e: of_env) (rng: R.range) (scrut: T.term)
                      (pat: T.pattern) (body: T.term)
     : T.Tac (PPI.mode & Ast.ast) =
@@ -529,27 +505,9 @@ and lift_match_irref (e: of_env) (rng: R.range) (scrut: T.term)
    | _ ->
      T.fail "Pipit.Source.Ast.OfFStar: irrefutable match on non-stream scrutinee is not yet supported");
   let scrut_ty: Ast.sty = T.tc e.oe_tac_env scrut in
-  let scrut_nm: Ast.name = "_scrut#" ^ string_of_int (T.fresh ()) in
-  let scrut_b: of_binder = {
-    ob_uniq = T.fresh ();
-    ob_name = scrut_nm;
-    ob_sty  = scrut_ty;
-    ob_mode = PPI.Stream;
-  } in
-  let e_with_scrut = of_push scrut_b e in
-  let (e_after, lets_src_order) =
-    bind_pat e_with_scrut rng pat scrut_nm scrut_ty
-  in
+  let (e_after, pipit_pat) = pat_of_fstar e pat scrut_ty in
   let (m_body, body_ast) = lift_tm e_after body in
-  let body_with_lets: Ast.ast =
-    L.fold_right
-      (fun (entry: (Ast.name & PPI.mode & Ast.sty & Ast.ast)) (acc: Ast.ast) ->
-        let (n, m, sty, def) = entry in
-        Ast.ALet rng n m sty def acc)
-      lets_src_order
-      body_ast
-  in
-  m_body, Ast.ALet rng scrut_nm PPI.Stream scrut_ty scrut_ast body_with_lets
+  m_body, Ast.ALetMatch rng pipit_pat scrut_ty scrut_ast body_ast
 
 (* Recognise the if-then-else shape:
      `Tv_Match scrut [(Pat_Constant C_True, t); (Pat_Constant C_False, e)]`

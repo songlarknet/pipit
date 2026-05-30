@@ -41,6 +41,7 @@ module PPT = Pipit.Prim.Table
 module PXB = Pipit.Exp.Base
 module PM  = Pipit.Prop.Metadata
 module PSSB = Pipit.Prim.HasStream
+module PTB = Pipit.Tactics.Base
 
 (*** Lowering environment ***)
 
@@ -233,6 +234,146 @@ let int_const (i: int): T.term =
 let fresh_nv (ppname: string) (ty: T.term): T.Tac T.namedv =
   { uniq = T.fresh (); sort = T.seal ty; ppname = R.as_ppname ppname }
 
+(*** ALetMatch desugaring helpers ***)
+
+(* Walk an [Ast.pat] (built by [Pipit.Source.Ast.OfFStar.pat_of_fstar])
+   and turn it into a chain of stream [Ast.ALet]s wrapping [body].
+   Each leaf [PVar] becomes one [ALet] whose RHS is the appropriate
+   projector application on [parent_nm]; nested [PCon] sub-patterns
+   introduce an intermediate `_dst#N` name and recurse. [PWild]
+   contributes no binding.
+
+   Projector typechecking uses [T.top_env ()]; this is sufficient for
+   destructure whose scrutinee type is ground at the splice site
+   (tuples / records over concrete types — every test we have today).
+   Polymorphic destructure (e.g. a `match` on `stream (a * b)` inside a
+   `#a:eqtype -> #b:eqtype -> ...` source binding) would need the
+   local type binders in scope; that would require threading a tactic
+   env through [lower_env]. Deferred. *)
+
+let rec pat_size (p: Ast.pat): nat =
+  match p with
+  | Ast.PCon _ subs -> 1 + pats_size subs
+  | _ -> 1
+
+and pats_size (ps: list Ast.pat): nat =
+  match ps with
+  | [] -> 0
+  | p :: rest -> 1 + pat_size p + pats_size rest
+
+(* Compute the FQN of F*'s auto-generated projector for a constructor's
+   explicit field: replace the last segment `Ctor` of [ctor_fqn] with
+   `__proj__Ctor__item__field`. *)
+let projector_fqn (ctor_fqn: Ast.fqn) (field: Ast.name): T.Tac Ast.fqn =
+  match L.rev ctor_fqn with
+  | [] -> T.fail "Pipit.Source.Ast.Lower: empty constructor FQN"
+  | ctor_nm :: rest_rev ->
+    let proj_nm = "__proj__" ^ ctor_nm ^ "__item__" ^ field in
+    L.rev (proj_nm :: rest_rev)
+
+(* Explicit-binder ppnames of a data constructor, in declaration order.
+   Used to compute projector FQNs (which suffix the field's ppname). *)
+let ctor_field_names (env: T.env) (ctor_fv: T.fv): T.Tac (list Ast.name) =
+  let ctor_tm = T.pack (T.Tv_FVar ctor_fv) in
+  let ctor_ty = T.tc env ctor_tm in
+  let (bs, _) = T.collect_arr_bs ctor_ty in
+  let explicit_bs =
+    L.filter (fun (b: T.binder) -> R.Q_Explicit? b.qual) bs
+  in
+  T.map (fun (b: T.binder) -> T.unseal b.ppname) explicit_bs
+
+(* Recover the implicit type arguments threaded through a scrutinee's
+   type. For [tuple2 int int] the head is the type constructor and the
+   args are [int; int]; we re-tag as implicit so they instantiate the
+   projector's [#a -> #b -> ...] binders. *)
+let scrut_type_implicits (scrut_ty: T.term): T.Tac (list T.argv) =
+  let (_, ty_args) = T.collect_app scrut_ty in
+  T.map (fun (a: T.argv) -> let (t, _) = a in (t, T.Q_Implicit)) ty_args
+
+(* Build an [Ast.prim] for a projector pre-applied to scrutinee type
+   implicits. Mirrors [Pipit.Source.Ast.OfFStar.of_prim_fv_applied]. *)
+let mk_proj_prim (env: T.env) (proj_fqn: Ast.fqn) (implicits: list T.argv): T.Tac Ast.prim =
+  let proj_fv = T.pack_fv proj_fqn in
+  let proj_tm = T.pack (T.Tv_FVar proj_fv) in
+  let proj_fn =
+    match implicits with
+    | [] -> proj_tm
+    | _  -> T.mk_app proj_tm implicits
+  in
+  let ty        = T.tc env proj_fn in
+  let (args, c) = T.collect_arr ty in
+  let res_ty    = PTB.returns_of_comp c in
+  {
+    Ast.prim_id      = Some (R.implode_qn proj_fqn);
+    Ast.prim_arg_tys = args;
+    Ast.prim_ret_ty  = res_ty;
+    Ast.prim_fn      = proj_fn;
+  }
+
+(* Desugar an [Ast.pat] against a parent named-binder [parent_nm] of
+   type [parent_sty], producing an [Ast.ast] equivalent to the
+   irrefutable destructure wrapped around [body]. *)
+let rec pat_to_alet_chain (rng: R.range) (pat: Ast.pat)
+                          (parent_nm: Ast.name) (parent_sty: Ast.sty)
+                          (body: Ast.ast)
+    : T.Tac Ast.ast
+      (decreases (pat_size pat))
+=
+  match pat with
+  | Ast.PWild -> body
+
+  | Ast.PVar nm field_sty mode ->
+    (* The whole parent value is bound to nm. *)
+    let def = Ast.AVar rng parent_nm mode in
+    Ast.ALet rng nm mode field_sty def body
+
+  | Ast.PCon ctor_fqn sub_pats ->
+    let env = T.top_env () in
+    let ctor_fv = T.pack_fv ctor_fqn in
+    let field_names = ctor_field_names env ctor_fv in
+    (if L.length field_names <> L.length sub_pats then
+      T.fail "Pipit.Source.Ast.Lower: pat arity mismatch (sub_pats vs ctor fields)"
+     else ());
+    let implicits = scrut_type_implicits parent_sty in
+    pat_to_alet_chain_subs rng ctor_fqn field_names sub_pats implicits parent_nm body
+
+and pat_to_alet_chain_subs (rng: R.range) (ctor_fqn: Ast.fqn)
+                           (fields: list Ast.name) (subs: list Ast.pat)
+                           (implicits: list T.argv) (parent_nm: Ast.name)
+                           (body: Ast.ast)
+    : T.Tac Ast.ast
+      (decreases (pats_size subs))
+=
+  match fields, subs with
+  | [], [] -> body
+  | f :: fs, p :: ps ->
+    (* Build the let chain for the remaining fields first; this field's
+       binding is then placed OUTSIDE that, matching the source order. *)
+    let rest = pat_to_alet_chain_subs rng ctor_fqn fs ps implicits parent_nm body in
+    (match p with
+     | Ast.PWild -> rest
+     | Ast.PVar nm field_sty mode ->
+       let env = T.top_env () in
+       let proj_fqn = projector_fqn ctor_fqn f in
+       let proj_prim = mk_proj_prim env proj_fqn implicits in
+       let parent_ref = Ast.AVar rng parent_nm PPI.Stream in
+       let proj_def: Ast.ast = Ast.APrim rng Ast.AppPureStream proj_prim [parent_ref] in
+       Ast.ALet rng nm mode field_sty proj_def rest
+     | Ast.PCon _ _ ->
+       (* Nested constructor: bind an intermediate name to the projector
+          application, then recurse on the nested pat. *)
+       let env = T.top_env () in
+       let proj_fqn = projector_fqn ctor_fqn f in
+       let proj_prim = mk_proj_prim env proj_fqn implicits in
+       let mid_nm = "_dst#" ^ string_of_int (T.fresh ()) in
+       let mid_ty = proj_prim.Ast.prim_ret_ty in
+       let parent_ref = Ast.AVar rng parent_nm PPI.Stream in
+       let proj_def: Ast.ast = Ast.APrim rng Ast.AppPureStream proj_prim [parent_ref] in
+       let nested = pat_to_alet_chain rng p mid_nm mid_ty rest in
+       Ast.ALet rng mid_nm PPI.Stream mid_ty proj_def nested)
+  | _, _ ->
+    T.fail "Pipit.Source.Ast.Lower: pat sub arity mismatch (impossible)"
+
 (*** Entry points ***)
 
 val lower_stream (env: lower_env) (a: Ast.ast): T.Tac T.term
@@ -362,6 +503,19 @@ let rec lower_stream env a =
     let env' = env_push b env in
     let body_tm = lower_stream env' body in
     exp_XMu body_tm
+
+  | Ast.ALetMatch r pat scrut_sty scrut_ast body_ast ->
+    (* Bind the scrutinee to a fresh name and desugar [pat] into a
+       chain of stream ALets over that name; recursively lower the
+       resulting AST. The desugaring (projector applications,
+       intermediate `_dst#N` names for nested ctor patterns) is in
+       [pat_to_alet_chain]. *)
+    let scrut_nm: Ast.name = "_scrut#" ^ string_of_int (T.fresh ()) in
+    let desugared_body = pat_to_alet_chain r pat scrut_nm scrut_sty body_ast in
+    let with_scrut: Ast.ast =
+      Ast.ALet r scrut_nm PPI.Stream scrut_sty scrut_ast desugared_body
+    in
+    lower_stream env with_scrut
 
   | Ast.ALetrec _r bs cont ->
     (* v0: support a single static recursive binding only. The legacy

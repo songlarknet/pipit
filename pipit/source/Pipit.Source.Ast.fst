@@ -20,15 +20,16 @@
     original source location.
 
   Deliberately not included in v0:
-  * `AMatch`: lift handles only the if-then-else shape (a `Tv_Match`
-    on a bool scrutinee with `True`/`False` arms) by emitting an
-    `APrim` over `PipitRuntime.Prim.p'select`. General pattern
-    matches (data-constructor scrutinees, variable patterns,
-    multi-arm) are not supported. Even an eventual implementation
-    likely needs to introduce clocking / activation so that the
-    substreams under a non-matching arm do not advance their state;
-    the legacy lift's eager-evaluate-all-branches \"select\" semantics
-    is semantically dubious and we do not want to bake it in here.
+  * `AMatch` (multi-arm): lift handles only the if-then-else shape (a
+    `Tv_Match` on a bool scrutinee with `True`/`False` arms) by emitting
+    an `APrim` over `PipitRuntime.Prim.p'select`. Multi-arm pattern
+    matches on data-constructor scrutinees are not supported. Even an
+    eventual implementation likely needs to introduce clocking /
+    activation so that the substreams under a non-matching arm do not
+    advance their state; the legacy lift's eager-evaluate-all-branches
+    \"select\" semantics is semantically dubious and we do not want to
+    bake it in here. Single-arm irrefutable matches (tuple / record /
+    single-ctor destructure) ARE supported via `ALetMatch`.
   * `AContract`: revived in a follow-up with `Pipit.Sugar.Contract`.
   * `ALemma`: revived alongside the ttcan port.
   * First-class abstractions: callers are reified to top-level bindings.
@@ -131,6 +132,30 @@ type binding_ref = {
   br_implicits:  list T.argv;
 }
 
+(*** Patterns ***)
+
+(* An irrefutable structural pattern used by `ALetMatch` (single-arm
+   destructure of a tuple / record / single-ctor data value). The
+   walker in `Pipit.Source.Ast.OfFStar` only emits these for patterns
+   that bind variables (or wildcards) under any sequence of nested
+   data constructors. Multi-arm matching is not represented yet.
+
+   * `PWild` — `_`. Does not introduce a binder. Also used for the
+     implicit/dot subpatterns that get elided.
+   * `PVar name sty mode` — bind `name` of type `sty` in mode `mode`
+     to the corresponding sub-value. `sty` is the source type of the
+     binder; `mode` is the binder's value mode (today always `Stream`
+     for irrefutable destructure of a stream scrutinee).
+   * `PCon ctor subs` — match a data constructor by its FQN and
+     destructure its explicit fields, in declaration order. The
+     `Lower` pass uses `ctor` to compute each field's projector
+     (`__proj__<Ctor>__item__<field>`). *)
+noeq
+type pat =
+  | PWild  : pat
+  | PVar   : name -> sty -> mode -> pat
+  | PCon   : fqn -> list pat -> pat
+
 (*** AST ***)
 
 noeq
@@ -156,6 +181,18 @@ type ast =
   (* `let x: sty = def in body`, with `mode` describing whether `x` is a
      stream or static binding. *)
   | ALet   : range -> name -> mode -> sty -> ast -> ast -> ast
+  (* `match scrut with | pat -> body` for a single irrefutable arm
+     (tuple / record / single-ctor destructure). The `sty` is the
+     scrutinee's source type, which `Lower` needs to recover the
+     constructor's implicit type arguments when emitting projector
+     applications. The pattern is walked at lower time; each `PVar`
+     leaf introduces a stream binder bound to a projector application
+     on the scrutinee.
+
+     Refutable / multi-arm matches are not represented here; the
+     bool/if-then-else shape goes through `APrim AppPureStream` over
+     `PipitRuntime.Prim.p'select` instead. *)
+  | ALetMatch : range -> pat -> sty -> ast -> ast -> ast
   (* `rec' (fun (x: sty) -> body)` — recursive stream definition.
      Mirrors `XMu` in the core expression. *)
   | AMu     : range -> name -> sty -> ast -> ast
