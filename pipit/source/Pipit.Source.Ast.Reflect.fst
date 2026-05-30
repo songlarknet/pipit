@@ -47,6 +47,7 @@ module L   = FStar.List.Tot
 module Ast = Pipit.Source.Ast
 module PPI = Pipit.Plugin.Interface
 module PTB = Pipit.Tactics.Base
+module PSAU = Pipit.Source.Ast.Util
 
 (*** Lift environment ***)
 
@@ -100,11 +101,10 @@ let rec of_lookup_lifted (nm: Ast.fqn) (ls: list (Ast.fqn & PPI.mode)): option P
   | [] -> None
   | (fqn, m) :: rest -> if fqn = nm then Some m else of_lookup_lifted nm rest
 
-(* Build a unique AST name from a `T.namedv`. The uniq is part of the
-   string so distinct binders with the same surface ppname don't clash. *)
-let of_name_of_namedv (nv: T.namedv): T.Tac Ast.name =
-  let ppname = T.unseal nv.ppname in
-  ppname ^ "#" ^ string_of_int nv.uniq
+(* Build a unique AST name from a `T.namedv`. Delegates to
+   [Pipit.Source.Ast.Util.mk_uniq_ast_name] so [Lower] uses the same
+   convention. *)
+let of_name_of_namedv: T.namedv -> T.Tac Ast.name = PSAU.mk_uniq_ast_name
 
 (*** Refinement stripping ***)
 
@@ -291,36 +291,11 @@ let is_ite_shape (brs: list T.branch): bool =
   | [(_, _); (T.Pat_Constant { c = T.C_True  }, _)] -> true
   | _ -> false
 
-(* For a data constructor [ctor], return the ppnames of its explicit
-   binders -- exactly the field names used by F*'s auto-generated
-   projectors ([Mktuple2?._1], [Mkpoint?.px], [Some?.v], etc.). *)
-let ctor_field_names (env: T.env) (ctor_fv: T.fv): T.Tac (list Ast.name) =
-  let ctor_tm = T.pack (T.Tv_FVar ctor_fv) in
-  let ctor_ty = T.tc env ctor_tm in
-  let (bs, _) = T.collect_arr_bs ctor_ty in
-  let explicit_bs =
-    L.filter (fun (b: T.binder) -> Ref.Q_Explicit? b.qual) bs
-  in
-  T.map (fun (b: T.binder) -> T.unseal b.ppname) explicit_bs
-
-(* Recover the implicit type arguments threaded through a constructor
-   and its projectors. For a scrutinee of type [tuple2 int int], the
-   head is the type constructor and the args are [int; int]; we
-   re-tag them as implicit so they instantiate the projector's
-   [#a:Type -> #b:Type -> ...] binders. *)
-let scrut_type_implicits (scrut_ty: T.term): T.Tac (list T.argv) =
-  let (_, ty_args) = T.collect_app scrut_ty in
-  T.map (fun (a: T.argv) -> let (t, _) = a in (t, T.Q_Implicit)) ty_args
-
-(* Compute the projector FQN for an explicit constructor field. F*'s
-   auto-generated projectors are named [__proj__<Ctor>__item__<field>]
-   in the same module as the constructor. *)
-let projector_fqn (ctor_fqn: Ast.fqn) (field: Ast.name): T.Tac Ast.fqn =
-  match L.rev ctor_fqn with
-  | [] -> T.fail "Pipit.Source.Ast.Reflect: empty constructor FQN"
-  | ctor_nm :: rest_rev ->
-    let proj_nm = "__proj__" ^ ctor_nm ^ "__item__" ^ field in
-    L.rev (proj_nm :: rest_rev)
+(* Pattern/constructor helpers are shared with [Lower] -- see
+   [Pipit.Source.Ast.Util]. *)
+let ctor_field_names: T.env -> T.fv -> T.Tac (list Ast.name) = PSAU.ctor_field_names
+let scrut_type_implicits: T.term -> T.Tac (list T.argv) = PSAU.scrut_type_implicits
+let projector_fqn: Ast.fqn -> Ast.name -> T.Tac Ast.fqn = PSAU.projector_fqn
 
 (* Walk an irrefutable F* pattern; produce a Pipit `Ast.pat` and
    extend the lift env with one binder per leaf [Pat_Var]. The

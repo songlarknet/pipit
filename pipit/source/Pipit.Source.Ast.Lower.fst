@@ -42,6 +42,7 @@ module PXB = Pipit.Exp.Base
 module PM  = Pipit.Prop.Metadata
 module PSSB = Pipit.Prim.HasStream
 module PTB = Pipit.Tactics.Base
+module PSAU = Pipit.Source.Ast.Util
 
 (*** Lowering environment ***)
 
@@ -261,34 +262,11 @@ and pats_size (ps: list Ast.pat): nat =
   | [] -> 0
   | p :: rest -> 1 + pat_size p + pats_size rest
 
-(* Compute the FQN of F*'s auto-generated projector for a constructor's
-   explicit field: replace the last segment `Ctor` of [ctor_fqn] with
-   `__proj__Ctor__item__field`. *)
-let projector_fqn (ctor_fqn: Ast.fqn) (field: Ast.name): T.Tac Ast.fqn =
-  match L.rev ctor_fqn with
-  | [] -> T.fail "Pipit.Source.Ast.Lower: empty constructor FQN"
-  | ctor_nm :: rest_rev ->
-    let proj_nm = "__proj__" ^ ctor_nm ^ "__item__" ^ field in
-    L.rev (proj_nm :: rest_rev)
-
-(* Explicit-binder ppnames of a data constructor, in declaration order.
-   Used to compute projector FQNs (which suffix the field's ppname). *)
-let ctor_field_names (env: T.env) (ctor_fv: T.fv): T.Tac (list Ast.name) =
-  let ctor_tm = T.pack (T.Tv_FVar ctor_fv) in
-  let ctor_ty = T.tc env ctor_tm in
-  let (bs, _) = T.collect_arr_bs ctor_ty in
-  let explicit_bs =
-    L.filter (fun (b: T.binder) -> R.Q_Explicit? b.qual) bs
-  in
-  T.map (fun (b: T.binder) -> T.unseal b.ppname) explicit_bs
-
-(* Recover the implicit type arguments threaded through a scrutinee's
-   type. For [tuple2 int int] the head is the type constructor and the
-   args are [int; int]; we re-tag as implicit so they instantiate the
-   projector's [#a -> #b -> ...] binders. *)
-let scrut_type_implicits (scrut_ty: T.term): T.Tac (list T.argv) =
-  let (_, ty_args) = T.collect_app scrut_ty in
-  T.map (fun (a: T.argv) -> let (t, _) = a in (t, T.Q_Implicit)) ty_args
+(* Pattern/constructor helpers are shared with [Reflect] -- see
+   [Pipit.Source.Ast.Util]. *)
+let projector_fqn: Ast.fqn -> Ast.name -> T.Tac Ast.fqn = PSAU.projector_fqn
+let ctor_field_names: T.env -> T.fv -> T.Tac (list Ast.name) = PSAU.ctor_field_names
+let scrut_type_implicits: T.term -> T.Tac (list T.argv) = PSAU.scrut_type_implicits
 
 (* Build an [Ast.prim] for a projector pre-applied to scrutinee type
    implicits. Mirrors [Pipit.Source.Ast.Reflect.of_prim_fv_applied]. *)
@@ -406,7 +384,7 @@ let rec push_static_pat_binders (pat: T.pattern) (env: lower_env)
   match pat with
   | T.Pat_Var pv ->
     let nv: T.namedv = pv.v in
-    let nm: Ast.name = T.unseal nv.ppname ^ "#" ^ string_of_int nv.uniq in
+    let nm: Ast.name = PSAU.mk_uniq_ast_name nv in
     let sty: Ast.sty = T.unseal pv.sort in
     let b: binder = { b_name = nm; b_sty = sty; b_kind = BStatic nv } in
     env_push b env
@@ -498,18 +476,13 @@ let rec lower_stream env a =
        source binder (including implicits / instance binders), so we
        drop leading `ModeFun ... explicit=false ...` layers first.
        Defensive default: treat as Stream if `br_mode` is exhausted. *)
-    let rec skip_implicits (m: PPI.mode): PPI.mode =
-      match m with
-      | PPI.ModeFun _ false rm -> skip_implicits rm
-      | _ -> m
-    in
     let rec partition_args (m: PPI.mode) (args: list Ast.ast) (tys: list Ast.sty)
       : T.Tac (list Ast.ast & list (Ast.ast & Ast.sty))
     =
       match args, tys with
       | [], [] -> ([], [])
       | a :: ras, t :: rts ->
-        let m = skip_implicits m in
+        let m = PSAU.skip_implicit_modes m in
         let (arg_mode, rm): PPI.mode & PPI.mode = match m with
           | PPI.ModeFun am _ rm -> (am, rm)
           | _ -> (PPI.Stream, m)
@@ -538,8 +511,7 @@ let rec lower_stream env a =
     let core_fv_tm =
       T.fold_left
         (fun (acc: T.term) (a: Ast.ast) ->
-          let v_tm = lower_static env a in
-          T.pack (T.Tv_App acc (v_tm, T.Q_Explicit)))
+          PTB.mk_app_explicit acc (lower_static env a))
         core_fv_tm
         static_args
     in

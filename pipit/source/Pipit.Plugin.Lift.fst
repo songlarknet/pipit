@@ -135,6 +135,26 @@ let rec resolve_inst
 : Tac.Tac (option Tac.term) =
   let tup2_inst_fv: Tac.term =
     Tac.pack (Tac.Tv_FVar (Tac.pack_fv ["Pipit"; "Prim"; "HasStream"; "has_stream_tup2"])) in
+  (* `tuple2` shows up either as a plain `Tv_FVar` or, after some
+     elaboration, as a `Tv_UInst` (universe-instantiated FVar). Pick
+     the FVar out of either. *)
+  let head_fv (tv: Tac.term_view): option Tac.fv =
+    match tv with
+    | Tac.Tv_FVar fv     -> Some fv
+    | Tac.Tv_UInst fv _  -> Some fv
+    | _ -> None
+  in
+  let is_tuple2 (fv: Tac.fv): bool =
+    let qn = Tac.inspect_fv fv in
+    qn = ["FStar"; "Pervasives"; "Native"; "tuple2"]
+    || qn = ["Prims"; "tuple2"]
+  in
+  let mk_tup2_inst (a_arg b_arg ia ib: Tac.term): Tac.term =
+    let t0 = Tac.pack (Tac.Tv_App tup2_inst_fv (a_arg, Tac.Q_Implicit)) in
+    let t1 = Tac.pack (Tac.Tv_App t0 (b_arg, Tac.Q_Implicit)) in
+    let t2 = Tac.pack (Tac.Tv_App t1 (ia, Tac.Q_Implicit)) in
+    Tac.pack (Tac.Tv_App t2 (ib, Tac.Q_Implicit))
+  in
   match Tac.inspect sty with
   | Tac.Tv_Var nv ->
     (match List.tryFind (fun (kv: nat & nat) -> fst kv = nv.uniq) inst_map with
@@ -146,10 +166,9 @@ let rec resolve_inst
   | Tac.Tv_App outer (b_arg, _) ->
     (match Tac.inspect outer with
      | Tac.Tv_App inner (a_arg, _) ->
-       (match Tac.inspect inner with
-        | Tac.Tv_FVar fv ->
-          if Tac.inspect_fv fv = ["FStar"; "Pervasives"; "Native"; "tuple2"]
-             || Tac.inspect_fv fv = ["Prims"; "tuple2"]
+       (match head_fv (Tac.inspect inner) with
+        | Some fv ->
+          if is_tuple2 fv
           then
             let ia_opt = resolve_inst inst_map passthrough a_arg in
             let ib_opt = resolve_inst inst_map passthrough b_arg in
@@ -162,32 +181,9 @@ let rec resolve_inst
                let ib = (match ib_opt with
                          | Some t -> t
                          | None -> `(_ by (FStar.Tactics.Typeclasses.tcresolve ()))) in
-               let t0 = Tac.pack (Tac.Tv_App tup2_inst_fv (a_arg, Tac.Q_Implicit)) in
-               let t1 = Tac.pack (Tac.Tv_App t0 (b_arg, Tac.Q_Implicit)) in
-               let t2 = Tac.pack (Tac.Tv_App t1 (ia, Tac.Q_Implicit)) in
-               Some (Tac.pack (Tac.Tv_App t2 (ib, Tac.Q_Implicit))))
+               Some (mk_tup2_inst a_arg b_arg ia ib))
           else None
-        | Tac.Tv_UInst fv _ ->
-          if Tac.inspect_fv fv = ["FStar"; "Pervasives"; "Native"; "tuple2"]
-             || Tac.inspect_fv fv = ["Prims"; "tuple2"]
-          then
-            let ia_opt = resolve_inst inst_map passthrough a_arg in
-            let ib_opt = resolve_inst inst_map passthrough b_arg in
-            (match ia_opt, ib_opt with
-             | None, None -> None
-             | _ ->
-               let ia = (match ia_opt with
-                         | Some t -> t
-                         | None -> `(_ by (FStar.Tactics.Typeclasses.tcresolve ()))) in
-               let ib = (match ib_opt with
-                         | Some t -> t
-                         | None -> `(_ by (FStar.Tactics.Typeclasses.tcresolve ()))) in
-               let t0 = Tac.pack (Tac.Tv_App tup2_inst_fv (a_arg, Tac.Q_Implicit)) in
-               let t1 = Tac.pack (Tac.Tv_App t0 (b_arg, Tac.Q_Implicit)) in
-               let t2 = Tac.pack (Tac.Tv_App t1 (ia, Tac.Q_Implicit)) in
-               Some (Tac.pack (Tac.Tv_App t2 (ib, Tac.Q_Implicit))))
-          else None
-        | _ -> None)
+        | None -> None)
      | _ -> None)
   | _ -> None
 
@@ -290,10 +286,15 @@ let lift_ast_tac (nm_src nm_core: string) : Tac.Tac (list Tac.sigelt) =
      wrapping below (`Tv_Arrow` / `Tv_Abs`) wants outermost-first so
      it uses `params` directly via `List.fold_right`. *)
   let params_inner: list (Tac.binder & AstR.of_binder) = List.rev params in
-  let stream_obs_inner: list AstR.of_binder =
-    List.map snd (List.filter (fun bob -> not (is_static_param bob)) params_inner) in
+  (* Partition once: statics keep their `T.binder` for the wrapping
+     fold; streams keep their `AstR.of_binder` (innermost-first) for
+     the cexp context list. *)
+  let (static_params_outer, stream_params_outer) =
+    List.partition is_static_param params in
   let static_binders_outer: list Tac.binder =
-    List.map fst (List.filter is_static_param params) in
+    List.map fst static_params_outer in
+  let stream_obs_inner: list AstR.of_binder =
+    List.map snd (List.rev stream_params_outer) in
   debug_print (fun () -> "static_params count: " ^ string_of_int (List.Tot.length static_binders_outer));
   debug_print (fun () -> "stream_params count: " ^ string_of_int (List.Tot.length stream_obs_inner));
   let lower_env: AstLow.lower_env = {
@@ -321,17 +322,14 @@ let lift_ast_tac (nm_src nm_core: string) : Tac.Tac (list Tac.sigelt) =
       (fun (b: AstR.of_binder) (acc: Tac.term) ->
         let sh = AstLow.shallow_ty_for_env lower_env b.AstR.ob_sty in
         let c0 = Tac.pack (Tac.Tv_App cons_fv (shallow_type_tm, Tac.Q_Implicit)) in
-        let c1 = Tac.pack (Tac.Tv_App c0 (sh, Tac.Q_Explicit)) in
-        Tac.pack (Tac.Tv_App c1 (acc, Tac.Q_Explicit)))
+        PTB.mk_apps_explicit c0 [sh; acc])
       stream_obs_inner
       nil_app in
   let lb_typ_core: Tac.term =
     let exp_fv = Tac.pack (Tac.Tv_FVar (Tac.pack_fv ["Pipit"; "Exp"; "Base"; "exp"])) in
     let table_fv = Tac.pack (Tac.Tv_FVar (Tac.pack_fv ["Pipit"; "Prim"; "Shallow"; "table"])) in
     let ret_sh = AstLow.shallow_ty_for_env lower_env ret_ty in
-    let e0 = Tac.pack (Tac.Tv_App exp_fv (table_fv, Tac.Q_Explicit)) in
-    let e1 = Tac.pack (Tac.Tv_App e0 (ctx_list_tm, Tac.Q_Explicit)) in
-    Tac.pack (Tac.Tv_App e1 (ret_sh, Tac.Q_Explicit)) in
+    PTB.mk_apps_explicit exp_fv [table_fv; ctx_list_tm; ret_sh] in
   (* Wrap both the type and the definition in pass-through binders (the
      polymorphic type / typeclass-instance params of the source binding)
      so the spliced sigelt is itself polymorphic. Inside the

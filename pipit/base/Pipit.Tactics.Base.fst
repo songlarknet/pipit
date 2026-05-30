@@ -36,6 +36,14 @@ let qual_is_explicit (q: Ref.aqualv): bool =
   | Ref.Q_Explicit -> true
   | _ -> false
 
+(* Build a single `Tv_App` with an explicit argument qualifier. *)
+let mk_app_explicit (f: Tac.term) (a: Tac.term): Tac.term =
+  Tac.pack (Tac.Tv_App f (a, Ref.Q_Explicit))
+
+(* Left-fold a list of arguments as explicit `Tv_App`s onto [f]. *)
+let mk_apps_explicit (f: Tac.term) (args: list Tac.term): Tac.term =
+  FStar.List.Tot.fold_left mk_app_explicit f args
+
 let unwrap_AscribeT (tm: Tac.term): Tac.Tac Tac.term =
   match Tac.inspect tm with
   | Tac.Tv_AscribedT tm _ _ _ -> tm
