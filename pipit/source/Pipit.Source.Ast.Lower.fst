@@ -374,6 +374,64 @@ and pat_to_alet_chain_subs (rng: R.range) (ctor_fqn: Ast.fqn)
   | _, _ ->
     T.fail "Pipit.Source.Ast.Lower: pat sub arity mismatch (impossible)"
 
+(*** AMatch (static multi-arm) desugaring helpers ***)
+
+(* Termination measures for walking a [T.pattern] when pushing static
+   binders for the arms of an [AMatch AppPureConst]. Parallel to the
+   measures in [Pipit.Source.Ast.OfFStar] but separately named so they
+   don't shadow the [pat_size] on [Ast.pat] above. *)
+let rec tpat_size (p: T.pattern): nat =
+  match p with
+  | T.Pat_Cons pc -> 1 + tpat_bool_subpats_size pc.subpats
+  | _ -> 1
+
+and tpat_bool_subpats_size (ss: list (T.pattern & bool)): nat =
+  match ss with
+  | [] -> 0
+  | (p, _) :: rest -> 1 + tpat_size p + tpat_bool_subpats_size rest
+
+(* Walk a [T.pattern] and push each leaf [Pat_Var] as a STATIC binder
+   into [env], in pattern walk order (explicit subpats only). The
+   pushed namedv is the pattern variable's original [bv.v] (preserving
+   the uniq), and the binder name is computed using OfFStar's
+   convention ([ppname ^ "#" ^ string_of_int uniq]) so that the lifted
+   body's name-based [AVar] lookups resolve to the namedv we just
+   pushed. The arm's [T.pattern] can then be re-emitted verbatim
+   under [Tv_Match] and F* will bind the pattern's bvs to occurrences
+   of the same namedv in the lowered body. *)
+let rec push_static_pat_binders (pat: T.pattern) (env: lower_env)
+    : T.Tac lower_env
+      (decreases (tpat_size pat))
+=
+  match pat with
+  | T.Pat_Var pv ->
+    let nv: T.namedv = pv.v in
+    let nm: Ast.name = T.unseal nv.ppname ^ "#" ^ string_of_int nv.uniq in
+    let sty: Ast.sty = T.unseal pv.sort in
+    let b: binder = { b_name = nm; b_sty = sty; b_kind = BStatic nv } in
+    env_push b env
+
+  | T.Pat_Cons pc ->
+    push_static_pat_binders_subs pc.subpats env
+
+  | _ ->
+    env
+
+and push_static_pat_binders_subs (ss: list (T.pattern & bool)) (env: lower_env)
+    : T.Tac lower_env
+      (decreases (tpat_bool_subpats_size ss))
+=
+  match ss with
+  | [] -> env
+  | (_, true)  :: rest ->
+    (* Implicit subpats — these correspond to elided type/dot
+       arguments and don't introduce binders; skip them, matching the
+       walk order used by [pat_of_fstar] in OfFStar. *)
+    push_static_pat_binders_subs rest env
+  | (p, false) :: rest ->
+    let env' = push_static_pat_binders p env in
+    push_static_pat_binders_subs rest env'
+
 (*** Entry points ***)
 
 val lower_stream (env: lower_env) (a: Ast.ast): T.Tac T.term
@@ -415,12 +473,16 @@ let rec lower_stream env a =
 
   | Ast.ACallStream _r br args ->
     (* Lower a call to another `#lang-pipit` binding `f a1 .. an`. The
-       callee's `f_core` has type `exp t [t_n; ...; t_1] r` (innermost-
-       first context). We splice arguments in by building an `XLet`
-       chain on top of a weakened `f_core` and lowering each argument
-       in an env extended with stream binders for the preceding args, so
-       caller-side variables get their de Bruijn indices shifted by the
-       correct amount. *)
+       callee's `f_core` may be polymorphic over Static F* params
+       (real `Tv_Abs` binders) followed by a cexp expression in its
+       Stream params: `f_core : s1 -> ... -> sk -> exp t [tn; ...; t1] r`
+       (innermost-first context, stream params only). We:
+         1. Walk `br.br_mode` to split args into static (lowered to F*
+            terms and applied via `Tv_App`) and stream (kept for the
+            cexp `XLet`/`weaken` chain).
+         2. Build the cexp ctx and weaken/XLet chain from the stream
+            args only, in source order. Static args are out of band
+            and don't shift caller de Bruijn indices. *)
     let arg_tys = br.Ast.br_arg_tys in
     let n_src = L.length arg_tys in
     let n_arg = L.length args in
@@ -430,6 +492,36 @@ let rec lower_stream env a =
               ^ string_of_int n_src ^ " explicit params, call has "
               ^ string_of_int n_arg ^ " args")
     else
+    (* Split args into (static asts in source order, (stream ast, sty)
+       pairs in source order) by peeling one EXPLICIT `ModeFun` layer
+       per arg from `br.br_mode`. `br_mode` contains one layer per
+       source binder (including implicits / instance binders), so we
+       drop leading `ModeFun ... explicit=false ...` layers first.
+       Defensive default: treat as Stream if `br_mode` is exhausted. *)
+    let rec skip_implicits (m: PPI.mode): PPI.mode =
+      match m with
+      | PPI.ModeFun _ false rm -> skip_implicits rm
+      | _ -> m
+    in
+    let rec partition_args (m: PPI.mode) (args: list Ast.ast) (tys: list Ast.sty)
+      : T.Tac (list Ast.ast & list (Ast.ast & Ast.sty))
+    =
+      match args, tys with
+      | [], [] -> ([], [])
+      | a :: ras, t :: rts ->
+        let m = skip_implicits m in
+        let (arg_mode, rm): PPI.mode & PPI.mode = match m with
+          | PPI.ModeFun am _ rm -> (am, rm)
+          | _ -> (PPI.Stream, m)
+        in
+        let (ss, sts) = partition_args rm ras rts in
+        (match arg_mode with
+         | PPI.Static -> (a :: ss, sts)
+         | _ -> (ss, (a, t) :: sts))
+      | _, _ ->
+        T.fail "Pipit.Source.Ast.Lower: ACallStream arg/ty mismatch (impossible)"
+    in
+    let (static_args, stream_args_tys) = partition_args br.Ast.br_mode args arg_tys in
     let core_fqn = core_fqn_of br.Ast.br_fqn in
     let core_fv_tm = T.pack (T.Tv_FVar (T.pack_fv core_fqn)) in
     (* Pre-apply the call-site implicits to the callee's `__core_*`
@@ -441,17 +533,29 @@ let rec lower_stream env a =
       | [] -> core_fv_tm
       | _  -> T.mk_app core_fv_tm br.Ast.br_implicits
     in
+    (* Apply each static arg as an F* `Tv_App` (explicit) to the core
+       reference, in source order (outermost-static first). *)
+    let core_fv_tm =
+      T.fold_left
+        (fun (acc: T.term) (a: Ast.ast) ->
+          let v_tm = lower_static env a in
+          T.pack (T.Tv_App acc (v_tm, T.Q_Explicit)))
+        core_fv_tm
+        static_args
+    in
+    let stream_tys = L.map snd stream_args_tys in
+    let stream_args = L.map fst stream_args_tys in
     (* Caller-side stream context (innermost first). *)
     let caller_stream_ctx = stream_ctx_of_binders env.binders in
-    (* Callee context (innermost first) = reverse of source param tys. *)
-    let callee_ctx = L.rev arg_tys in
+    (* Callee context (innermost first) = reverse of stream param tys. *)
+    let callee_ctx = L.rev stream_tys in
     let callee_ctx_tm = context_term env callee_ctx in
     let caller_ctx_tm = context_term env caller_stream_ctx in
     (* The weakened core sits at the bottom of the XLet chain, in
        context `callee_ctx ++ caller_stream_ctx`. *)
     let weakened = `(PXB.weaken #PPS.table #(`#callee_ctx_tm) (`#caller_ctx_tm) (`#core_fv_tm)) in
-    (* Lower each argument in env extended with dummy stream binders
-       for preceding args (innermost first). *)
+    (* Lower each stream argument in env extended with dummy stream
+       binders for preceding args (innermost first). *)
     let rec lower_args (acc_dummies_innermost_first: list binder)
                        (defs_innermost_first: list (Ast.sty & T.term))
                        (rem_tys: list Ast.sty)
@@ -470,7 +574,7 @@ let rec lower_stream env a =
       | _, _ ->
         T.fail "Pipit.Source.Ast.Lower: ACallStream arg count mismatch (impossible)"
     in
-    let defs_innermost_first = lower_args [] [] arg_tys args in
+    let defs_innermost_first = lower_args [] [] stream_tys stream_args in
     wrap_xlets env defs_innermost_first weakened
 
   | Ast.AFby _r lit e ->
@@ -516,6 +620,27 @@ let rec lower_stream env a =
       Ast.ALet r scrut_nm PPI.Stream scrut_sty scrut_ast desugared_body
     in
     lower_stream env with_scrut
+
+  | Ast.AMatch _r am scrut_ast _scrut_sty arms ->
+    (* Static-scrutinee multi-arm match. The scrutinee lowers to a
+       static F* term; each arm body lowers to a stream `exp` after
+       pushing the pattern's binders as STATIC into the env. We emit
+       a plain F* `Tv_Match` whose branches return `exp` values --
+       at each call site the scrut resolves to a concrete
+       constructor and F* normalises the match away. *)
+    (match am with
+     | Ast.AppPureConst ->
+       let scrut_tm = lower_static env scrut_ast in
+       let lowered_arms =
+         T.map (fun ((pat, body): T.pattern & Ast.ast) ->
+           let env_arm = push_static_pat_binders pat env in
+           let body_tm = lower_stream env_arm body in
+           (pat, body_tm)
+         ) arms
+       in
+       T.pack (T.Tv_Match scrut_tm None lowered_arms)
+     | Ast.AppPureStream ->
+       T.fail "Pipit.Source.Ast.Lower: AMatch on stream scrutinee is not yet supported")
 
   | Ast.ALetrec _r bs cont ->
     (* v0: support a single static recursive binding only. The legacy

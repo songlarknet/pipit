@@ -117,14 +117,14 @@ let eg_streaming_match_lets (x: stream int): stream int =
 
 // %splice[] (autolift_binds [`%eg_streaming_match_lets])
 
-(* TEMPORARILY DISABLED: static `match` on a constructor pattern
-   (`[]` / `c :: _`) is not yet supported by the new AST lifter. *)
-(*
+(* Static multi-arm match: `consts` is a static `list int`, the arm
+   bodies are streams. Lifted via `AMatch AppPureConst`; the match is
+   re-emitted as a plain F* `Tv_Match` in Lower and resolves at each
+   call site. *)
 let eg_static_match (consts: list int) (x: stream int) =
   match consts with
   | [] -> 0
   | (c: int) :: _ -> c + x
-*)
 
 (* Refinement on `silly_id`'s return type is stripped by `strip_refinements`
    in `Pipit.Source.Ast.OfFStar`, so `lb_typ` ends up with a plain `int`. *)

@@ -50,12 +50,12 @@ let countsecutive (p: bool): int =
 (* ----- 5. lastn / anyn: static-int arg mixed with stream-bool arg.
        This will exercise mixed-mode ACallStream. ----- *)
 
-[@@source_mode (ModeFun Static false (ModeFun Stream true Stream))]
+[@@source_mode (ModeFun Static true (ModeFun Stream true Stream))]
 let lastn (n: int) (p: bool): bool =
   countsecutive p >= n
 %splice[] (PPL.lift_ast_tac1 "lastn")
 
-[@@source_mode (ModeFun Static false (ModeFun Stream true Stream))]
+[@@source_mode (ModeFun Static true (ModeFun Stream true Stream))]
 let anyn (n: int) (p: bool): bool =
   countsecutive (not p) < n
 %splice[] (PPL.lift_ast_tac1 "anyn")

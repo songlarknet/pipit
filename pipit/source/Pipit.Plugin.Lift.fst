@@ -1029,18 +1029,37 @@ let lift_ast_tac (nm_src nm_core: string) : Tac.Tac (list Tac.sigelt) =
   let lifted_for_ofstar: list (Ast.fqn & mode) =
     List.map (fun (_, src, m) -> (src, m)) lifted_full
   in
-  let (passthrough, params, ret_ty, ast) = AstOf.lift_top_body tac_env lifted_for_ofstar lb_src.lb_def in
+  let (passthrough, params, ret_ty, ast) =
+    AstOf.lift_top_body tac_env lifted_for_ofstar lb_mode lb_src.lb_def in
   debug_print (fun () -> "lb_src.lb_typ: " ^ Tac.term_to_string lb_src.lb_typ);
   debug_print (fun () -> "lb_src.lb_def: " ^ Tac.term_to_string lb_src.lb_def);
   debug_print (fun () -> "passthrough count: " ^ string_of_int (List.Tot.length passthrough));
   debug_print (fun () -> "params      count: " ^ string_of_int (List.Tot.length params));
   debug_print (fun () -> "ret_ty: " ^ Tac.term_to_string ret_ty);
-  (* Convert OfFStar param binders to Lower binders. *)
-  let to_lower (b: AstOf.of_binder): AstLow.binder =
+  (* A param is "static" if its declared mode (from `lb_mode`) is
+     `PPI.Static`. Static params become real F* `Tv_Abs` binders
+     around the spliced core sigelt (and BStatic in the lower_env so
+     references in the body are emitted as `Tv_Var`). Everything else
+     (Stream, ModeFun, etc.) stays as a cexp stream binding (BStream
+     + an entry in the ctx list). *)
+  let is_static_param (bob: Tac.binder & AstOf.of_binder): bool =
+    let (_, ob) = bob in
+    ob.AstOf.ob_mode = Static
+  in
+  (* Convert OfFStar param binders to Lower binders. Reuse the
+     original `T.binder`'s namedv for static params so `Tv_Var`
+     references in the lowered body bind to the wrapping `Tv_Abs`. *)
+  let to_lower (bob: Tac.binder & AstOf.of_binder): AstLow.binder =
+    let (b, ob) = bob in
+    let kind: AstLow.binder_kind =
+      if is_static_param bob
+      then AstLow.BStatic (Tac.binder_to_namedv b)
+      else AstLow.BStream
+    in
     {
-      AstLow.b_name = b.AstOf.ob_name;
-      AstLow.b_sty  = b.AstOf.ob_sty;
-      AstLow.b_kind = AstLow.BStream;
+      AstLow.b_name = ob.AstOf.ob_name;
+      AstLow.b_sty  = ob.AstOf.ob_sty;
+      AstLow.b_kind = kind;
     } in
   (* `ret_ty` is computed in `lift_top_body` against the env that
      contains the pass-through + explicit binders, so any `Tv_Var`
@@ -1078,13 +1097,26 @@ let lift_ast_tac (nm_src nm_core: string) : Tac.Tac (list Tac.sigelt) =
       inst_map "" ^ "]");
   let inst_for (sty: Tac.term): Tac.Tac (option Tac.term) =
     resolve_inst inst_map passthrough sty in
+  (* `params` is outermost-first (source order). `lower_env.binders`
+     and `ctx_list_tm` want innermost-first; reverse for those. The
+     wrapping below (`Tv_Arrow` / `Tv_Abs`) wants outermost-first so
+     it uses `params` directly via `List.fold_right`. *)
+  let params_inner: list (Tac.binder & AstOf.of_binder) = List.rev params in
+  let stream_obs_inner: list AstOf.of_binder =
+    List.map snd (List.filter (fun bob -> not (is_static_param bob)) params_inner) in
+  let static_binders_outer: list Tac.binder =
+    List.map fst (List.filter is_static_param params) in
+  debug_print (fun () -> "static_params count: " ^ string_of_int (List.Tot.length static_binders_outer));
+  debug_print (fun () -> "stream_params count: " ^ string_of_int (List.Tot.length stream_obs_inner));
   let lower_env: AstLow.lower_env = {
-    AstLow.binders = List.map to_lower params;
+    AstLow.binders = List.map to_lower params_inner;
     AstLow.inst_for = inst_for;
   } in
   let tm = AstLow.lower lower_env ast in
-  (* Context list is built from `params` (innermost first), matching the
-     order in which `AstLow.lower` resolves de-Bruijn indices.
+  (* Context list is built from the stream binders only (innermost
+     first), matching the order in which `AstLow.lower` resolves
+     de-Bruijn indices for `BStream` binders. Static binders are
+     wrapped as F* `Tv_Abs` around the core sigelt instead.
      Built with raw `Tv_App` / `Tv_FVar` constructors (not quasi-quotes)
      so the implicit `has_stream` typeclass arguments inside each
      `shallow_ty` are not eagerly elaborated against the tactic env. *)
@@ -1103,7 +1135,7 @@ let lift_ast_tac (nm_src nm_core: string) : Tac.Tac (list Tac.sigelt) =
         let c0 = Tac.pack (Tac.Tv_App cons_fv (shallow_type_tm, Tac.Q_Implicit)) in
         let c1 = Tac.pack (Tac.Tv_App c0 (sh, Tac.Q_Explicit)) in
         Tac.pack (Tac.Tv_App c1 (acc, Tac.Q_Explicit)))
-      params
+      stream_obs_inner
       nil_app in
   let lb_typ_core: Tac.term =
     let exp_fv = Tac.pack (Tac.Tv_FVar (Tac.pack_fv ["Pipit"; "Exp"; "Base"; "exp"])) in
@@ -1114,17 +1146,30 @@ let lift_ast_tac (nm_src nm_core: string) : Tac.Tac (list Tac.sigelt) =
     Tac.pack (Tac.Tv_App e1 (ret_sh, Tac.Q_Explicit)) in
   (* Wrap both the type and the definition in pass-through binders (the
      polymorphic type / typeclass-instance params of the source binding)
-     so the spliced sigelt is itself polymorphic. *)
+     so the spliced sigelt is itself polymorphic. Inside the
+     pass-through layer, wrap the explicit STATIC params as ordinary
+     `Tv_Abs` / `Tv_Arrow` binders -- they're real F* args at call
+     sites, not cexp stream binders. *)
+  let lb_typ_static: Tac.term =
+    List.fold_right
+      (fun (b: Tac.binder) (acc: Tac.term) -> Tac.pack (Tac.Tv_Arrow b (Tac.C_Total acc)))
+      static_binders_outer
+      lb_typ_core in
   let lb_typ_tm: Tac.term =
     List.fold_right
       (fun (b: Tac.binder) (acc: Tac.term) -> Tac.pack (Tac.Tv_Arrow b (Tac.C_Total acc)))
       passthrough
-      lb_typ_core in
+      lb_typ_static in
+  let lb_def_static: Tac.term =
+    List.fold_right
+      (fun (b: Tac.binder) (acc: Tac.term) -> Tac.pack (Tac.Tv_Abs b acc))
+      static_binders_outer
+      tm in
   let lb_def_tm: Tac.term =
     List.fold_right
       (fun (b: Tac.binder) (acc: Tac.term) -> Tac.pack (Tac.Tv_Abs b acc))
       passthrough
-      tm in
+      lb_def_static in
   let lb_core: Tac.letbinding = {
     lb_fv  = Tac.pack_fv (Ref.explode_qn nm_core_m);
     lb_us  = [];

@@ -20,16 +20,18 @@
     original source location.
 
   Deliberately not included in v0:
-  * `AMatch` (multi-arm): lift handles only the if-then-else shape (a
-    `Tv_Match` on a bool scrutinee with `True`/`False` arms) by emitting
-    an `APrim` over `PipitRuntime.Prim.p'select`. Multi-arm pattern
-    matches on data-constructor scrutinees are not supported. Even an
-    eventual implementation likely needs to introduce clocking /
-    activation so that the substreams under a non-matching arm do not
-    advance their state; the legacy lift's eager-evaluate-all-branches
-    \"select\" semantics is semantically dubious and we do not want to
-    bake it in here. Single-arm irrefutable matches (tuple / record /
-    single-ctor destructure) ARE supported via `ALetMatch`.
+  * Multi-arm `AMatch` with a STREAM scrutinee: lift handles only the
+    if-then-else shape (a `Tv_Match` on a bool scrutinee with
+    `True`/`False` arms) by emitting an `APrim` over
+    `PipitRuntime.Prim.p'select`. A correct implementation for general
+    stream-scrutinee multi-arm matches likely needs to introduce
+    clocking / activation so that the substreams under a non-matching
+    arm do not advance their state; the legacy lift's
+    eager-evaluate-all-branches \"select\" semantics is semantically
+    dubious and we do not want to bake it in here. Single-arm
+    irrefutable matches (tuple / record / single-ctor destructure)
+    ARE supported via `ALetMatch`; STATIC-scrutinee multi-arm
+    matches are supported via `AMatch AppPureConst`.
   * `AContract`: revived in a follow-up with `Pipit.Sugar.Contract`.
   * `ALemma`: revived alongside the ttcan port.
   * First-class abstractions: callers are reified to top-level bindings.
@@ -189,10 +191,29 @@ type ast =
      leaf introduces a stream binder bound to a projector application
      on the scrutinee.
 
-     Refutable / multi-arm matches are not represented here; the
-     bool/if-then-else shape goes through `APrim AppPureStream` over
-     `PipitRuntime.Prim.p'select` instead. *)
+     Refutable / multi-arm matches with a stream scrutinee are not
+     represented here; the bool/if-then-else shape goes through
+     `APrim AppPureStream` over `PipitRuntime.Prim.p'select` instead.
+     Multi-arm matches with a static scrutinee use `AMatch` below. *)
   | ALetMatch : range -> pat -> sty -> ast -> ast -> ast
+  (* `match scrut with | pat1 -> body1 | ... | patN -> bodyN`
+     (multi-arm). The original F* `T.pattern` is preserved per arm
+     so `Lower` can re-emit it under a plain F* `Tv_Match`. The
+     `app_mode` records the mode of the scrutinee:
+
+     * `AppPureConst` — scrut is a static value; the arm bodies are
+       stream expressions. `Lower` lowers `scrut` as static, pushes
+       each arm's pattern binders as STATIC binders, lowers each
+       body as a stream, and emits a regular F* `Tv_Match` whose
+       branches return `exp` values. Since the scrutinee resolves
+       to a concrete constructor at each call site, the match folds
+       away during F* elaboration.
+     * `AppPureStream` — scrut is a stream; would need a runtime
+       dispatch (`p'select`-cascade or a dedicated match primitive).
+       NOT YET IMPLEMENTED.
+
+     The `sty` is the scrutinee's source type. *)
+  | AMatch : range -> app_mode -> ast -> sty -> list (T.pattern & ast) -> ast
   (* `rec' (fun (x: sty) -> body)` — recursive stream definition.
      Mirrors `XMu` in the core expression. *)
   | AMu     : range -> name -> sty -> ast -> ast

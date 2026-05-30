@@ -18,18 +18,18 @@
      (i.e. `if-then-else`)                                 -> `APrim AppPureStream` over `PipitRuntime.Prim.p'select`
    - `Tv_Match` of any scrutinee with a SINGLE arm whose
      pattern is irrefutable (variable / wildcard /
-     single-constructor data, possibly nested)             -> `ALet` chain of projector applications
+     single-constructor data, possibly nested)             -> `ALetMatch` over a Pipit `pat`
+   - `Tv_Match` of a STATIC scrutinee with any number of
+     arms (data-constructor patterns, etc.)                -> `AMatch AppPureConst`
 
-   General multi-arm pattern matching (data-constructor scrutinees,
-   multi-arm matches with variable patterns, refutable patterns) is
-   *not* supported in v0. Even for the eventual implementation,
-   supporting general stream matches almost certainly requires
-   introducing a notion of *clocking* / activation: only the substreams
-   under the currently matching arm should advance their state. The
-   legacy lift treats stream matches as an eager "select" over all
-   branches, which is semantically dubious (see the comments in
-   `Pipit.Plugin.Lift`'s `Tv_Match` handler). We deliberately do not
-   replicate that here.
+   General multi-arm pattern matching with a STREAM scrutinee is
+   *not* supported in v0. Supporting general stream matches almost
+   certainly requires introducing a notion of *clocking* / activation:
+   only the substreams under the currently matching arm should
+   advance their state. The legacy lift treats stream matches as an
+   eager "select" over all branches, which is semantically dubious
+   (see the comments in `Pipit.Plugin.Lift`'s `Tv_Match` handler).
+   We deliberately do not replicate that here.
 
    Lambdas (`Tv_Abs`) are stripped *only* at the top level by
    `lift_top_ast`. Lambdas appearing inside a body are unsupported in
@@ -276,6 +276,21 @@ and is_pat_irref_subs (ss: list (T.pattern & bool)): bool =
   | (_, true)  :: rest -> is_pat_irref_subs rest
   | (p, false) :: rest -> if is_pat_irref p then is_pat_irref_subs rest else false
 
+(* Detect the bool-scrutinee if-then-else shape that [lift_ite]
+   handles. F* desugars `if c then t else e` as `match c with
+   | true -> t | _ -> e` (the false-case is typically a wildcard
+   `Pat_Var uu___`, not `Pat_Constant C_False`). We accept either
+   order and tolerate a wildcard / variable in the catch-all branch.
+   Multi-arm matches that do NOT match this shape go to
+   [lift_match_general]. *)
+let is_ite_shape (brs: list T.branch): bool =
+  match brs with
+  | [(T.Pat_Constant { c = T.C_True  }, _); (_, _)] -> true
+  | [(T.Pat_Constant { c = T.C_False }, _); (_, _)] -> true
+  | [(_, _); (T.Pat_Constant { c = T.C_False }, _)] -> true
+  | [(_, _); (T.Pat_Constant { c = T.C_True  }, _)] -> true
+  | _ -> false
+
 (* For a data constructor [ctor], return the ppnames of its explicit
    binders -- exactly the field names used by F*'s auto-generated
    projectors ([Mktuple2?._1], [Mkpoint?.px], [Some?.v], etc.). *)
@@ -313,8 +328,11 @@ let projector_fqn (ctor_fqn: Ast.fqn) (field: Ast.name): T.Tac Ast.fqn =
    against this (sub)pattern; for a top-level call this is the
    scrutinee's type, and for a sub-call it is the corresponding
    field's type as recovered from the parent constructor's
-   projector. *)
-let rec pat_of_fstar (e: of_env) (pat: T.pattern) (parent_ty: Ast.sty)
+   projector. The [binder_mode] selects whether bound vars are pushed
+   into the env as `Stream` (for `ALetMatch` over a stream scrutinee)
+   or `Static` (for `AMatch AppPureConst` over a static scrutinee). *)
+let rec pat_of_fstar (e: of_env) (binder_mode: PPI.mode)
+                     (pat: T.pattern) (parent_ty: Ast.sty)
     : T.Tac (of_env & Ast.pat)
       (decreases (pat_size pat))
 =
@@ -325,9 +343,9 @@ let rec pat_of_fstar (e: of_env) (pat: T.pattern) (parent_ty: Ast.sty)
       ob_uniq = bv.v.uniq;
       ob_name = nm;
       ob_sty  = parent_ty;
-      ob_mode = PPI.Stream;
+      ob_mode = binder_mode;
     } in
-    of_push ob e, Ast.PVar nm parent_ty PPI.Stream
+    of_push ob e, Ast.PVar nm parent_ty binder_mode
 
   | T.Pat_Cons pc ->
     let ctor_fqn = T.inspect_fv pc.head in
@@ -339,7 +357,7 @@ let rec pat_of_fstar (e: of_env) (pat: T.pattern) (parent_ty: Ast.sty)
     let implicits = scrut_type_implicits parent_ty in
     explicit_subpats_size_lemma pc.subpats;
     let (e', sub_pats) =
-      pat_of_fstar_subs e ctor_fqn field_names exp_subs implicits
+      pat_of_fstar_subs e binder_mode ctor_fqn field_names exp_subs implicits
     in
     e', Ast.PCon ctor_fqn sub_pats
 
@@ -349,7 +367,8 @@ let rec pat_of_fstar (e: of_env) (pat: T.pattern) (parent_ty: Ast.sty)
   | _ ->
     T.fail "Pipit.Source.Ast.OfFStar: unsupported irrefutable pattern shape"
 
-and pat_of_fstar_subs (e: of_env) (ctor_fqn: Ast.fqn)
+and pat_of_fstar_subs (e: of_env) (binder_mode: PPI.mode)
+                       (ctor_fqn: Ast.fqn)
                        (fields: list Ast.name) (subs: list T.pattern)
                        (implicits: list T.argv)
     : T.Tac (of_env & list Ast.pat)
@@ -362,8 +381,8 @@ and pat_of_fstar_subs (e: of_env) (ctor_fqn: Ast.fqn)
     let proj_fv  = T.pack_fv proj_fqn in
     let proj_prim = of_prim_fv_applied e proj_fv implicits in
     let field_ty: Ast.sty = proj_prim.Ast.prim_ret_ty in
-    let (e', sub_pat) = pat_of_fstar e p field_ty in
-    let (e'', rest) = pat_of_fstar_subs e' ctor_fqn fs ps implicits in
+    let (e', sub_pat) = pat_of_fstar e binder_mode p field_ty in
+    let (e'', rest) = pat_of_fstar_subs e' binder_mode ctor_fqn fs ps implicits in
     e'', sub_pat :: rest
   | _, _ ->
     T.fail "Pipit.Source.Ast.OfFStar: pattern/field arity mismatch (impossible)"
@@ -418,9 +437,13 @@ let rec lift_tm e t =
      | [(pat, body)] ->
        if is_pat_irref pat
        then lift_match_irref e rng scrut pat body
-       else lift_ite e rng scrut brs
+       else if is_ite_shape brs
+       then lift_ite e rng scrut brs
+       else lift_match_general e rng scrut brs
      | _ ->
-       lift_ite e rng scrut brs)
+       if is_ite_shape brs
+       then lift_ite e rng scrut brs
+       else lift_match_general e rng scrut brs)
 
   | _ ->
     T.fail ("Pipit.Source.Ast.OfFStar: unsupported term shape: " ^
@@ -505,7 +528,7 @@ and lift_match_irref (e: of_env) (rng: R.range) (scrut: T.term)
    | _ ->
      T.fail "Pipit.Source.Ast.OfFStar: irrefutable match on non-stream scrutinee is not yet supported");
   let scrut_ty: Ast.sty = T.tc e.oe_tac_env scrut in
-  let (e_after, pipit_pat) = pat_of_fstar e pat scrut_ty in
+  let (e_after, pipit_pat) = pat_of_fstar e PPI.Stream pat scrut_ty in
   let (m_body, body_ast) = lift_tm e_after body in
   m_body, Ast.ALetMatch rng pipit_pat scrut_ty scrut_ast body_ast
 
@@ -539,7 +562,7 @@ and lift_ite (e: of_env) (rng: R.range) (scrut: T.term) (brs: list T.branch): T.
     | [(_, t); (T.Pat_Constant { c = T.C_False }, f)] -> (t, f)
     | [(_, f); (T.Pat_Constant { c = T.C_True  }, t)] -> (t, f)
     | _ ->
-      T.fail ("Pipit.Source.Ast.OfFStar: only if-then-else (bool match with True/False arms) is supported in v0; general pattern matches are not yet implemented")
+      T.fail ("Pipit.Source.Ast.OfFStar: lift_ite called on non-ite shape (impossible: dispatch checks is_ite_shape)")
   in
   let (mc, c_ast) = lift_tm e scrut in
   let (mt, t_ast) = lift_tm e t_tm in
@@ -561,6 +584,34 @@ and lift_ite (e: of_env) (rng: R.range) (scrut: T.term) (brs: list T.branch): T.
   let margs = [(mc, c_ast); (mt, t_ast); (mf, f_ast)] in
   let (rm, am) = app_mode_of margs in
   rm, Ast.APrim rng am prim [c_ast; t_ast; f_ast]
+
+(* General multi-arm `match scrut with | p1 -> b1 | ... | pN -> bN`.
+   v0 only supports a STATIC scrutinee (the static value resolves to
+   a concrete constructor at each call site, so the match folds away
+   during F* elaboration). Stream scrutinees would need a runtime
+   dispatch and are not yet supported (see `AMatch` doc in Ast.fst).
+
+   For each arm we walk the pattern with [pat_of_fstar] in mode
+   `Static` (to push pattern binders as static into the lift env)
+   and lift the body in the extended env. The original F* pattern is
+   carried in the [AMatch] arm so that `Lower` can re-emit it verbatim
+   under a plain F* `Tv_Match`. *)
+and lift_match_general (e: of_env) (rng: R.range) (scrut: T.term)
+                       (brs: list T.branch): T.Tac (PPI.mode & Ast.ast) =
+  let (m_scrut, scrut_ast) = lift_tm e scrut in
+  (match m_scrut with
+   | PPI.Static -> ()
+   | _ ->
+     T.fail "Pipit.Source.Ast.OfFStar: multi-arm match on non-static scrutinee is not yet supported");
+  let scrut_ty: Ast.sty = T.tc e.oe_tac_env scrut in
+  let arms: list (T.pattern & Ast.ast) =
+    T.map (fun ((pat, body): T.branch) ->
+      let (e_arm, _pipit_pat) = pat_of_fstar e PPI.Static pat scrut_ty in
+      let (_m_body, body_ast) = lift_tm e_arm body in
+      (pat, body_ast)
+    ) brs
+  in
+  PPI.Stream, Ast.AMatch rng Ast.AppPureConst scrut_ast scrut_ty arms
 
 and lift_app_fv (e: of_env) (rng: R.range) (fv: T.fv) (implicits: list T.argv) (args: list T.argv): T.Tac (PPI.mode & Ast.ast) =
   let fqn = T.inspect_fv fv in
@@ -626,36 +677,57 @@ and lift_args (e: of_env) (args: list T.argv): T.Tac (list (PPI.mode & Ast.ast))
    pass-through binder so the spliced binding remains polymorphic.
 
    Returns the pass-through binders (outermost first, source order),
-   the explicit stream params as `of_binder`s (innermost first,
-   matching `Pipit.Source.Ast.Lower.lower_env`), the inferred return
-   type of the body (typed against the env that contains the
-   pass-through + explicit binders, so any `Tv_Var` references use the
-   uniqs from `lb_def` — NOT `lb_typ` — and remain resolvable when
-   wrapped back up by the caller), and the lifted AST body. *)
-let lift_top_body (tac_env: T.env) (lifted: list (Ast.fqn & PPI.mode)) (body: T.term)
-  : T.Tac (list T.binder & list of_binder & T.term & Ast.ast)
+   the explicit params paired with their original `T.binder`
+   (source order, outermost first), the inferred return type of the
+   body (typed against the env that contains the pass-through +
+   explicit binders, so any `Tv_Var` references use the uniqs from
+   `lb_def` — NOT `lb_typ` — and remain resolvable when wrapped back
+   up by the caller), and the lifted AST body. Each explicit binder's
+   mode is recovered from `lb_mode` (one `ModeFun` layer per binder,
+   in `T.collect_abs` order). *)
+let lift_top_body (tac_env: T.env) (lifted: list (Ast.fqn & PPI.mode))
+                  (lb_mode: PPI.mode) (body: T.term)
+  : T.Tac (list T.binder & list (T.binder & of_binder) & T.term & Ast.ast)
 =
   let (bs, body) = T.collect_abs body in
   let e0: of_env = { oe_tac_env = tac_env; oe_binders = []; oe_lifted = lifted } in
-  let push_param (acc: of_env & list T.binder) (b: T.binder): T.Tac (of_env & list T.binder) =
-    let (e, passthrough_rev) = acc in
+  (* Walk binders in source order, peeling one `ModeFun` layer per
+     binder to recover its declared mode. `lb_mode` is produced by the
+     `#lang-pipit` preprocessor (see `Pipit.Plugin.Support.mode_of_pattern`)
+     and contains one `ModeFun` layer per binder in `T.collect_abs`
+     order, regardless of explicitness. We fall back to `Stream` if
+     `lb_mode` is exhausted (defensive — shouldn't happen for
+     well-formed source bindings). The explicit-param accumulator
+     pairs each `of_binder` with its original `T.binder` so callers
+     can rebuild it (e.g. for wrapping static params as F* `Tv_Abs`
+     around the spliced sigelt). *)
+  let push_param (acc: of_env & list T.binder & list (T.binder & of_binder) & PPI.mode)
+                 (b: T.binder)
+    : T.Tac (of_env & list T.binder & list (T.binder & of_binder) & PPI.mode)
+  =
+    let (e, passthrough_rev, explicits_rev, m) = acc in
+    let (arg_mode, rest_mode): PPI.mode & PPI.mode = match m with
+      | PPI.ModeFun am _ rm -> (am, rm)
+      | _ -> (PPI.Stream, m)
+    in
     if Ref.Q_Explicit? b.qual then
       let nm = of_name_of_namedv (T.binder_to_namedv b) in
       let ob: of_binder = {
         ob_uniq = b.uniq;
         ob_name = nm;
         ob_sty  = strip_refinements b.sort;
-        ob_mode = PPI.Stream;
+        ob_mode = arg_mode;
       } in
-      (of_push ob e, passthrough_rev)
+      (of_push ob e, passthrough_rev, (b, ob) :: explicits_rev, rest_mode)
     else
       (* Pass-through (type / instance / proof) binder. Push into the
          tac env only — no AST binder, no de Bruijn slot. *)
       let nv = T.binder_to_namedv b in
       let e' = { e with oe_tac_env = Ref.push_namedv e.oe_tac_env (Ref.pack_namedv nv) } in
-      (e', b :: passthrough_rev)
+      (e', b :: passthrough_rev, explicits_rev, rest_mode)
   in
-  let (e_final, passthrough_rev) = T.fold_left push_param (e0, []) bs in
+  let (e_final, passthrough_rev, explicits_rev, _) =
+    T.fold_left push_param (e0, [], [], lb_mode) bs in
   let ret_ty: T.term = strip_refinements (T.tc e_final.oe_tac_env body) in
   let (_, ast) = lift_tm e_final body in
-  (L.rev passthrough_rev, e_final.oe_binders, ret_ty, ast)
+  (L.rev passthrough_rev, L.rev explicits_rev, ret_ty, ast)
