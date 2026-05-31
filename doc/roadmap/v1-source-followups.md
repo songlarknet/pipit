@@ -329,12 +329,68 @@ walk-through and are worth tracking somewhere:
   2026-05-24). Eventually want this kind of escape hatch documented or
   removed.
 
-## Soundness (not user-facing, but important)
+## Soundness (mostly not user-facing, but important)
 
-A separate group: these don't affect the surface language but they
-weaken the meta-theory and should be re-proved before we call v1
-done. Companion to `doc/roadmap/v0-contracts-missing-proofs.md`,
-which tracks the older contract-layer obligations.
+A separate group. Most of these don't affect the surface language but
+they weaken the meta-theory and should be re-proved before we call v1
+done; one (the default-proof entry just below) *is* user-visible.
+Companion to `doc/roadmap/v0-contracts-missing-proofs.md`, which
+tracks the older contract-layer obligations.
+
+### Unannotated bindings discharge no checks; need a default proof strategy
+
+Today a top-level streaming `let` without a `[@@proof_…]` attribute
+falls through `Pipit_Plugin_Preprocess.pre_decl` to the plain
+lift-and-`bless` path with no obligation emitted at all. Any
+`check "…" e` inside that body (or inside a function it calls) is
+silently trusted — there is no Z3 query, no `system_induct_k1`
+discharge, nothing. Combined with the `exp`-vs-`cexp` issue below,
+this means the surface language has a real soundness gap for the
+"forgot the attribute" case.
+
+The intended shape:
+
+* **Default** — every top-level streaming `let` runs an automatic
+  proof attempt. Starting points to try, in increasing cost:
+  `proof_noinduct` (≡ `proof_induct0`, just discharge the check as an
+  invariant), then `proof_induct1`. The cheapest tier should be
+  effectively free when the body contains no `check` at all — most
+  combinator bindings — so the overhead lands on bindings that
+  *should* be paying for a check anyway. Open question: how fast
+  does the SMT call degrade when the body calls into helpers that
+  do carry checks but none directly?
+* **`[@@proof_defer]`** — opt out explicitly. The body may carry
+  checks but the caller is responsible for discharging them. This is
+  the right knob for contract-style reasoning where you want the
+  body visible (no abstraction barrier) but the obligations float up
+  to the contract boundary. Today the lack of this annotation is
+  exactly what forces the "no attribute = trust me" default; making
+  the silent path explicit closes the soundness hole without
+  forcing every helper to spell out `proof_noinduct`.
+* **Explicit annotations stay as today** — `proof_induct1`,
+  `proof_induct k`, `proof_contract_induct1`, etc. override the
+  default and continue to mean what they currently mean.
+
+Implementation pointers: `mk_check_induct1_decl` in
+`pipit/plugin/Pipit_Plugin_Preprocess.ml` already shows the
+splice-time structure for emitting a check obligation; the default
+path needs the same scaffolding gated on a fresh
+`Pipit_Plugin_Attributes` entry (`proof_default`, `proof_defer`).
+Worth measuring on `make plugin-test` and `make example` before
+flipping the default — the budget per spliced `let` should be tight
+enough that turning it on for the whole tree isn't a tax.
+
+Cross-references:
+
+* `proof_induct k` for k > 1 and a less-misleading name for k = 0
+  (short-term entry above) covers the picking-the-right-k axis.
+* `[@@proof_induct1]` over static parameters (short-term entry
+  above) is a prerequisite — the wrapper has to handle static-param
+  prefixes before the default can apply uniformly.
+* `New core generation emits exp, not cexp` (below) is the other
+  half of the same hole: even with a default `proof_induct1`, the
+  per-node `XCheck` obligations carried by `cexp` are still
+  `bless`-ed away.
 
 ### New core generation emits `exp`, not `cexp`
 
