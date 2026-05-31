@@ -21,6 +21,7 @@ let core_of_source_lid = src_lid "core_of_source"
 let core_lifted_lid    = src_lid "core_lifted"
 let extract_lid = src_lid "extract"
 let source_mode_lid = src_lid "source_mode"
+let proof_contract_lid = src_lid "proof_contract"
 
 (* `[@@expect_failure]` is exported from FStar.Attributes (auto-opened). *)
 let expect_failure_lid = FI.lid_of_path ["FStar"; "Attributes"; "expect_failure"]

@@ -395,31 +395,217 @@ let mk_contract_decl
     interleaved = false;
   }
 
-let pre_decl (r: FStarC_Range.range) (d: FPA.decl) =
+(* ----- Stream-effect return-type desugar -----
+
+   In a `#lang-pipit` module, a user can write
+
+     let f (a: stream A) (b: stream B): Stream Ret
+       (requires R) (ensures fun r -> G)
+       = body
+
+   as sugar for the three separate bindings expected by the existing
+   `proof_contract` machinery:
+
+     let f_rely (a: stream A) (b: stream B): stream bool = R
+     let f_guar (a: stream A) (b: stream B) (r: stream Ret): stream bool = G
+     [@@proof_contract (`%f_rely) (`%f_guar)]
+     let f      (a: stream A) (b: stream B): Ret = body
+
+   Only the top-level return type is sugared; uses of `Stream` anywhere
+   else (binder positions, nested return types) are left alone and will
+   be rejected by F* downstream. *)
+
+let rec unparen (t: FPA.term): FPA.term =
+  match t.tm with
+  | FPA.Paren t -> unparen t
+  | _ -> t
+
+(* Collect a left-nested chain of applications, returning the head and
+   the list of arguments in left-to-right order.  `Paren` wrappers are
+   transparent. *)
+let collect_app_left (t: FPA.term): FPA.term * (FPA.term * FPA.imp) list =
+  let rec go (t: FPA.term) acc = match t.tm with
+    | FPA.App (f, a, q) -> go f ((a, q) :: acc)
+    | FPA.Paren t -> go t acc
+    | _ -> (t, acc)
+  in
+  go t []
+
+(* Recognise `Stream <ret> (requires R) (ensures fun r -> G)`.
+   Returns Some (ret_ty, R, r_ident, G_body) on a well-formed contract,
+   None when the head isn't `Stream` at all, and fails fatally for an
+   ill-formed `Stream ...` expression. *)
+let detect_stream_ret_ty (ty: FPA.term):
+  (FPA.term * FPA.term * FI.ident * FPA.term) option =
+  let open FPA in
+  (* F* parses `Stream int (requires R) (ensures G)` as either a
+     `Construct (Stream, [int; requires R; ensures G])` (capitalised
+     head, like a data constructor) or a chain of `App`s.  Accept
+     either shape. *)
+  let (head_lid_opt, args) =
+    match (unparen ty).tm with
+    | Construct (lid, args) -> (Some lid, args)
+    | _ ->
+      let (head, args) = collect_app_left ty in
+      (match (unparen head).tm with
+       | Var lid -> (Some lid, args)
+       | _ -> (None, args))
+  in
+  match head_lid_opt with
+  | Some lid when FI.string_of_lid lid = "Stream" ->
+    let args' = List.map (fun (a, _) -> unparen a) args in
+    (match args' with
+     | [ret; req; ens] ->
+       let r_term = match req.tm with
+         | Requires r -> r
+         | _ -> Pipit_Plugin_Support.fatal req.range
+             "Stream contract: second argument must be `(requires <bool>)`"
+       in
+       let g_term = match ens.tm with
+         | Ensures g -> g
+         | _ -> Pipit_Plugin_Support.fatal ens.range
+             "Stream contract: third argument must be `(ensures fun <r> -> <bool>)`"
+       in
+       let rec id_of_simple_pat p = match p.pat with
+         | PatVar (i, _, _) -> i
+         | PatAscribed (p, _) -> id_of_simple_pat p
+         | _ -> Pipit_Plugin_Support.fatal p.prange
+             "Stream contract: `ensures` lambda must bind a single name"
+       in
+       let (r_id, g_body) = match (unparen g_term).tm with
+         | Abs ([pat], body) -> (id_of_simple_pat pat, body)
+         | _ -> Pipit_Plugin_Support.fatal g_term.range
+             "Stream contract: `ensures` argument must be `fun <r> -> ...`"
+       in
+       Some (ret, r_term, r_id, g_body)
+     | _ ->
+       Pipit_Plugin_Support.fatal ty.range
+         "Stream contract: expected `Stream <ret> (requires R) (ensures fun r -> G)`")
+  | _ -> None
+
+let mk_stream_ty (ty: FPA.term) (range: FStarC_Range.range): FPA.term =
+  let open FPA in
+  let level = Expr in
+  let stream_var =
+    { tm = Var (FI.lid_of_path ["stream"] range); range; level }
+  in
+  { tm = App (stream_var, ty, Nothing); range; level }
+
+let mk_bool_ty (range: FStarC_Range.range): FPA.term =
+  let open FPA in
+  { tm = Var (FI.lid_of_path ["bool"] range); range; level = Expr }
+
+(* If the body of a top-level let binds a `Stream <ret> (requires R)
+   (ensures fun r -> G)` return type, rewrite it to plain `<ret>`, add a
+   `proof_contract <f>_rely <f>_guar` attribute, and emit two extra
+   top-level lets for `<f>_rely` and `<f>_guar`. *)
+let desugar_stream_decl
+    (pat: FPA.pattern)
+    (orig_attrs: FPA.term list)
+    (drange: FStarC_Range.range):
+  (FPA.pattern * FPA.term list * FPA.decl list) option =
+  let open FPA in
+  match pat.pat with
+  | PatAscribed ({ pat = PatApp (head_pat, arg_pats); prange = inner_range },
+                 (ret_ty_form, None)) ->
+    (match detect_stream_ret_ty ret_ty_form with
+     | None -> None
+     | Some (ret_ty, r_term, r_id, g_body) ->
+       let f_id = id_of_pat head_pat in
+       let f_range = FI.range_of_id f_id in
+       let rely_id = FI.mk_ident (FI.string_of_id f_id ^ "_rely", f_range) in
+       let guar_id = FI.mk_ident (FI.string_of_id f_id ^ "_guar", f_range) in
+       let stream_bool_ty = mk_stream_ty (mk_bool_ty drange) drange in
+       let stream_ret_ty  = mk_stream_ty ret_ty drange in
+       let mk_pat_var (i: FI.ident): pattern =
+         { pat = PatVar (i, None, []); prange = FI.range_of_id i }
+       in
+       let mk_ascribed (p: pattern) (ty: term): pattern =
+         { pat = PatAscribed (p, (ty, None)); prange = p.prange }
+       in
+       let rely_pat =
+         mk_ascribed
+           { pat = PatApp (mk_pat_var rely_id, arg_pats);
+             prange = inner_range }
+           stream_bool_ty
+       in
+       let r_arg_pat = mk_ascribed (mk_pat_var r_id) stream_ret_ty in
+       let guar_pat =
+         mk_ascribed
+           { pat = PatApp (mk_pat_var guar_id, arg_pats @ [r_arg_pat]);
+             prange = inner_range }
+           stream_bool_ty
+       in
+       let mk_decl (p: pattern) (t: term): FPA.decl = {
+         d = TopLevelLet (NoLetQualifier, [(p, t)]);
+         drange;
+         quals = [];
+         attrs = [];
+         interleaved = false;
+       } in
+       let rely_decl = mk_decl rely_pat r_term in
+       let guar_decl = mk_decl guar_pat g_body in
+       let new_body_pat = {
+         pat = PatAscribed (
+           { pat = PatApp (head_pat, arg_pats); prange = inner_range },
+           (ret_ty, None));
+         prange = pat.prange;
+       } in
+       let mk_vquote (i: FI.ident): term =
+         let level = Expr in
+         let inner = { tm = Var (FI.lid_of_ids [i]); range = drange; level } in
+         { tm = VQuote inner; range = drange; level }
+       in
+       let pc_lid_var = {
+         tm = Var (Pipit_Plugin_Support.proof_contract_lid drange);
+         range = drange;
+         level = Expr;
+       } in
+       let pc_attr =
+         mkExplicitApp pc_lid_var [mk_vquote rely_id; mk_vquote guar_id] drange
+       in
+       Some (new_body_pat, orig_attrs @ [pc_attr], [rely_decl; guar_decl]))
+  | _ -> None
+
+let rec pre_decl (r: FStarC_Range.range) (d: FPA.decl) =
   match d.d with
   | TopLevelLet (NoLetQualifier, [pat, tm]) ->
-    let (pm, _x, pp) = Pipit_Plugin_Support.mode_of_pattern pat in
-    if Pipit_Plugin_Support.mode_any_stream pm
-    then begin
-      let attr = Pipit_Plugin_Support.quote_mode_attr pm r in
-      let tm = pre_term tm in
-      (* prerr_endline (FPA.term_to_string tm); *)
-      let splice = { d with d = mk_splice pat pm; attrs = []; quals = [] } in
-      let parsed = Pipit_Plugin_Attributes.parse_attributes d.attrs in
-      let src_attrs = Pipit_Plugin_Attributes.drop_plugin_attrs d.attrs in
-      let proof_check =
-        match parsed.proof with
-        | Some Pipit_Plugin_Attributes.Induct1 ->
-          [mk_check_induct1_decl pat pm parsed.proof_expect_failure r]
-        | Some (Pipit_Plugin_Attributes.Contract { rely; guar }) ->
-          [mk_contract_decl pat pm rely guar r]
-        | None -> []
-      in
-      Inr ([{ d with d = TopLevelLet (NoLetQualifier, [pp, tm]); attrs = attr :: src_attrs };
-            splice] @ proof_check)
-    end
-    else
-      Inr [d]
+    (match desugar_stream_decl pat d.attrs d.drange with
+     | Some (new_pat, new_attrs, extra_decls) ->
+       let body_d = {
+         d with
+         d = TopLevelLet (NoLetQualifier, [(new_pat, tm)]);
+         attrs = new_attrs;
+       } in
+       let flatten dec = match pre_decl r dec with
+         | Inl _ -> [dec]
+         | Inr ds -> ds
+       in
+       let extras_out = List.concat_map flatten extra_decls in
+       Inr (extras_out @ flatten body_d)
+     | None ->
+       let (pm, _x, pp) = Pipit_Plugin_Support.mode_of_pattern pat in
+       if Pipit_Plugin_Support.mode_any_stream pm
+       then begin
+         let attr = Pipit_Plugin_Support.quote_mode_attr pm r in
+         let tm = pre_term tm in
+         (* prerr_endline (FPA.term_to_string tm); *)
+         let splice = { d with d = mk_splice pat pm; attrs = []; quals = [] } in
+         let parsed = Pipit_Plugin_Attributes.parse_attributes d.attrs in
+         let src_attrs = Pipit_Plugin_Attributes.drop_plugin_attrs d.attrs in
+         let proof_check =
+           match parsed.proof with
+           | Some Pipit_Plugin_Attributes.Induct1 ->
+             [mk_check_induct1_decl pat pm parsed.proof_expect_failure r]
+           | Some (Pipit_Plugin_Attributes.Contract { rely; guar }) ->
+             [mk_contract_decl pat pm rely guar r]
+           | None -> []
+         in
+         Inr ([{ d with d = TopLevelLet (NoLetQualifier, [pp, tm]); attrs = attr :: src_attrs };
+               splice] @ proof_check)
+       end
+       else
+         Inr [d])
     (* pre_let d.drange pat tm *)
 
   | TopLevelLet (Rec, ps) ->
