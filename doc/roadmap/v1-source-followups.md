@@ -32,10 +32,65 @@ assert (Contract.system_induct_k1 c) by (T.pipit_simplify_products []);
 Contract.stream_of_contract1 c
 ```
 
-The plan is a single attribute, e.g. `[@@proof_contract_induct1]`, that
-synthesises the analogue of the deleted code on top of the existing
-core layer. Mid-term this should generalise to `proof_contract_induct k`
-for k > 1 alongside the standalone `proof_induct k` work below.
+**Chosen surface syntax: F\* effect form.**
+
+```fst
+[@@proof_induct1]
+let mul_underapprox (a b: stream int): Stream int
+  (requires true)
+  (ensures (fun r -> a = 0 && b = 0 ==>^ r = 0)) =
+  a * b
+```
+
+Implementation sketch: `Stream` is a placeholder effect (a degenerate
+`Pure` alias) in `Pipit.Source`, with rely/guar carried as effect
+indices. The reflecter sees the let-binding's computation type, peels
+off `Stream a (requires R) (ensures G)`, and dispatches into the
+contract layer — verified to parse and typecheck cleanly:
+
+```fst
+effect Stream (a: Type) (rely: stream bool) (guar: stream a -> stream bool) =
+  Pure (stream a) (requires True) (ensures (fun _ -> True))
+```
+
+Naming follows Pulse's `stt` (type) / `STT` (effect) precedent: lowercase
+`stream a` is the value type used in parameter and trivial return
+positions; uppercase `Stream a (requires R) (ensures G)` is the
+effect form used in return position when the binding has a contract.
+This is the same split as F\*'s `Tot a` / `Pure a (...)(...)` —
+the simplified ("no annotations") form is what users write by
+default, and the annotated form is reserved for contracted bindings.
+
+Key properties:
+
+* The existing `[@@proof_induct1]` (and the planned `proof_induct k` /
+  `proof_induct0`) annotations are reused literally. The plugin
+  dispatches via the contract path when the let-binding's computation
+  has `Stream` as the effect head.
+* The body is just `a * b` — a normal stream expression. No
+  restriction on body shape; leading `let`s, conditionals, helper
+  bindings all work because the contract lives in the type, not in
+  the body.
+* `guar`'s `r` is `stream a`, type inferred from the effect index.
+  Referring to `pre r` or other streaming combinators inside `guar`
+  is fine — the guarantee is a stream property that holds at every
+  step.
+* Inputs stay lowercase `stream T` (effects are illegal in parameter
+  positions — F\* Error 187).
+
+**Caveat to verify at implementation time:** F\* effect indices are
+sometimes restricted to ground types. The sketch above uses
+`stream bool` / `stream a -> stream bool` as indices; if that bites,
+the fallback is to use plain `bool` / `a -> bool` indices and treat
+the lift to stream-level as a plugin-only concern. Worth a five-line
+test before committing the design.
+
+Plumbing: the splice attribute (e.g. `[@@proof_contract_induct1]`,
+or `proof_induct1` with dispatch on effect head) synthesises the
+analogue of the deleted `Contract.contract_of_stream1` +
+`Contract.system_induct_k1` + `Contract.stream_of_contract1`.
+Mid-term this should generalise to `proof_contract_induct k` for
+k > 1 alongside the standalone `proof_induct k` work below.
 
 A re-introduced contracts layer is also the prerequisite for the
 *long-term* modular extraction story (one C entry point per contract,
@@ -185,6 +240,30 @@ monolithic. Long-term we want one C entry point per contract,
 verified against its rely/guar, called by neighbouring contracts
 without re-extracting their bodies. Prerequisite: short-term contract
 support.
+
+We probably want finer-grained modular extraction than per-contract,
+though. Sketch: add a core constructor that annotates a sub-`exp` with
+a pre-translated executable system, e.g.
+
+```fst
+XExtracted : sys: <executable system> -> e: exp 't c a { sys ≈ e } -> exp 't c a
+```
+
+with `cexp` requiring `sys == e` semantically (the existing
+`state_of_exp` / `system_of_exp` translation gives the equivalence;
+the constructor just lets us *cache* one branch of it). The splice
+pipeline would then lift each `XExtracted`'s `sys` payload up to a
+top-level name and emit a call at the use site, rather than
+re-translating the inner `exp` every time. This is what would let
+modular extraction work at arbitrary sub-expression granularity
+without going via a full contract boundary.
+
+Likely needs a lower-level Pulse system definition exposed to the
+core layer (today `Pipit.Exec.Pulse.mk_reset` / `mk_step` are
+synthesised at the splice site over a complete `esystem`; an
+extracted sub-expression would want to point at a pre-existing
+Pulse `fn` instead). Details still TBD — record here so the design
+constraint isn't lost.
 
 ### Meta-specialisation / staged inputs
 
