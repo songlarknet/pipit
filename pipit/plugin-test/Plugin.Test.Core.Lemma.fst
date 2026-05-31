@@ -19,16 +19,17 @@
    adopt it.
 
    Demo 1 verifies the discharge end-to-end (non-recursive). Demo 2
-   exercises the same shape inside `rec'` and verifies that the lift
-   produces a well-typed core; the discharge for the rec' case is
-   gated on proof-induction strengthening (`proof_induct k` work)
-   and isn't attempted here. *)
+   exercises the same shape inside a recursive stream binding and
+   verifies that the lift produces a well-typed core; the discharge
+   for the recursive case is gated on proof-induction strengthening
+   (`proof_induct k` work) and isn't attempted here. The two surface
+   bindings use `#lang-pipit` syntax; the discharge wrapper stays in
+   plain F* since it talks about core `PXB.exp` directly. *)
 module Plugin.Test.Core.Lemma
+#lang-pipit
 
 open Pipit.Source
 
-module PPI = Pipit.Plugin.Interface
-module PPL = Pipit.Plugin.Lift
 module PSSB = Pipit.Prim.HasStream
 module PPS = Pipit.Prim.Shallow
 module PXB = Pipit.Exp.Base
@@ -62,12 +63,10 @@ let lemma_opaque_double (x: int)
     [SMTPat (lemma_opaque_double_pattern x)]
   = admit ()
 
-[@@source_mode (ModeFun Stream true Stream)]
-let eg_opaque (x: int): int =
+let eg_opaque (x: stream int): stream int =
   lemma_pattern (lemma_opaque_double_pattern x);
   check ((x >= 0) ==>^ (opaque_double x >= 0));
   opaque_double x
-%splice[] (PPL.lift_ast_tac1 "eg_opaque")
 
 (* Discharge wrapper: the same shape as Plugin.Test.Core.Check's
    `eg_check_trivial_check`. If the SMTPat does *not* fire, the
@@ -82,7 +81,7 @@ let eg_opaque_check: PXB.exp PPS.table [PSSB.shallow int] (PSSB.shallow int) =
   PXCB.bless e
 
 
-(*** Demo 2 — same idea inside `rec'`, matching the TTCAN shape ***)
+(*** Demo 2 — same idea inside a recursive binding, matching the TTCAN shape ***)
 
 (* TTCAN's `lemma_adequate_spacing_next_inc_pattern` shape: the marker
    takes the recursive-binding variable as an argument. *)
@@ -95,22 +94,21 @@ assume val lemma_double_prev (n: int)
     (ensures opaque_double n - n >= 0)
     [SMTPat (lemma_double_prev_pattern n)]
 
-[@@source_mode (ModeFun Stream true Stream)]
-let eg_opaque_in_rec (seed: int): int =
-  rec' (fun acc ->
+let eg_opaque_in_rec (seed: stream int): stream int =
+  let rec acc =
     let prev = 0 `fby` acc in
     lemma_pattern (lemma_double_prev_pattern prev);
     check ((seed >= 0) ==>^ ((prev >= 0) ==>^ (opaque_double prev - prev >= 0)));
-    prev + seed)
-%splice[] (PPL.lift_ast_tac1 "eg_opaque_in_rec")
+    prev + seed
+  in acc
 
-(* No discharge wrapper for the rec' case yet: it would require
+(* No discharge wrapper for the recursive case yet: it would require
    strengthening the induction invariant to maintain `prev >= 0`
    across steps (which depends on `seed >= 0`, hence the implication
    form above). The lifting itself succeeds; the discharge is left
    for the contract / proof-induct-k work to address. The point of
-   the rec' demo is that `lemma_pattern` lifts and survives into the
-   obligation in the recursive shape too. *)
+   the recursive demo is that `lemma_pattern` lifts and survives into
+   the obligation in the recursive shape too. *)
 
 
 (*** Findings ***)
