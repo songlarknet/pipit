@@ -64,7 +64,7 @@ default, and the annotated form is reserved for contracted bindings.
 Key properties:
 
 * The existing `[@@proof_induct1]` (and the planned `proof_induct k` /
-  `proof_induct0`) annotations are reused literally. The plugin
+  `proof_noinduct`) annotations are reused literally. The plugin
   dispatches via the contract path when the let-binding's computation
   has `Stream` as the effect head.
 * The body is just `a * b` — a normal stream expression. No
@@ -99,7 +99,7 @@ A re-introduced contracts layer is also the prerequisite for the
 *long-term* modular extraction story (one C entry point per contract,
 verified against `rely`/`guar`, called from neighbouring contracts).
 
-### `proof_induct k` for k > 1, and a less misleading name for k = 0
+### `proof_induct k` for k > 1, and `proof_noinduct` for k = 0
 
 `Pipit_Plugin_Attributes` only knows `proof_induct1`. Two related
 extensions:
@@ -110,13 +110,15 @@ extensions:
   Concrete consumer: `example/Example.Fir.Check.fst` `bibo3` (commented
   block at lines 38–63), where the three-tap FIR's two-deep state needs
   2-induction.
-* **`proof_induct0`** — currently absent. Despite the name, `k = 0`
-  isn't *inductive*: it just discharges the property as an invariant
-  with no step-case strengthening. Wanted as an explicit annotation
-  because users frequently reach for "no induction needed, just check
-  it" and currently have to fall back to writing a vanilla F* lemma
-  next to the spliced core. Pick a name that doesn't suggest induction
-  — candidates: `proof_invariant`, `proof_check`, `proof_safety`.
+* **`proof_noinduct`** — currently absent. `k = 0` isn't *inductive*:
+  it just discharges the property as an invariant with no step-case
+  strengthening. Wanted as an explicit annotation because users
+  frequently reach for "no induction needed, just check it" and
+  currently have to fall back to writing a vanilla F* lemma next to
+  the spliced core. The name `proof_noinduct` reads as a strict
+  weakening of `proof_induct1` (alternatives like `proof_invariant`
+  / `proof_check` / `proof_safety` were considered but don't make
+  the strength relationship obvious).
 
 **TTCAN does not need `proof_induct k > 1`.** The existing roadmap
 copy claimed it did; it was wrong. Both active uses in
@@ -356,9 +358,8 @@ The intended shape:
 
 * **Default** — every top-level streaming `let` runs an automatic
   proof attempt. Starting points to try, in increasing cost:
-  `proof_noinduct` (≡ `proof_induct0`, just discharge the check as an
-  invariant), then `proof_induct1`. The cheapest tier should be
-  effectively free when the body contains no `check` at all — most
+  `proof_noinduct` (just discharge the check as an invariant), then
+  `proof_induct1`. The cheapest tier should be effectively free when the body contains no `check` at all — most
   combinator bindings — so the overhead lands on bindings that
   *should* be paying for a check anyway. Open question: how fast
   does the SMT call degrade when the body calls into helpers that
