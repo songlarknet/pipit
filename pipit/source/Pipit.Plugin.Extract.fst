@@ -246,7 +246,7 @@ let extract (nm_src_fqn: string): Tac.Tac (list Tac.sigelt) =
     as the source binding. *)
   let input_tys_rev = Tac.fold_left (fun acc t -> t :: acc) [] input_tys in
 
-  (* The namespace passed to [tac_normalize_pure] / [tac_extract]: covers
+  (* The namespace passed to [tac_specialize_strict]: covers
     both the source module (so [__core_*] and [__prim_*] unfold) and the
     target module (so the splice-emitted [<nm>_system] unfolds inside
     [<nm>_reset] / [<nm>_step]). *)
@@ -280,19 +280,49 @@ let extract (nm_src_fqn: string): Tac.Tac (list Tac.sigelt) =
   let system_term = Tac.pack (Tac.Tv_FVar (Tac.pack_fv system_qn)) in
   let proof_term  = Tac.pack (Tac.Tv_FVar (Tac.pack_fv proof_qn)) in
 
-  (* Common attribute: postprocess with [tac_normalize_pure]. *)
-  let attr_norm: Tac.term =
-    `(FStar.Tactics.postprocess_with (XL.tac_normalize_pure (`#ns_term)))
+  (* The "must-not-appear-after-normalization" extras specific to this
+    splice invocation. The base set ([XL.base_specialize_forbidden]) covers
+    the Pulse helpers, Pipit core AST nodes and the row/coerce traversals;
+    we additionally forbid this splice's own emitted sigelts so that
+    [<nm>_reset] / [<nm>_step] are forced to inline [<nm>_system] (the
+    [Inline_for_extraction] qualifier alone is a hint, not a guarantee).
+    [<nm>_state] is included for the same reason in the [<nm>_system]
+    body — its type annotation references [<nm>_state] but the value
+    should reduce to a concrete type at that point. *)
+  let extras_term: Tac.term =
+    let mk_str s = Tac.pack (Tac.Tv_Const (Ref.C_String s)) in
+    let state_str  = mk_str (Ref.implode_qn state_qn) in
+    let system_str = mk_str (Ref.implode_qn system_qn) in
+    `(Cons #string (`#state_str)
+        (Cons #string (`#system_str)
+          (Nil #string)))
   in
-  let attr_extract: Tac.term =
+
+  (* Common attribute: install [tac_specialize_strict] as a postprocess
+    pass. The tactic normalises the body and then walks the result to
+    check that none of the forbidden FQNs survive; if any do it fails
+    with a diagnostic naming them, rather than silently letting a
+    [<: any>] / [Pipit_Context_Row_index] reference reach KaRaMeL.
+
+    Two flavours: [tac_specialize_strict_pure] (with NBE) for the pure
+    [state] / [system] bodies that recurse over the symbolic [exp] AST,
+    and [tac_specialize_strict_pulse] (without NBE) for the Pulse
+    [reset] / [step] bodies, where NBE has been observed to fail with
+    [NBE ill-typed application: Unknown] on the
+    [Inline_for_extraction; NoExtract] [<nm>_system] wrapper. *)
+  let attr_strict_pure: Tac.term =
     `(FStar.Tactics.postprocess_with
-        (XL.tac_extract (`#ns_term)))
+        (XL.tac_specialize_strict_pure (`#ns_term) (`#extras_term)))
+  in
+  let attr_strict_pulse: Tac.term =
+    `(FStar.Tactics.postprocess_with
+        (XL.tac_specialize_strict_pulse (`#ns_term) (`#extras_term)))
   in
 
   (* ---- state ---- *)
   let state_body: Tac.term = `(XX.state_of_exp (`#expr_term)) in
   let state_ty: Tac.term = `Type0 in
-  let se_state = mk_let_sigelt state_qn state_ty state_body [] [attr_norm] in
+  let se_state = mk_let_sigelt state_qn state_ty state_body [] [attr_strict_pure] in
 
   (* ---- system ---- *)
   let input_row: Tac.term = mk_input_row_ty input_tys_rev in
@@ -352,13 +382,13 @@ let extract (nm_src_fqn: string): Tac.Tac (list Tac.sigelt) =
   let se_system =
     mk_let_sigelt system_qn system_ty system_body
       [Ref.NoExtract; Ref.Inline_for_extraction]
-      [attr_norm]
+      [attr_strict_pure]
   in
 
   (* ---- reset ---- *)
   let reset_body: Tac.term = `(XL.mk_reset (XL.mk_init (`#system_term))) in
   let reset_ty: Tac.term = Tac.pack Tac.Tv_Unknown in
-  let se_reset = mk_let_sigelt reset_qn reset_ty reset_body [] [attr_extract] in
+  let se_reset = mk_let_sigelt reset_qn reset_ty reset_body [] [attr_strict_pulse] in
 
   (* ---- step ----
     Body shape for N inputs:
@@ -393,6 +423,6 @@ let extract (nm_src_fqn: string): Tac.Tac (list Tac.sigelt) =
       input_nvs step_call
   in
   let step_ty: Tac.term = Tac.pack Tac.Tv_Unknown in
-  let se_step = mk_let_sigelt step_qn step_ty step_body [] [attr_extract] in
+  let se_step = mk_let_sigelt step_qn step_ty step_body [] [attr_strict_pulse] in
 
   [se_state; se_proof; se_system; se_reset; se_step]

@@ -120,3 +120,28 @@ let rec mk_list (tms: list Tac.term): Tac.Tac Tac.term =
   | a :: tms ->
     let tms = mk_list tms in
     `((`#a) :: (`#tms))
+
+
+(* Walk [t] and accumulate the distinct fully-qualified names that occur
+  as a [Tv_FVar] or [Tv_UInst] head AND are present in [forbidden].
+  Result preserves first-encounter order with no duplicates. Used by
+  fail-loud specialization tactics to report which "must not survive"
+  names are still present in a goal after normalization. *)
+let term_collect_fqns (forbidden: list string) (t: Tac.term)
+  : Tac.Tac (list string)
+=
+  let acc: Tac.tref (list string) = Tac.alloc [] in
+  let visit (sub: Tac.term): Tac.Tac Tac.term =
+    (match Tac.inspect sub with
+      | Tac.Tv_FVar fv
+      | Tac.Tv_UInst fv _ ->
+        let nm = Ref.implode_qn (Tac.inspect_fv fv) in
+        let seen = Tac.read acc in
+        if List.mem nm forbidden && not (List.mem nm seen)
+        then Tac.write acc (List.append seen [nm])
+        else ()
+      | _ -> ());
+    sub
+  in
+  let _ = FStar.Tactics.Visit.visit_tm visit t in
+  Tac.read acc

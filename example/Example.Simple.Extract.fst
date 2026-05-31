@@ -15,8 +15,5 @@ module Example.Simple.Extract
 
 open Example.Simple.Check
 
-%splice [
-    count_when_state; __extractable_count_when;
-    count_when_system; count_when_reset; count_when_step
-  ]
+%splice[]
   (Pipit.Plugin.Extract.extract (`%count_when))
