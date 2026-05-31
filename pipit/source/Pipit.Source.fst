@@ -51,26 +51,27 @@ let check_core: PXB.exp PPS.table [PSSB.shallow bool] (PSSB.shallow unit) =
   PXB.XCheck Pipit.Prop.Metadata.PSUnknown (PXB.XBase (PXB.XBVar 0))
 
 (* Hint combinator: instantiate an SMT-pattern-keyed lemma from inside
-  a streaming body. The intended shape is:
+  a streaming body. Example -- route a monotonicity lemma for [pow2]
+  into a streaming check:
 
      irreducible
-     let my_lemma_pattern (a b: \u2026): unit = ()
+     let pow2_monotone_pattern (n m: nat): unit = ()
 
-     let my_lemma (a b: \u2026):
-       Lemma (requires \u2026) (ensures \u2026)
-         [SMTPat (my_lemma_pattern a b)] = \u2026
+     let pow2_monotone (n m: nat)
+       : Lemma (requires n < m) (ensures pow2 n < pow2 m)
+           [SMTPat (pow2_monotone_pattern n m)]
+       = FStar.Math.Lemmas.pow2_lt_compat m n
 
-     let body \u2026 =
-       lemma_pattern (my_lemma_pattern a b);
-       check (\u2026);
-       \u2026
+     let body (n m: stream nat): stream unit =
+       lemma_pattern (pow2_monotone_pattern n m);
+       check ((n <^ m) ==>^ (pow2 n <^ pow2 m))
 
-  The lifted body contains [check (check_pattern (my_lemma_pattern a
-  b))], so [my_lemma_pattern a b] appears as a subterm of the SMT
-  query and the user's SMTPat-keyed lemma fires while discharging the
-  user's own [check]. The pattern marker MUST be [irreducible] or the
-  discharge tactic's normalisation will unfold it to [()] and lose
-  the trigger.
+  The lifted body contains [check (check_pattern (pow2_monotone_pattern
+  n m))], so [pow2_monotone_pattern n m] appears as a subterm of the
+  SMT query and [pow2_monotone] fires (via its SMTPat) while
+  discharging the user's own [check]. The pattern marker MUST be
+  [irreducible] or the discharge tactic's normalisation will unfold
+  it to [()] and lose the trigger.
 
   The wrapping through [check_pattern] (rather than just [check (p =
   ())]) is the only encoding we've found that survives the SMT
@@ -81,8 +82,10 @@ let check_core: PXB.exp PPS.table [PSSB.shallow bool] (PSSB.shallow unit) =
   lemma that unconditionally discharges the [check_pattern p = true]
   wrapper obligation). *)
 
+private
 assume val check_pattern (pat: unit): bool
 
+private
 assume val check_pattern_true (pat: unit)
   : Lemma (check_pattern pat = true) [SMTPat (check_pattern pat)]
 
