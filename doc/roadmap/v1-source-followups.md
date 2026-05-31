@@ -85,12 +85,15 @@ the fallback is to use plain `bool` / `a -> bool` indices and treat
 the lift to stream-level as a plugin-only concern. Worth a five-line
 test before committing the design.
 
-Plumbing: the splice attribute (e.g. `[@@proof_contract_induct1]`,
-or `proof_induct1` with dispatch on effect head) synthesises the
+Plumbing: the existing `[@@proof_induct1]` attribute is reused as-is
+— the plugin dispatches on the let-binding's computation type and,
+when it sees `Stream a (requires R) (ensures G)`, synthesises the
 analogue of the deleted `Contract.contract_of_stream1` +
-`Contract.system_induct_k1` + `Contract.stream_of_contract1`.
-Mid-term this should generalise to `proof_contract_induct k` for
-k > 1 alongside the standalone `proof_induct k` work below.
+`Contract.system_induct_k1` + `Contract.stream_of_contract1`
+instead of the plain `system_induct_k1` path. Mid-term this
+generalises naturally to `proof_induct k` for k > 1 alongside the
+standalone `proof_induct k` work below — same attribute, same
+dispatch rule.
 
 A re-introduced contracts layer is also the prerequisite for the
 *long-term* modular extraction story (one C entry point per contract,
@@ -148,8 +151,9 @@ contract — exactly the shape that currently trips Error 189. Same
 story for the would-be `prefetch_core_contract` stub in
 `Network.TTCan.Impl.Triggers.fst`.
 
-The wrapper extension is shared with `proof_induct k` and
-`proof_contract_induct1` above; doing it once gives all three.
+The wrapper extension is shared with `proof_induct k` and the
+contract-effect dispatch above; doing it once covers all three uses
+of the same attribute family.
 
 ### Lemma combinator (`lemma_pattern` and friends)
 
@@ -368,8 +372,10 @@ The intended shape:
   the silent path explicit closes the soundness hole without
   forcing every helper to spell out `proof_noinduct`.
 * **Explicit annotations stay as today** — `proof_induct1`,
-  `proof_induct k`, `proof_contract_induct1`, etc. override the
-  default and continue to mean what they currently mean.
+  `proof_induct k`, etc. override the default and continue to mean
+  what they currently mean. The same attributes also drive the
+  contract-effect dispatch (Contract support entry above), so no
+  new `proof_contract_*` family is needed.
 
 Implementation pointers: `mk_check_induct1_decl` in
 `pipit/plugin/Pipit_Plugin_Preprocess.ml` already shows the
