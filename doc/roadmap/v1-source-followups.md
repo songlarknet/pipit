@@ -174,12 +174,44 @@ Reason (1) is largely obsolete with the plugin pipeline — bodies are
 ordinary F\* terms during lifting. Reason (2) still holds: a checked
 property may depend on context that the core builder doesn't see.
 
-Concrete work: a plugin-recognised surface combinator (call it
-`lemma`, `assume_pattern`, or similar) that lifts to a no-op at the
-core level but injects an SMT pattern at the proof level. Likely the
-cleanest design lands alongside contracts — the pattern can be scoped
-to a `rely`/`guar` obligation. Worth a fresh design pass before
-re-implementing the old shape.
+**First experiment** (concrete, near-term): land a `lemma_pattern`-style
+combinator in `pipit/plugin-test/` and exercise it end-to-end with
+user-written patterns + top-level lemmas in the same shape TTCAN uses
+today. Surface contract: the user writes the pattern marker (a unit
+function over the relevant statics/streams), a `Lemma … [SMTPat …]`
+referring to it, and a call to the plugin combinator from inside the
+streaming body. The combinator lifts to a no-op at the core level but
+emits an SMT-visible reference at the proof level so the lemma fires.
+This is the minimum that unblocks the TTCAN port and lets us write a
+few real consumers before designing the more polished surface.
+
+**Later**: catch `lemma_blagh x y z; …` calls in the plugin and
+auto-synthesise the matching pattern marker + top-level `Lemma` skeleton.
+At that point users just write the lemma body once and the pattern
+plumbing is invisible. The pattern can also be scoped to a specific
+`rely`/`guar` obligation once contracts land.
+
+**Known downside of the pattern-based approach.** SMT patterns fire
+silently. If the pattern's preconditions don't actually hold in the
+spliced transition system (different bindings, different context,
+weakened by an unrelated obligation), the lemma simply doesn't
+contribute and the user sees a check failure with no signal that
+their hint missed. The hand-written TTCAN case already runs into
+the related problem in the `sofar` / contract-state comment block
+referenced from the CSE entry.
+
+**Alternative worth prototyping**: embed `FStar.Tactics.term`
+(or a sealed `string` keyed to a tactic registry) inside core
+expressions as a hint constructor — say `XHint : term -> exp 't c a
+-> exp 't c a` — that the obligation-discharge tactic consults at
+the matching subterm position. These hints are computationally
+irrelevant (the executable system erases them, same as `XCheck`'s
+proof obligation is irrelevant to extraction), so adding them to the
+core shouldn't bloat the runtime or the abstract system. Upside over
+SMT patterns: the obligation discharge can *report* when a hint fails
+to apply, instead of failing silently. Worth exploring once the
+plain-pattern experiment is in tree, because it gives a concrete
+comparison point.
 
 ### Top-level `let rec` doesn't strip `stream` annotations
 
