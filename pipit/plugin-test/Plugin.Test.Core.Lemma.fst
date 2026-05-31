@@ -1,44 +1,28 @@
-(* Experiment: encoding lemma instantiation via SMT patterns inside
-   #lang-pipit-style bodies. See the "Lemma combinator" entry of
-   doc/roadmap/v1-source-followups.md for context.
+(* Demos for the `lemma_pattern` hint combinator from `Pipit.Source`.
+   See the "Lemma combinator" entry of
+   doc/roadmap/v1-source-followups.md for design context.
 
-   The shape the user gets:
-     1. a unit-typed pattern marker function (`irreducible` so the
-        marker call survives normalisation),
-     2. a top-level `Lemma … [SMTPat marker_call]` that fires on it,
-     3. a call to `lemma_pattern (marker_call …)` from inside a
-        streaming body so the marker term ends up baked into the
-        spliced core's obligation.
+   The shape:
 
-   The historical (pre-cleanup) encoding (git show 4cee216) was
-     let lemma_pattern: stream unit -> stream unit =
-       Check.exp_of_stream1 (fun pat -> check "" (pat = const ()))
-   i.e. `lemma_pattern p` reduces to `check (p = ())`. This file is
-   the same idea, expressed as a plain `#lang-pipit` source helper so
-   no Source / plugin / core changes are required. The discharge
-   wrapper for the non-recursive case verifies, confirming that the
-   SMTPat triggered by `lemma_pattern` actually fires on the lifted
-   obligation.
+     1. Define a unit-typed pattern marker function (`irreducible` so
+        the marker call survives normalisation).
+     2. Define a top-level `Lemma … [SMTPat marker_call]` that fires
+        on it.
+     3. Call `lemma_pattern (marker_call …)` from inside a streaming
+        body so the marker term is baked into the spliced core's
+        obligation.
 
-   Encoding choice: `lemma_pattern p` lifts to `check (check_pattern p)`
-   where `check_pattern` is an `assume val (pat: unit): bool` paired
-   with a `check_pattern_true` SMTPat lemma that unconditionally
-   discharges `check_pattern p = true`. Two simpler encodings we
-   considered and discarded:
+   This mirrors the historical TTCAN trick
+   (`lemma_adequate_spacing_next_inc` + `_pattern`); the combinator
+   itself lives in `Pipit.Source` as a plain `#lang-pipit` source
+   helper, so no Source / plugin / core changes are required to
+   adopt it.
 
-   * `check (p = ())` — SMT encoder collapses `op_Equality #unit a b`
-     to `True` (unit is a decidable singleton), erasing the marker
-     subterm from triggering position.
-   * `irreducible let check_pattern (pat: unit): bool = true` — keeps
-     the marker subterm visible but the SMT encoder treats the body
-     as uninterpreted (same as `assume val`), so the `check_pattern p
-     = true` obligation has no truth witness and can't discharge.
-
-   The assume-val + SMTPat-lemma pair gets both properties: opacity
-   (so `check_pattern (marker x)` survives into the SMT query as a
-   trigger candidate for the user's lemma on `marker x`) AND
-   provability (the wrapper obligation discharges via the paired
-   lemma). *)
+   Demo 1 verifies the discharge end-to-end (non-recursive). Demo 2
+   exercises the same shape inside `rec'` and verifies that the lift
+   produces a well-typed core; the discharge for the rec' case is
+   gated on proof-induction strengthening (`proof_induct k` work)
+   and isn't attempted here. *)
 module Plugin.Test.Core.Lemma
 
 open Pipit.Source
@@ -56,41 +40,6 @@ module PT = Pipit.Tactics
 #set-options "--print_implicits --print_bound_var_types --print_full_names"
 // Useful when debugging:
 // #set-options "--ext pipit:lift:debug"
-
-
-(*** User-written hint combinator ***)
-
-(* `lemma_pattern m` is a stream-level no-op (returns `()`), but the
-   spliced core retains an SMT-visible reference to `m` because the
-   `check` obligation mentions it. The user is responsible for
-   defining `m` as a top-level unit-typed marker and pairing it with a
-   `Lemma … [SMTPat (m …)]` so the lemma fires on the obligation.
-
-   `check_pattern p` is a `bool`-valued wrapper around the marker call
-   so the `check` obligation becomes `check_pattern p = true` rather
-   than the awkward `p = ()`. Encoded as an `assume val` so the SMT
-   encoder treats it as an uninterpreted function symbol (and the
-   marker subterm `p` survives as a triggering argument). The paired
-   `check_pattern_true` SMTPat lemma discharges the wrapper obligation
-   unconditionally, leaving the user's marker lemma free to do the
-   real work on the rest of the goal.
-
-   Why not `irreducible let check_pattern p = true`? The body would
-   need to be visible to SMT to discharge `check_pattern p = true`,
-   but visible to SMT means the encoder may inline it as plain `true`
-   and erase `p` from triggering position. The assume-val + SMTPat
-   pair gets both: opacity (the trigger survives) and provability
-   (the obligation discharges). *)
-
-assume val check_pattern (pat: unit): bool
-
-assume val check_pattern_true (pat: unit)
-  : Lemma (check_pattern pat = true) [SMTPat (check_pattern pat)]
-
-[@@source_mode (ModeFun Stream true Stream)]
-let lemma_pattern (p: unit): unit =
-  check (check_pattern p)
-%splice[] (PPL.lift_ast_tac1 "lemma_pattern")
 
 
 (*** Demo 1 — minimal opaque payload, lemma actually needed ***)
@@ -166,8 +115,12 @@ let eg_opaque_in_rec (seed: int): int =
 
 (*** Findings ***)
 
-(* What works today (vanilla helper, zero Source / plugin / core
-   changes):
+(* Status: the `lemma_pattern` / `check_pattern` / `check_pattern_true`
+   combinators live in `Pipit.Source`. This module is the demo /
+   regression test that exercises them end-to-end.
+
+   What works (zero plugin / core changes; the combinator is a plain
+   `#lang-pipit` source helper):
 
    1. `lemma_pattern (p: unit): unit = check (check_pattern p)` lifts
       cleanly through the existing AST pipeline (it's a unit-typed
@@ -221,9 +174,4 @@ let eg_opaque_in_rec (seed: int): int =
 
    * The discharge for the rec' case still needs proof-induction
      strengthening (covered by the `proof_induct k` work) — the
-     lemma-pattern plumbing is orthogonal to that.
-
-   * Promotion: `lemma_pattern`, `check_pattern`, and
-     `check_pattern_true` should move from this experimental module
-     to `Pipit.Source` once a real consumer (TTCAN) exercises them.
-     Three-line copy. *)
+     lemma-pattern plumbing is orthogonal to that. *)
