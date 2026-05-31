@@ -37,10 +37,7 @@ let bless (#a: ('t).ty) (#c: context 't) (e: cexp 't c a { check_all PM.check_mo
 
 
 let bless_contract (#a: ('t).ty) (#c: context 't) (r: cexp 't c ('t).propty) (g: cexp 't (a :: c) ('t).propty) (b: cexp 't c a { contract_valid r g b }): cexp 't c a =
-  let rely = r in
-  let guar = Pipit.Exp.Checked.Base.bless g in
-  let body = Pipit.Exp.Checked.Base.bless b in
-  let e' = XContract PM.PSUnknown rely guar body in
+  let e' = Pipit.Exp.Checked.Base.bless_contract r g b in
   XCB.lemma_sealed_of_bless true g;
   XCB.lemma_sealed_of_bless false b;
   XCB.lemma_check_all_bless_contract r g b;

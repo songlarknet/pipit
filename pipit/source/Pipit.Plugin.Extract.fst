@@ -37,6 +37,7 @@ module List = FStar.List.Tot
 
 module PTB = Pipit.Tactics.Base
 module PI  = Pipit.Plugin.Interface
+module PSAU = Pipit.Source.Ast.Util
 
 module SL  = Pipit.Exp.SimplifyLet
 module XX  = Pipit.Exec.Exp
@@ -150,52 +151,16 @@ let mk_let_sigelt
 (* Main entry point                                                     *)
 (* -------------------------------------------------------------------- *)
 
-(* Find the lifted core binding for the source FQN [nm_src_fqn], by scanning
-  the env for sigelts tagged [@@PI.core_lifted; PI.core_of_source "<src>" _].
-  The [#lang-pipit] preprocessor synthesises one such binding (named
-  [<src-module>.__core_<nm>]) per source stream function, so an exact match
-  is expected.
-
-  Using the attribute means [extract] is decoupled from the [__core_]
-  naming convention: if the preprocessor renames its splice output, this
-  lookup keeps working as long as the [core_of_source] attribute is
-  carried over. *)
+(* Locate the lifted core binding for source FQN [nm_src_fqn] via the
+  `[@@core_of_source]` attribute. Hand-written wrappers (no
+  `[@@core_lifted]`) take precedence over the auto-generated
+  `<nm>_core` splice, so extraction targets the wrapper when one is
+  present (e.g. a contract-wrapped `body_contract` overrides the raw
+  `body_core`). See `Pipit.Source.Ast.Util.find_core_for_source` for
+  the lookup policy. *)
 let find_core_for_source (tac_env: Tac.env) (nm_src_fqn: string)
   : Tac.Tac Ref.name
-=
-  let lifts = Ref.lookup_attr (`PI.core_lifted) tac_env in
-  let match_one (lift_fv: Ref.fv): Tac.Tac (option Ref.name) =
-    let lift_nm = Tac.inspect_fv lift_fv in
-    match Tac.lookup_typ tac_env lift_nm with
-    | None -> None
-    | Some se ->
-      let rec go (attrs: list Tac.term): Tac.Tac bool =
-        match attrs with
-        | [] -> false
-        | hd :: tl ->
-          let (h, args) = Tac.collect_app hd in
-          if PTB.term_check_fv h (`%PI.core_of_source)
-          then (match args with
-            | (arg, _) :: _ ->
-              (match Tac.inspect arg with
-               | Tac.Tv_Const (Ref.C_String nm) ->
-                 if nm = nm_src_fqn then true else go tl
-               | _ -> go tl)
-            | _ -> go tl)
-          else go tl
-      in
-      if go (Ref.sigelt_attrs se) then Some lift_nm else None
-  in
-  match Tac.filter_map match_one lifts with
-  | [nm] -> nm
-  | [] ->
-    Tac.fail ("Pipit.Plugin.Extract.extract: cannot find lifted core binding "
-              ^ "for source [" ^ nm_src_fqn ^ "]; is the source module using "
-              ^ "[#lang-pipit] and does it define the binding?")
-  | nms ->
-    Tac.fail ("Pipit.Plugin.Extract.extract: ambiguous lifted core bindings "
-              ^ "for source [" ^ nm_src_fqn ^ "]; found "
-              ^ string_of_int (List.length nms) ^ " matches")
+= PSAU.find_core_for_source tac_env nm_src_fqn
 
 
 (* Generate the four extraction sigelts for the source binding [nm_src_fqn]

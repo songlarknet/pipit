@@ -145,3 +145,18 @@ and bless_apps (#t: table) (#c: context t) (#a: funty t.ty) (e: exp_apps t c a):
   match e with
   | XPrim p -> XPrim p
   | XApp f e -> XApp (bless_apps f) (bless e)
+
+(* Construct a contract node from an already-typed rely, guarantee, and
+   implementation. The rely is NOT recursively blessed: the rely is a
+   precondition that the contract's *caller* is obliged to discharge,
+   so any check / inner contract sitting inside it must stay unknown
+   until those callsites are verified. The guar and impl are blessed
+   recursively because the contract assembly is responsible for the
+   body's internal obligations. The top-level status is PSUnknown for
+   the same reason as the rely. *)
+let bless_contract (#t: table) (#c: context t) (#a: t.ty)
+  (r: exp t       c        t.propty)
+  (g: exp t (a :: c)       t.propty)
+  (b: exp t       c        a):
+  Tot (exp t c a) =
+  XContract PM.PSUnknown r (bless g) (bless b)

@@ -18,6 +18,7 @@ let lift_tac_lid = FI.lid_of_path ["Pipit"; "Plugin"; "Lift"; "lift_ast_tac"]
 let derive_has_stream_tac_lid =
   FI.lid_of_path ["Pipit"; "Prim"; "HasStream"; "Derive"; "derive_has_stream"]
 let core_of_source_lid = src_lid "core_of_source"
+let core_lifted_lid    = src_lid "core_lifted"
 let extract_lid = src_lid "extract"
 let source_mode_lid = src_lid "source_mode"
 

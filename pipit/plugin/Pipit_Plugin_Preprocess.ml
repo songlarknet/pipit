@@ -296,10 +296,16 @@ let mk_check_induct1_decl
   } in
   let mode_term = Pipit_Plugin_Support.quote_mode mode range in
   let attr = mkExplicitApp (mk_lid_var Pipit_Plugin_Support.core_of_source_lid) [src_vquote; mode_term] range in
+  (* `core_lifted` so `norm_full` unfolds the binding when callers'
+     induction proofs walk into it. Source -> core dispatch in
+     `Pipit.Source.Ast.Util.find_core_for_source` picks the most
+     recently defined `core_of_source` candidate, so this binding
+     (emitted *after* the `<id>_core` splice) wins automatically. *)
+  let lifted_attr = mk_lid_var Pipit_Plugin_Support.core_lifted_lid in
   let attrs =
     if expect_failure
-    then [attr; mk_lid_var Pipit_Plugin_Support.expect_failure_lid]
-    else [attr]
+    then [attr; lifted_attr; mk_lid_var Pipit_Plugin_Support.expect_failure_lid]
+    else [attr; lifted_attr]
   in
   {
     d = let_decl;

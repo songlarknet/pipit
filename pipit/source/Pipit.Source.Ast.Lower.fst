@@ -162,13 +162,17 @@ let exp_XFby  (v: T.term) (e: T.term): T.term =
 let exp_XCheck (e: T.term): T.term =
   `(PXB.XCheck #PPS.table PM.PSUnknown (`#e))
 
-(* Compute the FQN of a lifted source binding's `__core_*` sigelt by
-   replacing the last segment `nm` with `nm ^ "_core"`. Mirrors
-   `Pipit.Plugin.Lift.env_core_nm`. *)
+(* Compute the FQN of a lifted source binding's core sigelt via the
+   `[@@core_of_source]` attribute. Hand-written wrappers (no
+   `[@@core_lifted]`) win over the auto-generated `<nm>_core` splice
+   when both carry `[@@core_of_source src]`, so a user can override
+   the raw lift with e.g. a contract-wrapped `body_contract`.
+
+   See `Pipit.Source.Ast.Util.find_core_for_source` for the lookup
+   policy. *)
 let core_fqn_of (src: Ast.fqn): T.Tac Ast.fqn =
-  match L.rev src with
-  | [] -> T.fail "Pipit.Source.Ast.Lower: empty FQN for lifted call"
-  | nm :: rest -> L.rev ((nm ^ "_core") :: rest)
+  let tac_env = T.top_env () in
+  PSAU.find_core_for_source tac_env (R.implode_qn src)
 
 (* Build a typed F* list term `[e1; e2; ...] : list elem_ty`. The
    element type is needed so that nil/cons disambiguate; here we use it
