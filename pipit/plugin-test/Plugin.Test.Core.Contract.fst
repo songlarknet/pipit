@@ -88,10 +88,6 @@ module PT   = Pipit.Tactics
 (* ----- 1. Source definitions ----- *)
 
 [@@source_mode (ModeFun Stream true Stream)]
-let body (x: int): int = x + 1
-%splice[] (PPL.lift_ast_tac1 "body")
-
-[@@source_mode (ModeFun Stream true Stream)]
 let rely (x: int): bool = x >= 0
 %splice[] (PPL.lift_ast_tac1 "rely")
 
@@ -102,45 +98,34 @@ let rely (x: int): bool = x >= 0
 let guar (x: int) (r: int): bool = r > 0
 %splice[] (PPL.lift_ast_tac1 "guar")
 
+(* `[@@proof_contract (`%rely) (`%guar)]` asks the plugin to splice a
+   `body_contract` wrapper after `body_core`. The wrapper bundles
+   `rely_core`, `guar_core`, `body_core` with
+   `Pipit.Exp.Checked.Base.bless_contract` and discharges
+   `induct1 (system_of_contract ...)` by normalisation. Source-level
+   callers of `body` are then routed through the blessed contract via
+   `find_core_for_source` (latest `core_of_source` wins).
 
-(* ----- 2. Contract assembly (would-be plugin output) -----
-
-  This is what a `[@@proof_induct1]` contract-wrapper would expand
-  to. The plugin would produce one binding per contract that:
-
-    * names the three already-lifted cores (rely_core, guar_core,
-      body_core);
-    * asserts `induct1 (system_of_contract r g b)` by normalisation
-      (the "proof_induct1" stage);
-    * derives `system_holds_all` via induct1_sound_all;
-    * applies `entailment_contract_all` to get `contract_valid r g b`;
-    * passes the three cores to `bless_contract`, which produces a
-      cexp wrapped in `XContract PSUnknown`.
-
-  Without `[@@proof_induct1]` the plugin would emit a simpler binding
-  that just builds `XContract PSUnknown rely_core guar_core body_core`
-  with no proof, equivalent to today's check_mode_unknown contracts. *)
-
-[@@core_of_source (`%body) (ModeFun Stream true Stream); core_lifted]
-let body_contract: PXB.exp PPS.table [PSSB.shallow int] (PSSB.shallow int) =
-  let unfold r = rely_core in
-  let unfold g = guar_core in
-  let unfold b = body_core in
-  let unfold sys = SX.system_of_contract r g b in
-  assert (SI.induct1 sys) by (PT.norm_full []);
-  PXCB.bless_contract r g b
+   Because the synthesised wrapper references `rely_core` /
+   `guar_core` by name, the rely and guar source bindings must be in
+   scope before `body`'s declaration -- hence the reverse-order
+   layout in this file. *)
+[@@source_mode (ModeFun Stream true Stream); proof_contract (`%rely) (`%guar)]
+let body (x: int): int = x + 1
+%splice[] (PPL.lift_ast_tac1 "body")
 
 
-(* ----- 3. Caller verification -----
+(* ----- 2. Caller verification -----
 
   A source-level caller of `body` lifts to a cexp that references
   `body` by name. `Pipit.Source.Ast.Util.find_core_for_source` picks
   the most recently defined `[@@core_of_source body ...]` binding,
-  which is `body_contract` -- not the raw `body_core` splice -- so
-  the lifted core IR for the caller goes through the *blessed*
-  contract. The caller's `[@@proof_induct1]` obligation thus reduces
-  to "rely holds at the actual arg" rather than re-deriving the
-  body's `(x + 1)` from scratch. *)
+  which is `body_contract` (synthesised by `proof_contract`) -- not
+  the raw `body_core` splice -- so the lifted core IR for the caller
+  goes through the *blessed* contract. The caller's
+  `[@@proof_induct1]` obligation thus reduces to "rely holds at the
+  actual arg" rather than re-deriving the body's `(x + 1)` from
+  scratch. *)
 
 [@@source_mode (ModeFun Stream true Stream); proof_induct1]
 let good_caller (_x: int): int = body 1

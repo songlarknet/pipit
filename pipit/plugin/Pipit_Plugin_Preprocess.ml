@@ -315,6 +315,86 @@ let mk_check_induct1_decl
     interleaved = false;
   }
 
+(* Build the synthesised `<id>_contract` declaration for
+  `[@@proof_contract (\`%rely) (\`%guar)]` on a body.
+
+  It expands to roughly:
+    [@@core_of_source (`%<id>) <mode>; core_lifted]
+    let <id>_contract =
+      assert (induct1 (system_of_contract <rely>_core <guar>_core <id>_core))
+        by (norm_full []);
+      bless_contract <rely>_core <guar>_core <id>_core
+
+  As with `mk_check_induct1_decl`, this is arity-polymorphic: the
+  user-side rely / guar / body each carry their own `[@@source_mode]`
+  and `lift_ast_tac1` splice; only the *assembly* lives here. The
+  `<id>_contract` wrapper inherits all callers via the
+  `find_core_for_source` dispatch (latest `core_of_source` wins), so
+  source-level references to `<id>` are routed through the blessed
+  contract.
+*)
+let mk_contract_decl
+    (pat: FPA.pattern)
+    (mode: Pipit_Plugin_Support.mode)
+    (rely: FI.ident)
+    (guar: FI.ident)
+    (drange: FStarC_Range.range): FPA.decl =
+  let open FPA in
+  let range = pat.prange in
+  let level = Expr in
+  let id = id_of_pat pat in
+  let core_id      = FI.mk_ident (FI.string_of_id id   ^ "_core",     range) in
+  let rely_core_id = FI.mk_ident (FI.string_of_id rely ^ "_core",     range) in
+  let guar_core_id = FI.mk_ident (FI.string_of_id guar ^ "_core",     range) in
+  let contract_id  = FI.mk_ident (FI.string_of_id id   ^ "_contract", range) in
+  let mk_lid_var lid =
+    { tm = Var (lid range); range; level }
+  in
+  let mk_local_var (i: FI.ident) =
+    { tm = Var (FI.lid_of_ids [i]); range; level }
+  in
+  let r_var = mk_local_var rely_core_id in
+  let g_var = mk_local_var guar_core_id in
+  let b_var = mk_local_var core_id in
+  let sys_expr =
+    mkExplicitApp (mk_lid_var Pipit_Plugin_Support.system_of_contract_lid)
+      [r_var; g_var; b_var] range in
+  let ind_expr =
+    mkExplicitApp (mk_lid_var Pipit_Plugin_Support.induct1_lid) [sys_expr] range in
+  let nil_list  = { tm = ListLiteral []; range; level } in
+  let norm_call = mkExplicitApp (mk_lid_var Pipit_Plugin_Support.norm_full_lid) [nil_list] range in
+  let unit_const = { tm = Const FC.Const_unit; range; level } in
+  let thunk_body = { tm = Seq (unit_const, norm_call); range; level } in
+  let thunk_term = {
+    tm = Abs ([{ pat = PatWild (None, []); prange = range }], thunk_body);
+    range; level
+  } in
+  let assert_call =
+    mkExplicitApp (mk_lid_var Pipit_Plugin_Support.assert_by_tactic_lid)
+      [ind_expr; thunk_term] range in
+  let bless_call =
+    mkExplicitApp (mk_lid_var Pipit_Plugin_Support.bless_contract_lid)
+      [r_var; g_var; b_var] range in
+  let body = { tm = Seq (assert_call, bless_call); range; level } in
+  let contract_pat = { pat = PatVar (contract_id, None, []); prange = range } in
+  let let_decl = TopLevelLet (NoLetQualifier, [(contract_pat, body)]) in
+  let src_vquote = {
+    tm = VQuote { tm = Var (FI.lid_of_ids [id]); range; level };
+    range; level
+  } in
+  let mode_term = Pipit_Plugin_Support.quote_mode mode range in
+  let cof_attr =
+    mkExplicitApp (mk_lid_var Pipit_Plugin_Support.core_of_source_lid)
+      [src_vquote; mode_term] range in
+  let lifted_attr = mk_lid_var Pipit_Plugin_Support.core_lifted_lid in
+  {
+    d = let_decl;
+    drange;
+    quals = [];
+    attrs = [cof_attr; lifted_attr];
+    interleaved = false;
+  }
+
 let pre_decl (r: FStarC_Range.range) (d: FPA.decl) =
   match d.d with
   | TopLevelLet (NoLetQualifier, [pat, tm]) ->
@@ -331,6 +411,8 @@ let pre_decl (r: FStarC_Range.range) (d: FPA.decl) =
         match parsed.proof with
         | Some Pipit_Plugin_Attributes.Induct1 ->
           [mk_check_induct1_decl pat pm parsed.proof_expect_failure r]
+        | Some (Pipit_Plugin_Attributes.Contract { rely; guar }) ->
+          [mk_contract_decl pat pm rely guar r]
         | None -> []
       in
       Inr ([{ d with d = TopLevelLet (NoLetQualifier, [pp, tm]); attrs = attr :: src_attrs };

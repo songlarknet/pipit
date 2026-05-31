@@ -29,7 +29,9 @@ let expect_failure_lid = FI.lid_of_path ["FStar"; "Attributes"; "expect_failure"
 let assert_by_tactic_lid = FI.lid_of_path ["FStar"; "Tactics"; "Effect"; "assert_by_tactic"]
 let induct1_lid          = FI.lid_of_path ["Pipit"; "System"; "Ind"; "induct1"]
 let system_of_exp_lid    = FI.lid_of_path ["Pipit"; "System"; "Exp"; "system_of_exp"]
+let system_of_contract_lid = FI.lid_of_path ["Pipit"; "System"; "Exp"; "system_of_contract"]
 let bless_lid            = FI.lid_of_path ["Pipit"; "Exp"; "Checked"; "Base"; "bless"]
+let bless_contract_lid   = FI.lid_of_path ["Pipit"; "Exp"; "Checked"; "Base"; "bless_contract"]
 let norm_full_lid        = FI.lid_of_path ["Pipit"; "Tactics"; "norm_full"]
 
 let mStream_lid = src_lid "Stream"
