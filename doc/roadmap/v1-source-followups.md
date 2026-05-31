@@ -209,11 +209,40 @@ core binding:
   a different binding than the one inside the contract body — the
   comment block names CSE as the fix.
 
-`Pipit.Tactics.Cse` already exists (with `pipit/test/Pipit.Tactics.Cse.Test.fst`)
-as the building block. The mid-term work is:
+The existing `Pipit.Tactics.Cse` (with
+`pipit/test/Pipit.Tactics.Cse.Test.fst`) is *not* the right building
+block here — it's a meta-tactic that rewrites F\* terms, but by the
+time the obligations need to be aligned we want CSE on the lifted
+core `exp` *after inlining every `__core_<id>` reference*. That
+inlining is what exposes the shared subterms in the first place;
+running CSE before it leaves each callee's body isolated and
+gains nothing. The right place to run is just before constructing
+the abstract transition system (i.e. the consumer of the inlined
+core), as a plain `exp → exp` pass rather than a tactic.
 
-1. Run CSE as a default postprocess step on every spliced core.
-2. Add a `[@@proof_no_cse]` per-binding (or per-module) opt-out for
+Contracts complicate the picture: to CSE a subterm that appears in
+both a `guar` and the body (or across neighbouring contracts), the
+pass needs to lift the shared binding out to a scope that dominates
+both occurrences. Concretely it has to rearrange the contract
+structure — hoist a `let` past the contract boundary, or push the
+shared expression into a place both sides can refer to — without
+changing what each `rely`/`guar` says. Worth thinking through what
+forms of contract-aware rearrangement are sound before reaching
+for the obvious lifts.
+
+Since this is a real semantic pass, not a tactic, we should be able
+to prove it preserves the big-step semantics of the core — same
+shape of proof as `Pipit.Exp.SimplifyLet`'s `bigstep_simplify`
+(currently admitted; see Soundness below). The proof obligation
+falls out of the contract-rearrangement design.
+
+The mid-term work:
+
+1. Implement CSE as a verified `exp → exp` (or `cexp → cexp`) pass,
+   with a semantics-preservation lemma alongside.
+2. Run it as a default postprocess step after `__core_*` inlining,
+   immediately before the abstract-transition-system construction.
+3. Add a `[@@proof_no_cse]` per-binding (or per-module) opt-out for
    diagnosis and for the rare cases where CSE confuses an induction
    obligation.
 
