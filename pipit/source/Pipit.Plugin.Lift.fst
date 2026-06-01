@@ -125,25 +125,73 @@ let rec mode_of_attrs (attrs: list Tac.term): Tac.Tac (option mode) =
    - If [sty] is `tuple2 a b`: recurse on [a] and [b], wrap in
      `has_stream_tup2`. If both sides resolve to `None`, return
      `None` (let F* resolve via typeclass).
+   - If [sty] is `T a1 a2 ...` for a user-defined head `T` for which
+     the env has a `tcinstance` whose return type is `has_stream (T _ ...)`
+     of the same arity: recursively resolve each argument's instance
+     and build the application.
    - Otherwise: `None`, in which case the caller falls back to the
      quasi-quote `PSSB.shallow sty` (lets F* resolve the implicit at
      sigelt typecheck time — works for ground types like `int`, `bool`). *)
+
+(* Head FVar extractor: matches both plain `Tv_FVar` and
+   `Tv_UInst` (universe-instantiated). *)
+let head_fv_of (tv: Tac.term_view): option Tac.fv =
+  match tv with
+  | Tac.Tv_FVar fv     -> Some fv
+  | Tac.Tv_UInst fv _  -> Some fv
+  | _ -> None
+
+let has_stream_qn: list string = ["Pipit"; "Prim"; "HasStream"; "has_stream"]
+
+(* Walk a type's arrow chain, returning the list of binders and the
+   final return term. Stops at the first non-arrow (or non-C_Total). *)
+let rec collect_arrows (t: Tac.term): Tac.Tac (list Tac.binder & Tac.term) =
+  match Tac.inspect t with
+  | Tac.Tv_Arrow b (Tac.C_Total t') ->
+    let (bs, ret) = collect_arrows t' in
+    (b :: bs, ret)
+  | _ -> ([], t)
+
+(* If [se] is `Sg_Let [single_lb]` (with `Sg_Val` fallback) whose final
+   return type is `has_stream (HEAD _ _ ...)`, return
+   `Some (HEAD_qn, arity)`. *)
+let instance_target_head_arity (env: Tac.env) (fv: Tac.fv): Tac.Tac (option (Ref.name & nat)) =
+  match Ref.lookup_typ env (Tac.inspect_fv fv) with
+  | None -> None
+  | Some se ->
+    let typ_opt: option Tac.term =
+      match Tac.inspect_sigelt se with
+      | Tac.Sg_Let { lbs = [lb] } -> Some lb.lb_typ
+      | Tac.Sg_Val { typ } -> Some typ
+      | _ -> None
+    in
+    (match typ_opt with
+     | None -> None
+     | Some typ ->
+       let (_bs, ret) = collect_arrows typ in
+       let (rh, rargs) = Tac.collect_app ret in
+       (match head_fv_of (Tac.inspect rh) with
+        | Some hsv ->
+          if Tac.inspect_fv hsv = has_stream_qn
+          then
+            (match rargs with
+             | [(target, _)] ->
+               let (th, targs) = Tac.collect_app target in
+               (match head_fv_of (Tac.inspect th) with
+                | Some thfv -> Some (Tac.inspect_fv thfv, List.length targs)
+                | None -> None)
+             | _ -> None)
+          else None
+        | _ -> None))
+
 let rec resolve_inst
+  (env: Tac.env)
   (inst_map: list (nat & nat))
   (passthrough: list Tac.binder)
   (sty: Tac.term)
 : Tac.Tac (option Tac.term) =
   let tup2_inst_fv: Tac.term =
     Tac.pack (Tac.Tv_FVar (Tac.pack_fv ["Pipit"; "Prim"; "HasStream"; "has_stream_tup2"])) in
-  (* `tuple2` shows up either as a plain `Tv_FVar` or, after some
-     elaboration, as a `Tv_UInst` (universe-instantiated FVar). Pick
-     the FVar out of either. *)
-  let head_fv (tv: Tac.term_view): option Tac.fv =
-    match tv with
-    | Tac.Tv_FVar fv     -> Some fv
-    | Tac.Tv_UInst fv _  -> Some fv
-    | _ -> None
-  in
   let is_tuple2 (fv: Tac.fv): bool =
     let qn = Tac.inspect_fv fv in
     qn = ["FStar"; "Pervasives"; "Native"; "tuple2"]
@@ -163,15 +211,16 @@ let rec resolve_inst
         | Some b -> Some (Tac.pack (Tac.Tv_Var (Tac.binder_to_namedv b)))
         | None -> Tac.fail "resolve_inst: missing instance binder")
      | None -> None)
-  | Tac.Tv_App outer (b_arg, _) ->
-    (match Tac.inspect outer with
-     | Tac.Tv_App inner (a_arg, _) ->
-       (match head_fv (Tac.inspect inner) with
-        | Some fv ->
-          if is_tuple2 fv
-          then
-            let ia_opt = resolve_inst inst_map passthrough a_arg in
-            let ib_opt = resolve_inst inst_map passthrough b_arg in
+  | Tac.Tv_App _ _ ->
+    let (head_tm, all_args) = Tac.collect_app sty in
+    (match head_fv_of (Tac.inspect head_tm) with
+     | Some hfv ->
+       if is_tuple2 hfv
+       then
+         (match all_args with
+          | [(a_arg, _); (b_arg, _)] ->
+            let ia_opt = resolve_inst env inst_map passthrough a_arg in
+            let ib_opt = resolve_inst env inst_map passthrough b_arg in
             (match ia_opt, ib_opt with
              | None, None -> None
              | _ ->
@@ -182,10 +231,161 @@ let rec resolve_inst
                          | Some t -> t
                          | None -> `(_ by (FStar.Tactics.Typeclasses.tcresolve ()))) in
                Some (mk_tup2_inst a_arg b_arg ia ib))
-          else None
-        | None -> None)
-     | _ -> None)
+          | _ -> None)
+       else resolve_poly_inst env inst_map passthrough hfv all_args
+     | None -> None)
   | _ -> None
+
+(* For target `T arg1 arg2 ...` with head FQN [head_qn], find a
+   `tcinstance` in [env] whose return type's head matches, and
+   build the instance application by:
+     - mapping each type-parameter binder of the candidate to the
+       positional `sty` arg, and
+     - recursively resolving each `has_stream <var>` constraint
+       binder by looking up which type-binder `<var>` refers to and
+       calling [resolve_inst] on the corresponding `sty` arg.
+
+   If multiple candidates match, the first one returned by
+   `lookup_attr` is used. If no candidate matches (or the binder
+   structure can't be parsed), returns `None`. *)
+and resolve_poly_inst
+  (env: Tac.env)
+  (inst_map: list (nat & nat))
+  (passthrough: list Tac.binder)
+  (head_fv: Tac.fv)
+  (target_args: list Tac.argv)
+: Tac.Tac (option Tac.term) =
+  let head_qn = Tac.inspect_fv head_fv in
+  let arity = List.length target_args in
+  let inst_fvs = Ref.lookup_attr (`FStar.Tactics.Typeclasses.tcinstance) env in
+  let pick (ifv: Tac.fv): Tac.Tac bool =
+    match instance_target_head_arity env ifv with
+    | Some (q, a) -> q = head_qn && a = arity
+    | None -> false
+  in
+  let cands = Tac.filter pick inst_fvs in
+  match cands with
+  | [] -> None
+  | inst_fv :: _ ->
+    (* Inspect the candidate's binder chain + return type. *)
+    (match Ref.lookup_typ env (Tac.inspect_fv inst_fv) with
+     | None -> None
+     | Some se ->
+       let typ_opt: option Tac.term =
+         match Tac.inspect_sigelt se with
+         | Tac.Sg_Let { lbs = [lb] } -> Some lb.lb_typ
+         | Tac.Sg_Val { typ } -> Some typ
+         | _ -> None
+       in
+       (match typ_opt with
+        | None -> None
+        | Some typ ->
+          let (cand_bs, cand_ret) = collect_arrows typ in
+          let (_, ret_args) = Tac.collect_app cand_ret in
+          (* Sanity: same arity. *)
+          if List.length ret_args <> arity then None
+          else begin
+            (* Get the bare argument of `has_stream (T x1 x2 ...)`,
+               then collect its argument terms. *)
+            let ret_target =
+              match ret_args with
+              | [(tgt, _)] -> tgt
+              | _ -> Tac.fail "resolve_poly_inst: impossible: not single-arg has_stream"
+            in
+            let (_, ret_pat_args) = Tac.collect_app ret_target in
+            (* Build a substitution from candidate's type-binder uniq
+               -> corresponding `sty` argument term. Walk the
+               candidate's return-pattern positionally; each position
+               should be a `Tv_Var` referring to one of [cand_bs]. *)
+            let subst_pairs: list (nat & Tac.term) =
+              let rec zip_subst
+                (pats: list Tac.argv) (targs: list Tac.argv)
+              : Tac.Tac (list (nat & Tac.term))
+              =
+                match pats, targs with
+                | [], [] -> []
+                | (p, _) :: ptl, (t, _) :: ttl ->
+                  (match Tac.inspect p with
+                   | Tac.Tv_Var nv -> (nv.uniq, t) :: zip_subst ptl ttl
+                   | _ -> Tac.fail "resolve_poly_inst: return type pattern not a simple Tv_Var")
+                | _ -> Tac.fail "resolve_poly_inst: pat/target arity mismatch"
+              in
+              zip_subst ret_pat_args target_args
+            in
+            let lookup_subst (u: nat): Tac.Tac Tac.term =
+              match List.tryFind (fun (kv: nat & Tac.term) -> fst kv = u) subst_pairs with
+              | Some (_, t) -> t
+              | None -> Tac.fail "resolve_poly_inst: unbound binder in return pattern"
+            in
+            (* For each candidate binder, build the application argument.
+               - If binder.sort = `eqtype` or `Type`: pass the corresponding sty arg
+                 (looked up via the binder's uniq).
+               - If binder.sort = `has_stream <var>`: recursively resolve
+                 the instance for the sty arg that `<var>` is bound to.
+               - Otherwise: bail. *)
+            (* Normalize binder qualifier for use as an application
+               argument qualifier. Q_Meta in a binder means "if not
+               provided, run this tactic to resolve" — at the call
+               site, since we ARE providing the value, treat it as
+               Q_Implicit so the elaborator doesn't try to apply the
+               meta tactic as an extra argument. *)
+            let norm_q (q: Tac.aqualv): Tac.aqualv =
+              match q with
+              | Tac.Q_Meta _ -> Tac.Q_Implicit
+              | _ -> q
+            in
+            let mk_arg_for (b: Tac.binder): Tac.Tac (option Tac.argv) =
+              let q = norm_q b.qual in
+              match Tac.inspect b.sort with
+              | Tac.Tv_App sort_h (sort_arg, _) ->
+                (* check has_stream <sort_arg> *)
+                (match head_fv_of (Tac.inspect sort_h) with
+                 | Some hsv ->
+                   if Tac.inspect_fv hsv = has_stream_qn
+                   then
+                     (match Tac.inspect sort_arg with
+                      | Tac.Tv_Var nv ->
+                        let sty_for_var = lookup_subst nv.uniq in
+                        let inst_for_arg =
+                          match resolve_inst env inst_map passthrough sty_for_var with
+                          | Some t -> t
+                          | None -> `(_ by (FStar.Tactics.Typeclasses.tcresolve ()))
+                        in
+                        Some (inst_for_arg, q)
+                      | _ -> None)
+                   else
+                     (* Type-parameter binder via its uniq. *)
+                     (match List.tryFind (fun (kv: nat & Tac.term) -> fst kv = b.uniq) subst_pairs with
+                      | Some (_, t) -> Some (t, q)
+                      | None -> None)
+                 | _ -> None)
+              | _ ->
+                (* Type-parameter binder: pass the corresponding sty
+                   arg (mapped by the binder's own uniq). *)
+                (match List.tryFind (fun (kv: nat & Tac.term) -> fst kv = b.uniq) subst_pairs with
+                 | Some (_, t) -> Some (t, q)
+                 | None -> None)
+            in
+            let args_opt: option (list Tac.argv) =
+              let rec go (bs: list Tac.binder): Tac.Tac (option (list Tac.argv)) =
+                match bs with
+                | [] -> Some []
+                | b :: tl ->
+                  (match mk_arg_for b with
+                   | None -> None
+                   | Some av ->
+                     (match go tl with
+                      | None -> None
+                      | Some avs -> Some (av :: avs)))
+              in
+              go cand_bs
+            in
+            match args_opt with
+            | None -> None
+            | Some avs ->
+              let head_tm = Tac.pack (Tac.Tv_FVar inst_fv) in
+              Some (Tac.mk_app head_tm avs)
+          end))
 
 (* Parse the source binding into `Ast.ast`, then call
    `Pipit.Source.Ast.Lower.lower` to emit the core expression term. *)
@@ -280,7 +480,7 @@ let lift_ast_tac (nm_src nm_core: string) : Tac.Tac (list Tac.sigelt) =
       "(" ^ string_of_int (fst kv) ^ "->" ^ string_of_int (snd kv) ^ ") " ^ acc)
       inst_map "" ^ "]");
   let inst_for (sty: Tac.term): Tac.Tac (option Tac.term) =
-    resolve_inst inst_map passthrough sty in
+    resolve_inst tac_env inst_map passthrough sty in
   (* `params` is outermost-first (source order). `lower_env.binders`
      and `ctx_list_tm` want innermost-first; reverse for those. The
      wrapping below (`Tv_Arrow` / `Tv_Abs`) wants outermost-first so

@@ -48,6 +48,7 @@ module Ast = Pipit.Source.Ast
 module PPI = Pipit.Plugin.Interface
 module PTB = Pipit.Tactics.Base
 module PSAU = Pipit.Source.Ast.Util
+module PL  = Pipit.List
 
 (*** Lift environment ***)
 
@@ -60,6 +61,17 @@ type of_binder = {
   ob_name: Ast.name;   (* unique string id used in `Ast.AVar` *)
   ob_sty:  Ast.sty;
   ob_mode: PPI.mode;
+  (* True iff this binder is one of the top-level explicit params of
+     the source binding being lifted, AND mode = Static. Such binders
+     are wrapped as `Tv_Abs` around the spliced core sigelt by
+     `lift_ast_tac` (preserving the original `T.binder`'s `namedv`),
+     so a `Tv_Var` to one of them resolves correctly at splice time.
+     All other binders (let-bound locals, pattern binders, top-level
+     stream params) are NOT visible at splice point — their lowered
+     references use fresh namedvs created by `Lower`. Used by
+     `term_safe_at_splice` to decide whether a Static argument can be
+     baked into a partial-application prim's `prim_fn`. *)
+  ob_top_level: bool;
 }
 
 noeq
@@ -139,6 +151,24 @@ let of_const (rng: R.range) (c: T.vconst): T.Tac (Ast.lit & PPI.mode) =
 
 (*** Primitives ***)
 
+(* Build an `Ast.prim` from an already-built F* term and a chosen
+   `prim_id`. The term must be fully type-resolved (no free uvars or
+   ambiguous implicits) so `T.tc` succeeds. Used by
+   `of_prim_fv_applied` and by `lift_app_fv`'s partial-application
+   path. *)
+let of_prim_applied (e: of_env) (prim_id: option Ast.name) (prim_fn: T.term): T.Tac Ast.prim =
+  let ty     = T.tc e.oe_tac_env prim_fn in
+  let (args, c) = T.collect_arr ty in
+  let res_ty = PTB.returns_of_comp c in
+  let args   = T.map strip_refinements args in
+  let res_ty = strip_refinements res_ty in
+  {
+    Ast.prim_id;
+    Ast.prim_arg_tys = args;
+    Ast.prim_ret_ty  = res_ty;
+    Ast.prim_fn      = prim_fn;
+  }
+
 (* Build an `Ast.prim` from a top-level FVar. The optional `implicits`
    are pre-applied to the head (so e.g. `op_Equality #int` is fully
    instantiated) before typechecking, which lets us recover a
@@ -154,17 +184,7 @@ let of_prim_fv_applied (e: of_env) (fv: T.fv) (implicits: list T.argv): T.Tac As
     | [] -> fv_tm
     | _  -> T.mk_app fv_tm implicits
   in
-  let ty     = T.tc e.oe_tac_env prim_fn in
-  let (args, c) = T.collect_arr ty in
-  let res_ty = PTB.returns_of_comp c in
-  let args   = T.map strip_refinements args in
-  let res_ty = strip_refinements res_ty in
-  {
-    Ast.prim_id      = Some nm_str;
-    Ast.prim_arg_tys = args;
-    Ast.prim_ret_ty  = res_ty;
-    Ast.prim_fn      = prim_fn;
-  }
+  of_prim_applied e (Some nm_str) prim_fn
 
 (* Convenience: no implicits. *)
 let of_prim_fv (e: of_env) (fv: T.fv): T.Tac Ast.prim =
@@ -319,6 +339,7 @@ let rec pat_of_fstar (e: of_env) (binder_mode: PPI.mode)
       ob_name = nm;
       ob_sty  = parent_ty;
       ob_mode = binder_mode;
+      ob_top_level = false;
     } in
     of_push ob e, Ast.PVar nm parent_ty binder_mode
 
@@ -362,6 +383,38 @@ and pat_of_fstar_subs (e: of_env) (binder_mode: PPI.mode)
   | _, _ ->
     T.fail "Pipit.Source.Ast.Reflect: pattern/field arity mismatch (impossible)"
 
+(* Decide whether an F* term can be safely baked into a partial-
+   application prim's `prim_fn` at splice point. Safe iff every
+   `Tv_Var` reference resolves to either a pass-through binder (not
+   in `oe_binders` \u2014 they are bound by the outer `Tv_Abs` wrappers
+   that `lift_ast_tac` puts around the spliced sigelt) or a
+   top-level Static explicit param (`ob_top_level = true` \u2014 these
+   also get a `Tv_Abs` wrapper, with the original `T.binder`'s
+   `namedv` preserved). Local let-bound and pattern binders are not
+   F*-visible at splice point (`Lower` allocates fresh namedvs for
+   them), so referencing them is unsafe.
+
+   For complex shapes (Abs/Arrow/Let/Match/Refine) we conservatively
+   return `false` to avoid binder-tracking. Static-mode argument
+   terms in practice are simple (vars, fvar, app, const), so the
+   conservative cases rarely fire. *)
+let rec term_safe_at_splice (e: of_env) (t: T.term): T.Tac bool =
+  match T.inspect t with
+  | T.Tv_Var nv ->
+    (match of_lookup_uniq nv.uniq e.oe_binders with
+     | None    -> true
+     | Some ob -> ob.ob_top_level)
+  | T.Tv_Const _    -> true
+  | T.Tv_FVar _     -> true
+  | T.Tv_UInst _ _  -> true
+  | T.Tv_Type _     -> true
+  | T.Tv_BVar _     -> true
+  | T.Tv_App hd (arg, _) ->
+    if term_safe_at_splice e hd then term_safe_at_splice e arg else false
+  | T.Tv_AscribedT t' _ _ _ -> term_safe_at_splice e t'
+  | T.Tv_AscribedC t' _ _ _ -> term_safe_at_splice e t'
+  | _ -> false
+
 let rec lift_tm e t =
   let rng: R.range = Ref.range_of_term t in
   match T.inspect t with
@@ -396,6 +449,7 @@ let rec lift_tm e t =
       ob_name = of_name_of_namedv (T.binder_to_namedv b);
       ob_sty  = sty;
       ob_mode = mdef;
+      ob_top_level = false;
     } in
     let e' = of_push ob e in
     let (mbody, body_ast) = lift_tm e' body in
@@ -457,6 +511,7 @@ and lift_app_rec (e: of_env) (rng: R.range) (args: list T.argv): T.Tac (PPI.mode
          ob_name = nm;
          ob_sty  = sty;
          ob_mode = PPI.Stream;
+         ob_top_level = false;
        } in
        let e' = of_push ob e in
        let (_, body_ast) = lift_tm e' body in
@@ -626,9 +681,64 @@ and lift_app_fv (e: of_env) (rng: R.range) (fv: T.fv) (implicits: list T.argv) (
     } in
     PPI.Stream, Ast.ACallStream rng br arg_asts
   | None ->
-    let prim = of_prim_fv_applied e fv implicits in
-    let (rm, am) = app_mode_of margs in
-    rm, Ast.APrim rng am prim arg_asts
+    (* Pre-apply the leading run of Static-mode, splice-safe args to
+       the FVar. Without this, the prim's `arg_tys` would contain
+       every static arg's source type, and `Lower.funty_of` would
+       call `shallow_ty` on each — failing on non-eqtype records
+       (TTCan's `config`, anything with function fields). Trailing
+       static args after the first stream arg (or the first
+       splice-unsafe static arg) go through the existing path
+       unchanged (they would need eta expansion to fold in).
+
+       A static arg is splice-safe iff its F* term has no free refs
+       to local non-top-level binders — see `term_safe_at_splice`.
+       Local let bindings push Static-mode binders into `oe_binders`
+       (e.g. `let strm: stream int = 1 in ...` makes `strm` Static
+       because `1` is a Static const), but their F* `namedv` is only
+       re-bound by `Lower` inside the lowered body, not at splice
+       top — so embedding a `Tv_Var` to one of them in `prim_fn`
+       would dangle.
+
+       CSE caveat: `Pipit.Prim.Shallow.axiom_prim_eq` says two prims
+       with the same `prim_id` have the same `prim_ty` and
+       `prim_sem`. A partially-applied prim bakes its statics into
+       `prim_fn`, so two distinct callsites with the same FQN may
+       disagree on `prim_sem`. We set `prim_id = None` whenever
+       anything is pre-applied — `prim_eq` returns `false` on `None`
+       so CSE safely skips these. Fully-applied calls keep their
+       `Some nm_str` id and remain CSE-eligible. *)
+    let zipped: list ((PPI.mode & Ast.ast) & T.argv) = PL.zip2 margs args in
+    (* Pre-compute splice safety in Tac, then split with a pure
+       predicate (split_prefix is Tot, can't host a Tac body). *)
+    let tagged: list (bool & ((PPI.mode & Ast.ast) & T.argv)) =
+      T.map (fun (mz: (PPI.mode & Ast.ast) & T.argv) ->
+        let ((m, _), (a, _)) = mz in
+        let safe = PPI.Static? m && term_safe_at_splice e a in
+        (safe, mz)) zipped
+    in
+    let (pre_static_t, rest_t) =
+      PL.split_prefix (fun (x: bool & ((PPI.mode & Ast.ast) & T.argv)) -> fst x) tagged
+    in
+    let pre_static_z: list ((PPI.mode & Ast.ast) & T.argv) = L.map snd pre_static_t in
+    let rest_z: list ((PPI.mode & Ast.ast) & T.argv) = L.map snd rest_t in
+    let pre_static_argv: list T.argv = L.map snd pre_static_z in
+    let rest_margs: list (PPI.mode & Ast.ast) = L.map fst rest_z in
+    let rest_arg_asts: list Ast.ast = L.map snd rest_margs in
+    let fv_tm = T.pack (T.Tv_FVar fv) in
+    let head_args = L.append implicits pre_static_argv in
+    let prim_fn =
+      match head_args with
+      | [] -> fv_tm
+      | _  -> T.mk_app fv_tm head_args
+    in
+    let prim_id: option Ast.name =
+      match pre_static_argv with
+      | [] -> Some (T.implode_qn (T.inspect_fv fv))
+      | _  -> None
+    in
+    let prim = of_prim_applied e prim_id prim_fn in
+    let (rm, am) = app_mode_of rest_margs in
+    rm, Ast.APrim rng am prim rest_arg_asts
 
 and lift_args (e: of_env) (args: list T.argv): T.Tac (list (PPI.mode & Ast.ast)) =
   match args with
@@ -692,6 +802,9 @@ let lift_top_body (tac_env: T.env) (lifted: list (Ast.fqn & PPI.mode))
         ob_name = nm;
         ob_sty  = strip_refinements b.sort;
         ob_mode = arg_mode;
+        (* Only Static top-level params get a `Tv_Abs` wrapper from
+           `lift_ast_tac`; stream params become cexp ctx binders. *)
+        ob_top_level = (arg_mode = PPI.Static);
       } in
       (of_push ob e, passthrough_rev, (b, ob) :: explicits_rev, rest_mode)
     else
