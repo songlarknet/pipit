@@ -57,3 +57,34 @@ let mode_states
   (mode_cmd: stream (Clocked.t mode))
     : stream mode =
   Clocked.current_or_else Mode_Configure mode_cmd
+
+(*^9.4.2 Sync_Mode *)
+let sync_states
+  (mode:       stream mode)
+  (error:      stream error_severity)
+  (ref_mark:   stream (Clocked.t ntu))
+    : stream sync_mode =
+  let rec sync_state =
+    let pre_sync = Sync_Off `fby` sync_state in
+    let seen_sync_ref_mark = Util.latch {
+      set   = Clocked.get_clock ref_mark;
+      reset = pre_sync <> Synchronising;
+    } in
+    (*^9.4.2 transition Sync_Mode.TS0: always taking precedence; HW reset
+       or (Mode = Config) or (error state = S3) *)
+    if mode = Mode_Configure || error = S3_Severe
+    then Sync_Off
+    else
+      (* Multi-arm match on stream scrutinee unsupported; rewrite as
+         if/else chain (README workaround 1). *)
+      if pre_sync = Sync_Off then Synchronising
+      else if pre_sync = Synchronising then
+        (*^9.4.2 transition Sync_Mode.TS3: at least two successive reference
+           messages observed *)
+        (if Util.pre seen_sync_ref_mark && Clocked.get_clock ref_mark
+         then In_Schedule
+         else Synchronising)
+      else (* pre_sync = In_Schedule *)
+        In_Schedule
+  in
+  sync_state
