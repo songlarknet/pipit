@@ -125,7 +125,6 @@ infrastructure. Re-introduce after Controller is ported and after we
 decide on a Pulse-extraction surface for the new pipeline.
 
 ## 9. `Pipit.Sugar.{Check, Contract}` (TriggerTimely)
-
 **Gap.** `Pipit.Sugar.Check` / `Pipit.Sugar.Contract` are deleted in
 the new pipeline.
 
@@ -138,40 +137,40 @@ test of this sugar). Drop the `assert (... system_induct_k1 ...) by
 `proof_expect_failure` attributes drive the contract proof obligations
 in the new pipeline.
 
-## A. Lifter bug: `Clocked.t`-arg in `let rec` / `rec'` body (BLOCKER)
+## A. ~~Lifter bug: `Clocked.t`-arg in `let rec` / `rec'` body~~ (RESOLVED)
 
-**Gap (no source-level workaround).** Any `let rec x = ...` or
-`rec' (fun x -> ...)` whose body passes a `stream (Clocked.t T)`
-argument to a function call fails to lift with a printer-identical
-subtyping mismatch:
+**Resolved 2026-06-03** in `Pipit.Plugin.Lift.resolve_inst`: when the
+queried `has_stream` type is closed over ground FVars, the lifter now
+returns `None` so a single `_ by FStar.Tactics.Typeclasses.tcresolve ()`
+placeholder picks the dictionary at both callsites. Without the fix,
+the lifter synthesised independent `_ by tcresolve()` uvars per
+callsite; combined with the non-unfold `Pipit.Prim.HasStream.shallow`,
+two printer-identical `shallow (Clocked.t T)` terms failed to unify
+and the subtype check was punted to SMT as an opaque
+`forall any_result. shallow X == any_result ==> ...` goal.
 
-  Expected: ... `(shallow T)`
-  Got:      ... `(shallow T)`
+Regression test: `pipit/plugin-test/Plugin.Test.Bug.PolyInstance.fst`
+(`probe_rec_with_t`).
 
-Bisected in `Network.TTCan.Impl.States.fst` (see the probe set at the
-top of the module):
+## C. `open` order when both user and `Pipit.Source` define `mode`
 
-  - `let rec` + monomorphic call with only `stream ntu` args → PASSES
-  - `let rec` + call passing `stream (option ntu)` → PASSES
-  - `let rec` + call passing `stream (Clocked.t ntu)` → FAILS
-  - `rec'` combinator instead of `let rec` → FAILS the same way
-  - Arg order (Clocked first vs last) → no effect
-  - Wrapping `Clocked.get_or_else` in a monomorphic `goe_ntu` → no help
-  - Adding/removing explicit `instance has_stream_ntu` → no effect
-  - Annotating `: ntu` on the result → no effect
-  - `<: ntu` ascription → silently ignored
+**Gap.** `Pipit.Source` re-exports `Pipit.Plugin.Interface` which
+defines `type mode = | Stream | Static | ModeFun ...`. If the user's
+`open` of their domain module (which also defines a `mode` enum, e.g.
+`Network.TTCan.Types.Base.mode`) appears BEFORE `open Pipit.Source`,
+the plugin's `mode` shadows the user's. After the preprocessor strips
+`stream` from `(m: stream mode)`, F* resolves the annotation to the
+plugin's `mode` and the body's `m = Mode_Ctor` fails with
+`"mode is not equal to the expected type ...Base.mode"`.
 
-Diagnosis: the issue lives in `Pipit.Source.Ast.Lower` (or
-`Pipit.Plugin.Lift.resolve_inst`) when building the typeclass-context
-list for an `XMu` binder whose body uses a parametric instance
-(`has_stream_t {| has_stream a |}` from `Network.TTCan.Prim.Clocked`).
-The displayed shallow types are equal, so the discriminator is an
-implicit typeclass dictionary the printer collapses.
+**Workaround.** Put `open Pipit.Source` first (or qualify the
+conflicting binders / open the user module last). In ttcan2:
 
-This blocks all of `Network.TTCan.Impl.States` (every state machine
-needs a `Clocked.t ntu` clocked-stream input fed through `let rec`)
-and therefore `Network.TTCan.Impl.Controller`. **The fix is in the
-lifter, not in source-level workarounds.**
+```fst
+#lang-pipit
+open Pipit.Source
+open Network.TTCan.Types
+```
 
 ## B. Lifter / typeclass interaction: refined-return-type instances
 
