@@ -184,6 +184,32 @@ let instance_target_head_arity (env: Tac.env) (fv: Tac.fv): Tac.Tac (option (Ref
           else None
         | _ -> None))
 
+(* Does [tm] mention any local type-binder var listed in [inst_map]?
+   When the answer is no, the caller can hand the whole [has_stream sty]
+   query to F*'s typeclass resolution as one unit. Synthesising the
+   dictionary ourselves in that case would produce a fresh term each
+   call (with internal `_ by tcresolve()` placeholders), and two such
+   syntactically-distinct dictionaries inside the opaque non-unfold
+   [shallow #d sty] would defeat unification — see the regression in
+   [Plugin.Test.Bug.PolyInstance.probe_rec_with_t]. *)
+let rec mentions_inst_var (inst_map: list (nat & nat)) (tm: Tac.term): Tac.Tac bool =
+  match Tac.inspect tm with
+  | Tac.Tv_Var nv ->
+    (match List.tryFind (fun (kv: nat & nat) -> fst kv = nv.uniq) inst_map with
+     | Some _ -> true
+     | None -> false)
+  | Tac.Tv_App _ _ ->
+    let (hd, args) = Tac.collect_app tm in
+    if mentions_inst_var inst_map hd then true
+    else mentions_inst_var_args inst_map args
+  | _ -> false
+and mentions_inst_var_args (inst_map: list (nat & nat)) (args: list Tac.argv): Tac.Tac bool =
+  match args with
+  | [] -> false
+  | (a, _) :: rest ->
+    if mentions_inst_var inst_map a then true
+    else mentions_inst_var_args inst_map rest
+
 let rec resolve_inst
   (env: Tac.env)
   (inst_map: list (nat & nat))
@@ -212,6 +238,12 @@ let rec resolve_inst
         | None -> Tac.fail "resolve_inst: missing instance binder")
      | None -> None)
   | Tac.Tv_App _ _ ->
+    if not (mentions_inst_var inst_map sty) then
+      (* Sty is closed over ground FVars (e.g. [t int], [option bool]).
+         Let F* tcresolve the whole [has_stream sty] query so both
+         callsites get the same closed term. *)
+      None
+    else
     let (head_tm, all_args) = Tac.collect_app sty in
     (match head_fv_of (Tac.inspect head_tm) with
      | Some hfv ->

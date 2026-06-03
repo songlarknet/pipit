@@ -54,28 +54,28 @@ let current_or_else (#a: eqtype) {| PSSB.has_stream a |}
 %splice[] (PPL.lift_ast_tac1 "current_or_else")
 
 (* ------------------------------------------------------------------ *
- * Downstream-call regression: a monomorphic call site of a function
- * taking a [t int] argument fails to lift when the call sits inside a
- * [let rec] (or [rec']) body, with a printer-identical
- * [shallow int / shallow int] subtyping mismatch. See
- * [example/ttcan2/README.md] section A and the bisection probes at the
- * head of [example/ttcan2/Network.TTCan.Impl.States.fst].
+ * Regression: a monomorphic call site of a function taking a [t int]
+ * argument inside a [rec'] body used to fail with a printer-identical
+ * [shallow (t int) / shallow int] subtyping mismatch. The fix lives in
+ * [Pipit.Plugin.Lift.resolve_inst]: when the queried [sty] is closed
+ * over ground FVars (no local type-binder var from [inst_map]), return
+ * [None] and let F* tcresolve the [has_stream sty] query as one unit,
+ * so both callsites emit the same closed dictionary term.
  * ------------------------------------------------------------------ *)
 let goe_int (dflt: int) (clck: t int): int = get_or_else dflt clck
 
 let add_int (a b: int): int = a + b
 
-(* PASSES: monomorphic call with no [t a] arg inside [rec']. *)
+(* Baseline: no [t a] arg in the [rec'] body. *)
 [@@source_mode (ModeFun Stream true Stream)]
 let probe_rec_no_t (a: int): int =
   rec' (fun x -> add_int a (0 `fby` x))
 
 %splice[] (PPL.lift_ast_tac1 "probe_rec_no_t")
 
-(* FAILS: same shape but the call passes a [stream (t int)] arg. *)
+(* Regression case: the call passes a [stream (t int)] arg through. *)
 [@@source_mode (ModeFun Stream true Stream)]
 let probe_rec_with_t (c: t int): int =
   rec' (fun x -> goe_int (0 `fby` x) c)
 
-[@@expect_failure]
 %splice[] (PPL.lift_ast_tac1 "probe_rec_with_t")
