@@ -159,3 +159,21 @@ let ref_trigger_offsets
     else pre_ref
   in
   ref_trigger_offset
+
+(*^9.5.2 Rx_Ref filter: choose the canonical reference message between
+   the bus-received [rx_ref] and the previous self-transmitted
+   [pre_tx_ref], preferring whichever started earlier. *)
+let rx_ref_filters
+  (rx_ref:        stream (Clocked.t ref_message))
+  (pre_tx_ref:    stream (Clocked.t ref_message))
+  (pre_tx_status: stream tx_status)
+    : stream (Clocked.t ref_message) =
+  let _tx_success = Clocked.get_clock pre_tx_ref && pre_tx_status = Tx_Ok in
+  if Clocked.get_clock rx_ref && Clocked.get_clock pre_tx_ref
+  then (if U64.op_Less_Equals (Clocked.get_value rx_ref).sof
+                              (Clocked.get_value pre_tx_ref).sof
+        then rx_ref
+        else pre_tx_ref)
+  else if Clocked.get_clock rx_ref
+  then rx_ref
+  else pre_tx_ref
