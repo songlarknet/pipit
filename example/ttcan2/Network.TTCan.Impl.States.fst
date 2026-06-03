@@ -119,3 +119,43 @@ let master_modes
       else pre_master
   in
   master_mode
+
+(*^9.5.1 Ref_Trigger_Offset *)
+let ref_trigger_offsets
+  (cfg:         config)
+  (master_mode: stream master_mode)
+  (error:       stream error_severity)
+  (ref_master:  stream (Clocked.t master_index))
+    : stream ref_offset =
+  let my_master_index = config_master_index cfg in
+  // Bug B workaround: hoist [S32R.s32r N] to unrefined-type locals so
+  // the lifter can resolve [has_stream ref_offset] / [has_stream
+  // master_index] instead of the refined [{ v s == N }] singleton.
+  let ref_zero:   ref_offset   = S32R.s32r 0   in
+  let ref_max:    ref_offset   = S32R.s32r 127 in
+  let mi_zero:    master_index = S32R.s32r 0   in
+  let rec ref_trigger_offset =
+    let pre_ref = cfg.initial_ref_offset `fby` ref_trigger_offset in
+    //^ If [a potential master] becomes current time master (by
+    //  successfully transmitting a reference message), it shall use
+    //  Ref_Trigger_Offset = 0.
+    if master_mode = Current_Master
+    then ref_zero
+    //^ [At error level S2,] potential masters may still transmit
+    //  reference messages with the Ref_Trigger_Offset set to the
+    //  maximum value of 127.
+    else if error = S2_Error
+    then ref_max
+    // Downgrading to a backup master
+    else if Util.rising_edge (master_mode = Backup_Master)
+    then cfg.initial_ref_offset
+    // If we start a new basic cycle and the current master is higher
+    // index (lower priority) than us, try to reduce our ref offset to
+    // overtake the current master.
+    else if S32R.op_Greater (Clocked.get_or_else mi_zero ref_master) my_master_index
+    then (if S32R.op_Greater pre_ref ref_zero
+          then ref_zero
+          else S32R.dec_sat pre_ref)
+    else pre_ref
+  in
+  ref_trigger_offset
