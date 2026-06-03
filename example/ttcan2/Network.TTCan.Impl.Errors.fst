@@ -35,6 +35,10 @@ let cycle_end_check (args: stream latch_args): stream bool =
     reset = args.reset;
   }
 
-(* scheduling_error_1 NOT yet ported: relies on cross-module S32R helpers
-   (s32r, min, max, dec_sat) being treated as APrim — same issue as
-   Impl.MessageStatus. *)
+(*^9.1 Scheduling_Error_1
+  TODO: port from [example/ttcan/Network.TTCan.Impl.Errors.fst]. The
+  body uses cross-module [S32R.min] / [S32R.max] / [S32R.dec_sat] on
+  stream args. Both inlining [S32R.s32r 7] (typeclass resolution fails
+  for the refined return type) and lifting [msc_max] / [msc_min] to
+  top-level constants (typeclass resolution hangs) have been tried.
+  Tracked in [example/ttcan2/README.md] as a higher-priority follow-up. *)

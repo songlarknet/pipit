@@ -52,3 +52,30 @@ let current_or_else (#a: eqtype) {| PSSB.has_stream a |}
     get_or_else (dflt `fby` acc) clck)
 
 %splice[] (PPL.lift_ast_tac1 "current_or_else")
+
+(* ------------------------------------------------------------------ *
+ * Downstream-call regression: a monomorphic call site of a function
+ * taking a [t int] argument fails to lift when the call sits inside a
+ * [let rec] (or [rec']) body, with a printer-identical
+ * [shallow int / shallow int] subtyping mismatch. See
+ * [example/ttcan2/README.md] section A and the bisection probes at the
+ * head of [example/ttcan2/Network.TTCan.Impl.States.fst].
+ * ------------------------------------------------------------------ *)
+let goe_int (dflt: int) (clck: t int): int = get_or_else dflt clck
+
+let add_int (a b: int): int = a + b
+
+(* PASSES: monomorphic call with no [t a] arg inside [rec']. *)
+[@@source_mode (ModeFun Stream true Stream)]
+let probe_rec_no_t (a: int): int =
+  rec' (fun x -> add_int a (0 `fby` x))
+
+%splice[] (PPL.lift_ast_tac1 "probe_rec_no_t")
+
+(* FAILS: same shape but the call passes a [stream (t int)] arg. *)
+[@@source_mode (ModeFun Stream true Stream)]
+let probe_rec_with_t (c: t int): int =
+  rec' (fun x -> goe_int (0 `fby` x) c)
+
+[@@expect_failure]
+%splice[] (PPL.lift_ast_tac1 "probe_rec_with_t")

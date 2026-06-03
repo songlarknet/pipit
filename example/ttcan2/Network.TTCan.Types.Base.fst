@@ -1,6 +1,7 @@
 (* Base type definitions *)
 module Network.TTCan.Types.Base
 
+module PSSB       = Pipit.Prim.HasStream
 module U64        = Network.TTCan.Prim.U64
 module Subrange   = Network.TTCan.Prim.S32R
 
@@ -26,6 +27,8 @@ type trigger_type =
 
 (* Network time unit: time in terms of CAN-bitrate clock. The spec specifies a 16-bit local time that overflows regularly, but for now we'll use 64-bit to avoid worrying about overflow. *)
 type ntu = U64.t
+
+instance has_stream_ntu: PSSB.has_stream ntu = U64.has_stream_U64
 
 // configuration values can be statically limited to 16-bits
 type ntu_config = Subrange.t { min = 0; max = 65535 } // U16.t
