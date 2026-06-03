@@ -183,3 +183,52 @@ elaborator (typeclass resolution loops > 2 min).
 
 **Workaround.** None yet. `Network.TTCan.Impl.Errors.scheduling_error_1`
 is the only call site so far; left as a TODO in that module's body.
+
+## D. Lifter blow-up on `stream (option T) = Some <static>` equality
+
+**Symptom.** `States.master_modes` and `States.tx_ref_messages` take
+multiple minutes to verify (and `tx_ref_messages` was killed after 13
+min with the F* process at 4.4 GB RSS while a single Z3 query ran at
+97% CPU). The IDE shows the same pause when checking these decls.
+
+**Bisection** (see `pipit/plugin-test/Plugin.Test.Bug.MasterModes.*`,
+each variant in its own module so it can be timed independently):
+
+| Variant | Adds vs. previous              | Wall time | fstar RSS peak |
+| ------- | ------------------------------ | --------- | -------------- |
+| V0      | `let rec _ = ... fby _` only   |  14.8 s   | ~ 0.15 GB      |
+| V1      | full nested if/else chain      |   147 s   | ~ 3.4 GB       |
+| V2a     | `Some? ref_msg` on stream      |   202 s   | ~ 2.4 GB       |
+| V2b     | `ref_msg = Some master_idx`    | killed*   | 5.9 GB at 1m   |
+| V2c     | V2b with refined `master_idx`  | killed*   | 6.9 GB at 4m   |
+
+`*` build killed after several minutes with no end in sight; fstar
+memory monotonically growing.
+
+**Localisation.** V0→V1 is pure SMT cost (z3 99 %, fstar small). V2a
+adds a moderate constant. The **step that explodes the lifter** is
+`ref_msg = Some master_idx`, i.e. equality on `stream (option T)`
+against a static `Some _`. fstar memory jumps by ~40×, suggesting the
+generated lifted term (and thus the resulting SMT query) is
+exponentially larger than for the surrounding if-else context.
+
+**Workaround.** Replace the equality with an explicit projection /
+pair of clock+payload tests:
+
+```fst
+// instead of:  if ref_msg = Some master_idx
+let ref_clk = Some? ref_msg in
+let ref_idx = match ref_msg with | Some v -> v | None -> master_idx in
+if ref_clk && ref_idx = master_idx
+```
+
+This restores the V2a regime (~ minutes, not exponential). Apply the
+same rewrite to any `stream_of_option = Some _` site inside a
+`#lang-pipit` body (currently `master_modes` and the upcoming
+`tx_ref_messages` clamp).
+
+**To fix in the lifter.** The `stream_of_option = Some _` pattern
+should not produce an exponential term. Suspected culprit: the
+lifter expands `Some?`-style sugar / record-eq into nested matches
+without sharing the scrutinee. Investigate `Pipit.Source.Ast.Lower`
+and the option-equality desugaring.
