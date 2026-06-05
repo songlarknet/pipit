@@ -34,6 +34,14 @@ let core_lifted = ()
 irreducible
 let core_lifted_prim = ()
 
+(* Marker on hoisted `__ctx_<N>` ctx helpers emitted by the lifter
+   (`Pipit.Source.Ast.Lower.flush_ctx_acc`). These helpers are
+   intentionally NOT `unfold` qualified to keep splice re-typecheck
+   cheap, so the discharge tactic must delta-unfold them explicitly
+   via `Pipit.Tactics.norm_full`'s `delta_attr` list. *)
+irreducible
+let core_lifted_ctx = ()
+
 (* Mark a source function as one whose `check`s should be discharged
   automatically by 1-induction. The preprocessor synthesises a
   `__check_<id>` binding that asserts `induct1 (system_of_exp __core_<id>)`

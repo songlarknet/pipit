@@ -39,8 +39,21 @@ let _smoke_lit_sigelts () : T.Tac (list T.sigelt) =
   let int_ty: Ast.sty = `int in
   let lit: Ast.lit    = { Ast.lit_ty = int_ty; Ast.lit_tm = `(0 <: int) } in
   let a: Ast.ast      = Ast.ALit R.range_0 lit in
-  let tm = L.lower L.empty_env a in
-  [ mk_sigelt "smoke_lit" (`(PXB.exp PPS.table [] (PSSB.shallow int))) tm ]
+  let env: L.lower_env =
+    { L.binders = [];
+      L.inst_for = (fun _ -> None);
+      L.ctx_tm = `([] <: Pipit.Prim.Table.context PPS.table);
+      L.prim_acc = T.alloc [];
+      L.ctx_acc = T.alloc [];
+      L.ctx_passthrough = [];
+      L.prim_module = T.cur_module ();
+      L.prim_tag = "smoke_lit" }
+  in
+  let tm = L.lower env a in
+  let ctx_helpers = L.flush_ctx_acc env in
+  let prim_helpers = L.flush_prim_acc env in
+  List.Tot.append ctx_helpers (List.Tot.append prim_helpers
+    [ mk_sigelt "smoke_lit" (`(PXB.exp PPS.table [] (PSSB.shallow int))) tm ])
 
 %splice[smoke_lit] (_smoke_lit_sigelts ())
 
@@ -51,11 +64,20 @@ let _smoke_var_sigelts () : T.Tac (list T.sigelt) =
   let int_ty: Ast.sty = `int in
   let env: L.lower_env =
     { L.binders = [ ({ L.b_name = "x"; L.b_sty = int_ty; L.b_kind = L.BStream } <: L.binder) ];
-      L.inst_for = (fun _ -> None) }
+      L.inst_for = (fun _ -> None);
+      L.ctx_tm = `([PSSB.shallow int] <: Pipit.Prim.Table.context PPS.table);
+      L.prim_acc = T.alloc [];
+      L.ctx_acc = T.alloc [];
+      L.ctx_passthrough = [];
+      L.prim_module = T.cur_module ();
+      L.prim_tag = "smoke_var" }
   in
   let a: Ast.ast = Ast.AVar R.range_0 "x" PPI.Stream in
   let tm = L.lower env a in
-  [ mk_sigelt "smoke_var" (`(PXB.exp PPS.table [PSSB.shallow int] (PSSB.shallow int))) tm ]
+  let ctx_helpers = L.flush_ctx_acc env in
+  let prim_helpers = L.flush_prim_acc env in
+  List.Tot.append ctx_helpers (List.Tot.append prim_helpers
+    [ mk_sigelt "smoke_var" (`(PXB.exp PPS.table [PSSB.shallow int] (PSSB.shallow int))) tm ])
 
 %splice[smoke_var] (_smoke_var_sigelts ())
 
@@ -67,11 +89,20 @@ let _smoke_fby_sigelts () : T.Tac (list T.sigelt) =
   let lit:    Ast.lit = { Ast.lit_ty = int_ty; Ast.lit_tm = `(0 <: int) } in
   let env: L.lower_env =
     { L.binders = [ ({ L.b_name = "x"; L.b_sty = int_ty; L.b_kind = L.BStream } <: L.binder) ];
-      L.inst_for = (fun _ -> None) }
+      L.inst_for = (fun _ -> None);
+      L.ctx_tm = `([PSSB.shallow int] <: Pipit.Prim.Table.context PPS.table);
+      L.prim_acc = T.alloc [];
+      L.ctx_acc = T.alloc [];
+      L.ctx_passthrough = [];
+      L.prim_module = T.cur_module ();
+      L.prim_tag = "smoke_fby" }
   in
   let a: Ast.ast = Ast.AFby R.range_0 lit (Ast.AVar R.range_0 "x" PPI.Stream) in
   let tm = L.lower env a in
-  [ mk_sigelt "smoke_fby" (`(PXB.exp PPS.table [PSSB.shallow int] (PSSB.shallow int))) tm ]
+  let ctx_helpers = L.flush_ctx_acc env in
+  let prim_helpers = L.flush_prim_acc env in
+  List.Tot.append ctx_helpers (List.Tot.append prim_helpers
+    [ mk_sigelt "smoke_fby" (`(PXB.exp PPS.table [PSSB.shallow int] (PSSB.shallow int))) tm ])
 
 %splice[smoke_fby] (_smoke_fby_sigelts ())
 
@@ -83,7 +114,13 @@ let _smoke_let_stream_sigelts () : T.Tac (list T.sigelt) =
   let lit:    Ast.lit = { Ast.lit_ty = int_ty; Ast.lit_tm = `(0 <: int) } in
   let env: L.lower_env =
     { L.binders = [ ({ L.b_name = "x"; L.b_sty = int_ty; L.b_kind = L.BStream } <: L.binder) ];
-      L.inst_for = (fun _ -> None) }
+      L.inst_for = (fun _ -> None);
+      L.ctx_tm = `([PSSB.shallow int] <: Pipit.Prim.Table.context PPS.table);
+      L.prim_acc = T.alloc [];
+      L.ctx_acc = T.alloc [];
+      L.ctx_passthrough = [];
+      L.prim_module = T.cur_module ();
+      L.prim_tag = "smoke_let_stream" }
   in
   let def: Ast.ast =
     Ast.AFby R.range_0 lit (Ast.AVar R.range_0 "x" PPI.Stream)
@@ -93,6 +130,9 @@ let _smoke_let_stream_sigelts () : T.Tac (list T.sigelt) =
   in
   let a: Ast.ast = Ast.ALet R.range_0 "y" PPI.Stream int_ty def body in
   let tm = L.lower env a in
-  [ mk_sigelt "smoke_let_stream" (`(PXB.exp PPS.table [PSSB.shallow int] (PSSB.shallow int))) tm ]
+  let ctx_helpers = L.flush_ctx_acc env in
+  let prim_helpers = L.flush_prim_acc env in
+  List.Tot.append ctx_helpers (List.Tot.append prim_helpers
+    [ mk_sigelt "smoke_let_stream" (`(PXB.exp PPS.table [PSSB.shallow int] (PSSB.shallow int))) tm ])
 
 %splice[smoke_let_stream] (_smoke_let_stream_sigelts ())

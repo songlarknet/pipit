@@ -529,15 +529,31 @@ let lift_ast_tac (nm_src nm_core: string) : Tac.Tac (list Tac.sigelt) =
     List.map snd (List.rev stream_params_outer) in
   debug_print (fun () -> "static_params count: " ^ string_of_int (List.Tot.length static_binders_outer));
   debug_print (fun () -> "stream_params count: " ^ string_of_int (List.Tot.length stream_obs_inner));
-  let lower_env: AstLow.lower_env = {
-    AstLow.binders = List.map to_lower params_inner;
-    AstLow.inst_for = inst_for;
-  } in
-  let tm = AstLow.lower lower_env ast in
-  (* Context list is built from the stream binders only (innermost
-     first), matching the order in which `AstLow.lower` resolves
-     de-Bruijn indices for `BStream` binders. Static binders are
-     wrapped as F* `Tv_Abs` around the core sigelt instead.
+  (* Per-binding prim hoist cache. `AstLow.shallow_prim` interns each
+     unique `Mkprim id ft fn` record into this ref and returns an
+     `FVar` pointing at a yet-to-be-emitted `unfold let __xprim_<nm_src>_<N>`
+     helper. After lowering, we drain the cache via
+     `AstLow.flush_prim_acc` and PREPEND the helper sigelts so the
+     main core sigelt's references resolve. See `Pipit.Source.Ast.Lower`
+     for the rationale (V2b explosion: F* was re-elaborating each
+     inline `mkPrim ...` at every `XApp` unification site). *)
+  let prim_acc: Tac.tref (list (Tac.term & Tac.term)) = Tac.alloc [] in
+  (* Per-binding ctx helper cache. Each `extend_ctx` in `AstLow.lower`
+     interns the freshly-built `sty :: <prev>` term and returns an
+     `FVar __ctx_<nm_src>_<N>`. After lowering, we drain the cache
+     via `AstLow.flush_ctx_acc` and PREPEND the helper sigelts so
+     the main core sigelt's ctx FVar references resolve. The helpers
+     are marked `Unfold_for_unification_and_vcgen` so F* unfolds them
+     through every `xprim`/`xbvar`/`xlet`/... wrapper's type. *)
+  let ctx_acc: Tac.tref (list (Tac.term & Tac.term)) = Tac.alloc [] in
+  (* Initial cexp context (innermost first) for the top-level stream
+     params. Built BEFORE `AstLow.lower` runs so we can pass it as
+     `lower_env.ctx_tm`; `AstLow.lower` itself wraps the lowered body
+     in `let __ctx_0 = <this> in <body>` and threads
+     `Tv_Var __ctx_0` (and per-binder `__ctx_<N>` extensions) through
+     every interior emit site, eliminating the per-site implicit `?c`
+     metavariables that drove the V2a/V2b unification explosion.
+
      Built with raw `Tv_App` / `Tv_FVar` constructors (not quasi-quotes)
      so the implicit `has_stream` typeclass arguments inside each
      `shallow_ty` are not eagerly elaborated against the tactic env. *)
@@ -549,14 +565,32 @@ let lift_ast_tac (nm_src nm_core: string) : Tac.Tac (list Tac.sigelt) =
     Tac.pack (Tac.Tv_FVar (Tac.pack_fv ["Prims"; "Nil"])) in
   let nil_app: Tac.term =
     Tac.pack (Tac.Tv_App nil_fv (shallow_type_tm, Tac.Q_Implicit)) in
-  let ctx_list_tm: Tac.term =
+  (* Temporary env (no ctx_tm yet) used only to drive
+     `shallow_ty_for_env`, which inspects `inst_for` and nothing else. *)
+  let env_for_ty: AstLow.lower_env = {
+    AstLow.binders = List.map to_lower params_inner;
+    AstLow.inst_for = inst_for;
+    AstLow.ctx_tm = nil_app;
+    AstLow.prim_acc = prim_acc;
+    AstLow.ctx_acc = ctx_acc;
+    AstLow.ctx_passthrough = passthrough;
+    AstLow.prim_module = m;
+    AstLow.prim_tag = nm_src;
+  } in
+  let ctx_list_literal: Tac.term =
     Tac.fold_right
       (fun (b: AstR.of_binder) (acc: Tac.term) ->
-        let sh = AstLow.shallow_ty_for_env lower_env b.AstR.ob_sty in
+        let sh = AstLow.shallow_ty_for_env env_for_ty b.AstR.ob_sty in
         let c0 = Tac.pack (Tac.Tv_App cons_fv (shallow_type_tm, Tac.Q_Implicit)) in
         PTB.mk_apps_explicit c0 [sh; acc])
       stream_obs_inner
       nil_app in
+  (* Intern the initial ctx literal so the very outermost cexp ctx is
+     also a single FVar `__ctx_<nm_src>_0` rather than a literal cons
+     chain duplicated at every emit site beneath it. *)
+  let ctx_list_tm: Tac.term = AstLow.intern_ctx env_for_ty ctx_list_literal in
+  let lower_env: AstLow.lower_env = { env_for_ty with AstLow.ctx_tm = ctx_list_tm } in
+  let tm = AstLow.lower lower_env ast in
   let lb_typ_core: Tac.term =
     let exp_fv = Tac.pack (Tac.Tv_FVar (Tac.pack_fv ["Pipit"; "Exp"; "Base"; "exp"])) in
     let table_fv = Tac.pack (Tac.Tv_FVar (Tac.pack_fv ["Pipit"; "Prim"; "Shallow"; "table"])) in
@@ -616,7 +650,18 @@ let lift_ast_tac (nm_src nm_core: string) : Tac.Tac (list Tac.sigelt) =
     `core_of_source (`#nm_src_const) (`#(quote_mode lb_mode));
   ] in
   let se = Ref.set_sigelt_attrs attrs se in
-  [se]
+  (* Drain the hoisted-prim cache and prepend the helper sigelts so
+     their `__xprim_<nm_src>_<N>` names resolve at the splice site. *)
+  let prim_helpers = AstLow.flush_prim_acc lower_env in
+  debug_print (fun () -> "hoisted prims: " ^ string_of_int (List.Tot.length prim_helpers));
+  (* Drain the hoisted-ctx cache. Each `__ctx_<nm_src>_<N>` references
+     the previous one (or the initial literal list); `flush_ctx_acc`
+     returns sigelts in dependency order (oldest first), so prepending
+     them before the prim helpers and main sigelt resolves every
+     reference. *)
+  let ctx_helpers = AstLow.flush_ctx_acc lower_env in
+  debug_print (fun () -> "hoisted ctxes: " ^ string_of_int (List.Tot.length ctx_helpers));
+  List.append ctx_helpers (List.append prim_helpers [se])
 
 let lift_ast_tac1 (nm_src: string) : Tac.Tac (list Tac.sigelt) =
   lift_ast_tac nm_src (env_core_nm nm_src)

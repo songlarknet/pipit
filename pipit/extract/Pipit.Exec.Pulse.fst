@@ -389,6 +389,7 @@ let specialize_norm_opts
       `%Pipit.Tactics.norm_attr;
       "Pipit.Plugin.Interface.core_lifted";
       "Pipit.Plugin.Interface.core_lifted_prim";
+      "Pipit.Plugin.Interface.core_lifted_ctx";
       `%FStar.Tactics.Typeclasses.tcinstance
     ]
   ] else [
