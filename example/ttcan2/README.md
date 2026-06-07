@@ -137,12 +137,11 @@ comment out the failing case in that file and re-add this workaround.
 isn't liftable — the lifter reports
 `Pipit.Source.Ast.Reflect: unsupported term shape: fun p -> p.px`.
 
-**Workaround.** Inline the body. For instance:
-`Clocked.map (fun r -> r.sof) last_ref`
-becomes a `let`-bound destructure plus inlined construction. In
-practice for this port that means manually `if Clocked.get_clock c
-then Some <projection of get_value c> else None` or hoisting the
-lambda to a named top-level `let`.
+**Workaround.** For pure record-field projections, use the projector
+constant directly: `Clocked.map Mkref_message?.sof last_ref` (covered
+by §6, which is no longer a workaround). For non-projection bodies,
+hoist the lambda to a named top-level `let`, or inline a
+`if Clocked.get_clock c then Some <body of get_value c> else None`.
 
 See `pipit/plugin-test/Plugin.Test.Bug.MapLambda.fst` for the live
 probe (passing-baseline + commented-out failing case).

@@ -95,7 +95,7 @@ let modes
   let last_ref    = States.rx_ref_filters input.rx_ref pre_tx_ref input.tx_status in
   let ref_ck      = Clocked.get_clock last_ref in
   let ref_master  = Clocked.map Mkref_message?.master last_ref in
-  let ref_sof     = Clocked.map (fun r -> r.sof) last_ref in
+  let ref_sof     = Clocked.map Mkref_message?.sof last_ref in
   let cycle_index = Clocked.current_or_else (S32R.s32r 0) (Clocked.map Mkref_message?.cycle_index last_ref) in
 
   let cycle_time  = States.cycle_times mode ref_sof input.local_time in
