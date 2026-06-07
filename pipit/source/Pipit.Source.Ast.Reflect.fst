@@ -597,7 +597,13 @@ and lift_ite (e: of_env) (rng: R.range) (scrut: T.term) (brs: list T.branch): T.
   let (mc, c_ast) = lift_tm e scrut in
   let (mt, t_ast) = lift_tm e t_tm in
   let (mf, f_ast) = lift_tm e f_tm in
-  let ret_ty: T.term = T.tc e.oe_tac_env t_tm in
+  (* Strip refinements: the then-branch's F* type may carry a
+     [Tv_Refine] whose predicate references surface-local binders
+     (e.g. [S32R.inc_sat cyc_idx] has refined return type referencing
+     [cyc_idx]). The lifter hoists the prim's [shallow ret_ty] to a
+     top-level [__xprim_*] helper, where any surface-local reference
+     dangles. See Bug B note (2026-06-05). *)
+  let ret_ty: T.term = strip_refinements (T.tc e.oe_tac_env t_tm) in
   let bool_ty: T.term = `bool in
   let p_select_fv =
     T.pack (T.Tv_FVar (T.pack_fv ["PipitRuntime"; "Prim"; "p'select"]))

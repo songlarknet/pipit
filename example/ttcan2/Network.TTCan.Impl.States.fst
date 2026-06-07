@@ -3,8 +3,10 @@
    Port to the new pipeline. See [example/ttcan2/README.md] for the
    active source-level workarounds; the lifter-level bug A
    ([Clocked.t]-arg in [let rec] / [rec'] body) was resolved on
-   2026-06-03 in [Pipit.Plugin.Lift.resolve_inst]. Bug B (refined-
-   return-type instances such as [S32R.s32r 7]) is still tracked.
+   2026-06-03 in [Pipit.Plugin.Lift.resolve_inst]; bug B (refined-
+   return-type instances such as [S32R.s32r 7]) was resolved on
+   2026-06-05 in [Pipit.Source.Ast.Reflect.lift_ite] (refinement
+   stripping on the if/then/else result type).
 *)
 module Network.TTCan.Impl.States
 
@@ -128,33 +130,27 @@ let ref_trigger_offsets
   (ref_master:  stream (Clocked.t master_index))
     : stream ref_offset =
   let my_master_index = config_master_index cfg in
-  // Bug B workaround: hoist [S32R.s32r N] to unrefined-type locals so
-  // the lifter can resolve [has_stream ref_offset] / [has_stream
-  // master_index] instead of the refined [{ v s == N }] singleton.
-  let ref_zero:   ref_offset   = S32R.s32r 0   in
-  let ref_max:    ref_offset   = S32R.s32r 127 in
-  let mi_zero:    master_index = S32R.s32r 0   in
   let rec ref_trigger_offset =
     let pre_ref = cfg.initial_ref_offset `fby` ref_trigger_offset in
     //^ If [a potential master] becomes current time master (by
     //  successfully transmitting a reference message), it shall use
     //  Ref_Trigger_Offset = 0.
     if master_mode = Current_Master
-    then ref_zero
+    then S32R.s32r 0
     //^ [At error level S2,] potential masters may still transmit
     //  reference messages with the Ref_Trigger_Offset set to the
     //  maximum value of 127.
     else if error = S2_Error
-    then ref_max
+    then S32R.s32r 127
     // Downgrading to a backup master
     else if Util.rising_edge (master_mode = Backup_Master)
     then cfg.initial_ref_offset
     // If we start a new basic cycle and the current master is higher
     // index (lower priority) than us, try to reduce our ref offset to
     // overtake the current master.
-    else if S32R.op_Greater (Clocked.get_or_else mi_zero ref_master) my_master_index
-    then (if S32R.op_Greater pre_ref ref_zero
-          then ref_zero
+    else if S32R.op_Greater (Clocked.get_or_else (S32R.s32r 0) ref_master) my_master_index
+    then (if S32R.op_Greater pre_ref (S32R.s32r 0)
+          then S32R.s32r 0
           else S32R.dec_sat pre_ref)
     else pre_ref
   in
@@ -177,3 +173,41 @@ let rx_ref_filters
   else if Clocked.get_clock rx_ref
   then rx_ref
   else pre_tx_ref
+
+(*^9.1 / ref-message construction: choose when to transmit a reference
+   message, applying the severe-error cooldown and clamping the cycle
+   index. The output is [Some _] iff this node is allowed and clocked
+   to transmit on this tick. *)
+let tx_ref_messages
+  (cfg:         config)
+  (local_time:  stream ntu)
+  (sync_state:  stream sync_mode)
+  (error:       stream error_severity)
+  (cycle_time:  stream ntu)
+  (cyc_idx:     stream cycle_index)
+  (send_ck:     stream bool)
+    : stream (Clocked.t ref_message) =
+  let rec severe_error_cooldown =
+    if error = S3_Severe
+    then U64.op_Plus local_time (S32R.s32r_to_u64 cfg.severe_error_ref_cooldown)
+    else (0uL `fby` severe_error_cooldown)
+  in
+  let cycle_index' =
+    if S32R.op_Less cyc_idx cfg.cycle_count_max
+    then S32R.inc_sat cyc_idx
+    else S32R.s32r 0
+  in
+  let tx_ref: stream ref_message = {
+    sof         = local_time;
+    master      = config_master_index cfg;
+    cycle_index = cycle_index';
+  } in
+  let tx_ref_ck =
+    (sync_state = Synchronising || sync_state = In_Schedule) &&
+    send_ck &&
+    U64.op_Less severe_error_cooldown local_time
+  in
+  //%PROPERTY "^9.1:severe-no-transmission" error = S3_Severe => not tx_ref_ck;
+  if tx_ref_ck
+  then Some tx_ref
+  else None
