@@ -21,13 +21,6 @@ open Pipit.Source
    [Pipit.Plugin.Interface.mode] re-exported by [Pipit.Source]. *)
 open Network.TTCan.Types
 
-(* Specialised wrappers around polymorphic Clocked/U64 helpers so the
-   lifter sees a monomorphic call site. *)
-let goe_ntu (dflt: ntu) (clck: Clocked.t ntu): ntu =
-  Clocked.get_or_else dflt clck
-
-let ntu_sub (a b: ntu): ntu = U64.op_Subtraction a b
-
 let cycle_time_capture
   (local_time:         stream ntu)
   (reset_ck:           stream bool)
@@ -39,9 +32,9 @@ let cycle_time_capture
       then local_time
       else 0uL `fby` cycle_time_start
     in
-    goe_ntu dflt cycle_time_capture
+    Clocked.get_or_else dflt cycle_time_capture
   in
-  ntu_sub local_time cycle_time_start
+  U64.op_Subtraction local_time cycle_time_start
 
 let cycle_times
   (mode:       stream mode)
