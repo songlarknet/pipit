@@ -123,19 +123,19 @@ bindings and see what (if anything) breaks.
 
 ## 4. `pre #T expr` — explicit type-arg uses on `pre`
 
-**Gap.** The preprocessor folds `pre e` into a static binding, but
-the explicit `#T` annotation isn't threaded through the lift.
-
-**Workaround.** Drop the `#T` annotation — type inference recovers it.
-For values where the implicit `val_default` doesn't typecheck, use
-`(PSSB.val_default `fby` v)` explicitly (or a constant of the right
-type, e.g. `0uL `fby` v` / `false `fby` v`).
+**Status (2026-06-08).** No reproducer remains. Both `pre s` (implicit
+type-arg) and `pre #int s` lift cleanly, as does
+`pre #(option int) s` where the type-arg is itself parameterised by
+another `has_stream` instance. See
+`pipit/plugin-test/Plugin.Test.Bug.PreExplicitType.fst` for the
+regression probe; if a future change re-breaks the explicit form,
+comment out the failing case in that file and re-add this workaround.
 
 ## 5. `Clocked.map` with anonymous lambdas
 
 **Gap.** `Clocked.map f c` where `f` is a `(fun x -> ...)` literal
-isn't liftable — the lifter doesn't synthesize a core for the
-anonymous function.
+isn't liftable — the lifter reports
+`Pipit.Source.Ast.Reflect: unsupported term shape: fun p -> p.px`.
 
 **Workaround.** Inline the body. For instance:
 `Clocked.map (fun r -> r.sof) last_ref`
@@ -144,39 +144,31 @@ practice for this port that means manually `if Clocked.get_clock c
 then Some <projection of get_value c> else None` or hoisting the
 lambda to a named top-level `let`.
 
+See `pipit/plugin-test/Plugin.Test.Bug.MapLambda.fst` for the live
+probe (passing-baseline + commented-out failing case).
+
 ## 6. Record projections as first-class function values
 
-**Gap.** `Clocked.map Mkref_message?.cycle_index last_ref` passes the
-projector `Mkref_message?.cycle_index` as a first-class function.
-The lifter doesn't recognize this as a `_core`.
+**Status (2026-06-08).** No reproducer remains. Both `map Mkpoint?.px c`
+and `map Mkref_t?.cycle_index c` lift cleanly when `map` is a plain
+`(#a #b: eqtype) (fn: a -> b) (clck: clk a): clk b` polymorphic helper.
+See `pipit/plugin-test/Plugin.Test.Bug.MapProjector.fst` for the
+regression probe; if a future change re-breaks the projector form,
+comment out the failing case in that file and re-add this workaround.
 
-**Workaround.** Use direct field access at the call-site:
-`r.cycle_index` (or wrap with `Clocked.map (fun r -> r.cycle_index) ...`
-if a clocked map is needed — see workaround 5; in many cases the
-clocked map can be inlined entirely).
+Note: the §5 anonymous-lambda case (e.g. `map (fun p -> p.px) c`) is
+still live — see `Plugin.Test.Bug.MapLambda` for that probe.
 
 ## 7. `let open M` inside `#lang-pipit`
 
-**Gap.** Module-open inside a `#lang-pipit` body doesn't fold operator
-FQNs the preprocessor expects.
-
-**Workaround.** Use the explicit qualified form: `U64.op_Star x y`
-(instead of `let open U64 in x *^ y`), `S32R.op_Less x y` (instead of
-`S32R.( x < y )`), etc. Mechanical replacement table:
-
-| infix    | replacement                  |
-| -------- | ---------------------------- |
-| `a *^ b` | `U64.op_Star a b`            |
-| `a +^ b` | `U64.op_Plus a b`            |
-| `a -^ b` | `U64.op_Subtraction a b`     |
-| `a <^ b` | `U64.op_Less a b`            |
-| `a <=^ b`| `U64.op_Less_Equals a b`     |
-| `a >^ b` | `U64.op_Greater a b`         |
-| `a >=^ b`| `U64.op_Greater_Equals a b`  |
-| `a =^ b` | `U64.op_Equals a b`          |
-
-(Same pattern for `S32R`; see `Network.TTCan.Prim.U64`/`.S32R` for the
-defined operator names.)
+**Status (2026-06-08).** No reproducer remains. `FStar.UInt64`
+arithmetic (`+%^`, `-%^`, `*%^`) and comparison (`<^`) operators all
+lift cleanly inside a `let open U64 in ...` block. See
+`pipit/plugin-test/Plugin.Test.Bug.LetOpenOps.fst` for the regression
+probe; if a future change re-breaks operator resolution under
+`let open`, comment out the failing cases in that file and re-add
+this workaround (mechanical replacement table available in git
+history).
 
 ## 8. Pulse extraction (`Network.TTCan.Extract.fst`)
 
