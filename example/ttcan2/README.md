@@ -26,18 +26,10 @@ Fully ported, verbatim from `example/ttcan/`:
 Ported with workarounds (degraded behaviour, see numbered sections
 below for the specific lifter gap each one hits):
 
-  - `Network.TTCan.Impl.Triggers` — `prefetch` and `fetch` are
-    stubbed to constants. The lifter cannot pass `cfg` (a Static
-    binder) through `cfg.triggers.trigger_read index` when
-    `trigger_read`'s codomain is a record-typed stream. See §10.
-  - `Network.TTCan.TriggerTimely` — `trigger_enabled`,
-    `trigger_time_mark`, `trigger_index` are stubbed; the
-    `trigger_fetch` `Stream` contract sugar is dropped. The lifter
-    rejects `cfg.triggers.<field> args` even with an intermediate
-    `let ts = cfg.triggers`, demanding `has_stream trigger_array`
-    which is impossible (function-record). See §10. The
-    `[@@proof_induct1]` contract splice also cannot handle static
-    arg prefixes; see §11.
+  - `Network.TTCan.TriggerTimely` — `count_when` carries no
+    `[@@proof_induct1]` attribute. The auto-splice for that
+    attribute cannot handle a binding with a static prefix
+    parameter; see §11.
   - `Network.TTCan.Impl.Controller` — `controller'` and `controller`
     bodies are stubbed to `PSSB.val_default`. The lifter fails with a
     deep Error 19 ("Pipit.Context.Base.index_lookup ... got type
@@ -202,31 +194,27 @@ open Pipit.Source
 open Network.TTCan.Types
 ```
 
-## 10. `cfg.field.subfield <stream-args>` where `subfield` is function-typed
+## 10. `cfg.field.subfield <stream-args>` where `subfield` is function-typed — RESOLVED 2026-06-08
 
-**Gap.** The lifter rejects
+**Gap (historical).** The lifter rejected
 `cfg.triggers.trigger_read index` (or `cfg.triggers.enabled index c`)
-when `cfg` is a Static binder and `trigger_read` / `enabled` is a
-record field of function type. Direct uses fail with
-`Variable "cfg" not found`. Introducing an intermediate static
-`let ts: trigger_array = cfg.triggers` instead fails the typeclass
-cascade with `Could not solve typeclass constraint [has_stream
-trigger_array]` (impossible — `trigger_array` contains arrows).
+when `cfg` is a Static binder and the projected subfield is of
+function type. Direct uses failed with `Variable "cfg" not found`.
 
-This is the dual of §2: §2 covers `cfg.field.scalar_subfield`, which
-does survive the lift via the `lift_app_fv` Static-arg pre-application
-fix. The case here passes a stream argument to the projected function,
-which forces it through the cexp pipeline rather than the static
-pre-application path.
+This was the dual of §2: §2 covers `cfg.field.scalar_subfield`,
+which survives the lift via the `lift_app_fv` Static-arg
+pre-application fix. The case here passes a stream argument to the
+projected function, which forces it through the cexp pipeline rather
+than the static pre-application path.
 
-**Root cause (verified 2026-06-08).** Standalone reproducer in
-`pipit/plugin-test/Plugin.Test.Bug.FieldProjStream.fst`.
+**Root cause (diagnosed in standalone reproducer
+`pipit/plugin-test/Plugin.Test.Bug.FieldProjStream.fst`).**
 `Pipit.Source.Ast.Reflect.lift_app_fv`'s pre-static-prefix path
 correctly recognises that `(Mkconfig?.triggers cfg)` is splice-safe
 and pre-applies it to `Mktrigger_array?.enabled`, producing
 `prim_fn = cfg.triggers.enabled : index -> cycle -> bool`. But
 `Pipit.Source.Ast.Lower.shallow_prim` (via `flush_prim_acc`) then
-hoists this prim to a top-level `__xprim_<src>_<N>` helper sigelt,
+hoisted this prim to a top-level `__xprim_<src>_<N>` helper sigelt,
 wrapping it in `Tv_Abs` over `env.ctx_passthrough` (polymorphic
 type / instance binders) only — NOT over the explicit Static
 binders the prim_fn references. So the emitted helper
@@ -236,37 +224,29 @@ let __xprim_trigger_read_at_6 : prim =
   Mkprim None _ cfg.triggers.enabled
 ```
 
-has a free `cfg`, which F* rejects with `Error 230: Variable
+had a free `cfg`, which F* rejected with `Error 230: Variable
 "cfg" not found` at the original source location.
 
-The scalar case (§2) works because `xval` keeps the projection
-inline (still scoped by the outer `Tv_Abs cfg` of the spliced
-sigelt) without going through the prim-hoist path.
+**Fix.** Added a `static_binders: list T.binder` field to
+`lower_env` (parallel to `ctx_passthrough`). Populated from
+`static_binders_outer` in `Pipit.Plugin.Lift.lift_ast_tac1`. Both
+`intern_prim` (call site) and `flush_prim_acc` (definition site)
+now close over `ctx_passthrough @ static_binders`. Hoisted helpers
+now look like
 
-**Why user-side workarounds don't help.** Both a plain F* helper
-wrapper and a manual `[@@source_mode]` wrapper still route
-`cfg.triggers.enabled` through `shallow_prim` (verified in
-`FieldProjStream.fst` probes 2 and 3), so every wrapping shape
-hits the same free-`cfg` hoist bug.
+```
+let __xprim_trigger_read_at_6 (cfg: config) : prim =
+  Mkprim None _ cfg.triggers.enabled
+```
 
-**Fix direction.** `flush_prim_acc` needs to either skip hoisting
-prims whose `prim_fn` references non-passthrough binders, or wrap
-each helper in extra `Tv_Abs` over the referenced Statics and
-update `shallow_prim`'s returned reference to apply them at the
-emit site.
+and call sites pass `cfg` explicitly. The scalar case (§2) is
+unaffected — it still uses `xval` (no prim hoist) and stays inline.
 
-**Workaround (in this directory).** Replace the relevant binding
-with a constant stream stub. In `Network.TTCan.Impl.Triggers.fst`,
-`prefetch` / `fetch` are reduced to constant `prefetch_result` /
-`fetch_result` records. In `Network.TTCan.TriggerTimely.fst`,
-`trigger_enabled` / `trigger_time_mark` / `trigger_index` are
-constant. This loses the timing-correctness proof for
-`trigger_fetch` and forces `Network.TTCan.Impl.Controller` to be
-stubbed too (it depends on working `Triggers.fetch`).
-
-The original (working) implementations live in
-`example/ttcan/Network.TTCan.Impl.Triggers.fst` and
-`example/ttcan/Network.TTCan.TriggerTimely.fst`.
+**Status.** `Plugin.Test.Bug.FieldProjStream` probes 1–3 verify.
+`Network.TTCan.TriggerTimely.{trigger_enabled, trigger_time_mark,
+trigger_index, trigger_fetch}` and
+`Network.TTCan.Impl.Triggers.{prefetch, fetch}` have been restored
+to their original (working) implementations in this directory.
 
 ## 11. `[@@proof_induct1]` on bindings with static prefix arguments
 

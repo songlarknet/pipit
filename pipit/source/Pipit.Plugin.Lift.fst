@@ -574,6 +574,7 @@ let lift_ast_tac (nm_src nm_core: string) : Tac.Tac (list Tac.sigelt) =
     AstLow.prim_acc = prim_acc;
     AstLow.ctx_acc = ctx_acc;
     AstLow.ctx_passthrough = passthrough;
+    AstLow.static_binders = static_binders_outer;
     AstLow.prim_module = m;
     AstLow.prim_tag = nm_src;
   } in

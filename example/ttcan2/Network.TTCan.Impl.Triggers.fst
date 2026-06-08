@@ -105,25 +105,19 @@ let trigger_input_valid (cfg: config) (inp: stream trigger_input): stream bool =
 
 (*
   Pre-fetch the next enabled trigger.
-
-  PORT BLOCKER: the lifter cannot pass [cfg] (Static) through a
-  field-projection-application like [cfg.triggers.trigger_read index]
-  when [trigger_read]'s codomain is a record type (here, [trigger]).
-  The [TriggerTimely.trigger_enabled] pattern works because its
-  codomain is [bool]; the equivalent [trigger_read_at] here is
-  rejected with [Variable "cfg" not found].
-
-  All the cfg-dependent prefetch/fetch logic is therefore stubbed
-  out. The downstream [Network.TTCan.Impl.Controller] uses constant
-  values so the controller still typechecks, but its scheduling
-  behaviour is degraded. *)
+*)
 let prefetch
   (cfg: config)
   (input: stream trigger_input)
     : stream prefetch_result =
-  { index = (S32R.s32r 0 <: trigger_index);
-    enabled = false;
-    time_mark = (S32R.s32r 0 <: ntu_config); }
+  rec' (fun fetch ->
+    let pre_index: stream trigger_index = (S32R.s32r 0 <: trigger_index) `fby` fetch.index in
+    let advance: stream bool = false `fby` (not fetch.enabled || U64.(S32R.s32r_to_u64 fetch.time_mark <= S32R.s32r_to_u64 input.cycle_time)) in
+    let index: stream trigger_index =
+      prefetch_index input.reset_ck advance pre_index in
+    let trigger = trigger_load cfg index input.ref_trigger_offset in
+    let enabled = trigger_check_enabled input.cycle_index trigger in
+    { index; enabled; time_mark = trigger.time_mark })
 
 let prefetch_rely
   (cfg: config)
@@ -133,14 +127,18 @@ let prefetch_rely
 
 (*
   Fetch the current trigger, or the next one if there is no current trigger.
-  Same PORT BLOCKER as [prefetch] above.
 *)
 let fetch
   (cfg: config)
   (input: stream trigger_input)
     : stream fetch_result =
-  let current = prefetch cfg input in
-  { current;
-    trigger_type = (Tx_Trigger <: trigger_type);
-    message_index = (S32R.s32r 0 <: can_buffer_id); }
+  let next: stream prefetch_result =
+    prefetch cfg input in
+  let take_next: stream bool =
+    input.reset_ck || (next.enabled && is_started_u64 (S32R.s32r_to_u64 input.cycle_time) next.time_mark) in
+  let rec current =
+    if (if true `fby` false then true else take_next) then next else Util.pre current in
+  let trigger = trigger_load cfg current.index input.ref_trigger_offset in
+  { current; trigger_type = trigger.trigger_type; message_index = trigger.message_index; }
+
 

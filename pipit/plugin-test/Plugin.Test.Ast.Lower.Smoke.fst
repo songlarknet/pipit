@@ -46,6 +46,7 @@ let _smoke_lit_sigelts () : T.Tac (list T.sigelt) =
       L.prim_acc = T.alloc [];
       L.ctx_acc = T.alloc [];
       L.ctx_passthrough = [];
+      L.static_binders = [];
       L.prim_module = T.cur_module ();
       L.prim_tag = "smoke_lit" }
   in
@@ -69,6 +70,7 @@ let _smoke_var_sigelts () : T.Tac (list T.sigelt) =
       L.prim_acc = T.alloc [];
       L.ctx_acc = T.alloc [];
       L.ctx_passthrough = [];
+      L.static_binders = [];
       L.prim_module = T.cur_module ();
       L.prim_tag = "smoke_var" }
   in
@@ -94,6 +96,7 @@ let _smoke_fby_sigelts () : T.Tac (list T.sigelt) =
       L.prim_acc = T.alloc [];
       L.ctx_acc = T.alloc [];
       L.ctx_passthrough = [];
+      L.static_binders = [];
       L.prim_module = T.cur_module ();
       L.prim_tag = "smoke_fby" }
   in
@@ -119,6 +122,7 @@ let _smoke_let_stream_sigelts () : T.Tac (list T.sigelt) =
       L.prim_acc = T.alloc [];
       L.ctx_acc = T.alloc [];
       L.ctx_passthrough = [];
+      L.static_binders = [];
       L.prim_module = T.cur_module ();
       L.prim_tag = "smoke_let_stream" }
   in

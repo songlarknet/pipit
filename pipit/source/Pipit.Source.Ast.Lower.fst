@@ -128,6 +128,22 @@ type lower_env = {
      binders so its `def_tm` (which may reference `a` and the
      instance) is well-scoped at top level. *)
   ctx_passthrough: list T.binder;
+  (* The EXPLICIT STATIC top-level binders of the source binding
+     being lowered (e.g. `cfg: config`). The main core sigelt
+     already wraps its `lb_def` / `lb_typ` in `Tv_Abs` / `Tv_Arrow`
+     over these (innermost, beneath `ctx_passthrough`), so terms
+     emitted by the lower pass may freely reference their namedvs.
+     The hoisted PRIM helpers (`flush_prim_acc`), however, live at
+     TOP LEVEL — outside the scope of these binders. A `prim_fn`
+     can reference a static binder directly (e.g.
+     `Mkprim _ _ cfg.triggers.enabled` after `lift_app_fv`'s
+     pre-static-prefix path pre-applies the projection), so each
+     emitted helper must additionally close over `static_binders`
+     and every use site must apply them. We DO NOT propagate these
+     into ctx helpers (`flush_ctx_acc`): a `__ctx_<N>` body is just
+     a list of `shallow_type`s which currently never reference
+     static binders. Extend the same way if that ever changes. *)
+  static_binders: list T.binder;
   prim_module: list string;
   prim_tag: string;
 }
@@ -144,6 +160,7 @@ let empty_env (): T.Tac lower_env = {
   prim_acc = T.alloc [];
   ctx_acc = T.alloc [];
   ctx_passthrough = [];
+  static_binders = [];
   prim_module = [];
   prim_tag = "empty";
 }
@@ -445,15 +462,16 @@ let rec find_prim_in_acc (record_tm: T.term) (xs: list (T.term & T.term)): Tot (
 
 let intern_prim (env: lower_env) (record_tm: T.term): T.Tac T.term =
   let entries = T.read env.prim_acc in
+  let prim_args: list T.binder = L.append env.ctx_passthrough env.static_binders in
   match find_prim_in_acc record_tm entries with
-  | Some fv_tm -> apply_passthrough fv_tm env.ctx_passthrough
+  | Some fv_tm -> apply_passthrough fv_tm prim_args
   | None ->
     let n = T.fresh () in
     let nm = L.append env.prim_module
       ["__xprim_" ^ env.prim_tag ^ "_" ^ string_of_int n] in
     let fv_tm = T.pack (T.Tv_FVar (T.pack_fv nm)) in
     T.write env.prim_acc ((record_tm, fv_tm) :: entries);
-    apply_passthrough fv_tm env.ctx_passthrough
+    apply_passthrough fv_tm prim_args
 
 (* Build a hoisted `PPS.prim` reference: builds the record term, then
    memoises through `env.prim_acc` and returns an `FVar` to the
@@ -483,10 +501,16 @@ let flush_prim_acc (env: lower_env): T.Tac (list T.sigelt) =
   let entries = T.read env.prim_acc in
   let prim_ty_tm: T.term =
     T.pack (T.Tv_FVar (T.pack_fv ["Pipit"; "Prim"; "Shallow"; "prim"])) in
+  (* Wrap order: outermost = `ctx_passthrough`, innermost = `static_binders`.
+     This mirrors the main core sigelt's `Tv_Abs passthrough (Tv_Abs
+     static ...)` shape, so call-site applications (built by
+     `intern_prim` via `apply_passthrough fv (passthrough @ static)`)
+     line up. *)
+  let helper_binders: list T.binder = L.append env.ctx_passthrough env.static_binders in
   let lb_typ_wrapped: T.term =
     L.fold_right
       (fun (b: T.binder) (acc: T.term) -> T.pack (T.Tv_Arrow b (T.C_Total acc)))
-      env.ctx_passthrough
+      helper_binders
       prim_ty_tm in
   let attrs: list T.term = [ `Pipit.Plugin.Interface.core_lifted_prim ] in
   let mk_sigelt (entry: T.term & T.term): T.Tac T.sigelt =
@@ -494,7 +518,7 @@ let flush_prim_acc (env: lower_env): T.Tac (list T.sigelt) =
     let def_wrapped: T.term =
       L.fold_right
         (fun (b: T.binder) (acc: T.term) -> T.pack (T.Tv_Abs b acc))
-        env.ctx_passthrough
+        helper_binders
         record_tm in
     let nm: R.name = match T.inspect fv_tm with
       | T.Tv_FVar fv -> T.inspect_fv fv
