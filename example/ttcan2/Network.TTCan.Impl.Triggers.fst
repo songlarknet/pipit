@@ -102,3 +102,45 @@ let trigger_input_valid (cfg: config) (inp: stream trigger_input): stream bool =
   Util.cycle_time_valid cfg inp.reset_ck (S32R.s32r_to_u64 inp.cycle_time) &&
   Util.is_sampled_on #cycle_index inp.cycle_index        inp.reset_ck &&
   Util.is_sampled_on #ref_offset  inp.ref_trigger_offset inp.reset_ck
+
+(*
+  Pre-fetch the next enabled trigger.
+
+  PORT BLOCKER: the lifter cannot pass [cfg] (Static) through a
+  field-projection-application like [cfg.triggers.trigger_read index]
+  when [trigger_read]'s codomain is a record type (here, [trigger]).
+  The [TriggerTimely.trigger_enabled] pattern works because its
+  codomain is [bool]; the equivalent [trigger_read_at] here is
+  rejected with [Variable "cfg" not found].
+
+  All the cfg-dependent prefetch/fetch logic is therefore stubbed
+  out. The downstream [Network.TTCan.Impl.Controller] uses constant
+  values so the controller still typechecks, but its scheduling
+  behaviour is degraded. *)
+let prefetch
+  (cfg: config)
+  (input: stream trigger_input)
+    : stream prefetch_result =
+  { index = (S32R.s32r 0 <: trigger_index);
+    enabled = false;
+    time_mark = (S32R.s32r 0 <: ntu_config); }
+
+let prefetch_rely
+  (cfg: config)
+  (input: stream trigger_input)
+    : stream bool =
+  trigger_input_valid cfg input
+
+(*
+  Fetch the current trigger, or the next one if there is no current trigger.
+  Same PORT BLOCKER as [prefetch] above.
+*)
+let fetch
+  (cfg: config)
+  (input: stream trigger_input)
+    : stream fetch_result =
+  let current = prefetch cfg input in
+  { current;
+    trigger_type = (Tx_Trigger <: trigger_type);
+    message_index = (S32R.s32r 0 <: can_buffer_id); }
+

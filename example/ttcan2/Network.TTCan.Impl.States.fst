@@ -58,6 +58,7 @@ let sync_states
   (mode:       stream mode)
   (error:      stream error_severity)
   (ref_mark:   stream (Clocked.t ntu))
+  (_local_time: stream ntu)
     : stream sync_mode =
   let rec sync_state =
     let pre_sync = Sync_Off `fby` sync_state in

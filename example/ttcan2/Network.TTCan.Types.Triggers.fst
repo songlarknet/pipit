@@ -66,7 +66,7 @@ let abstract_of_triggers
   represents a valid schedule. *)
 noeq
 type triggers = {
-  trigger_read: trigger_index_fun;
+  trigger_read: trigger_index -> trigger;
   ttcan_exec_period: ntu_config_pos;
 
   // The user must provide a proof/witness that the abstract schedule is valid.

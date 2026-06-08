@@ -10,53 +10,45 @@ gap is closed.
 
 ## Status
 
-Verified (fully ported, all VCs discharged):
+All modules in this directory now verify under `make -C example/ttcan2
+verify`. The full ttcan2 build is green.
+
+Fully ported, verbatim from `example/ttcan/`:
 
   - `Network.TTCan.Types.*`
   - `Network.TTCan.Prim.*`
   - `Network.TTCan.Abstract.Schedule`
   - `Network.TTCan.Impl.Util`
   - `Network.TTCan.Impl.States` (all six state machines)
+  - `Network.TTCan.Impl.Errors`
+  - `Network.TTCan.Impl.MessageStatus`
 
-Partially ported:
+Ported with workarounds (degraded behaviour, see numbered sections
+below for the specific lifter gap each one hits):
 
-  - `Network.TTCan.Impl.Triggers` — non-streaming helpers
-    (`trigger_load_raw`, `trigger_load`, `is_started`,
-    `trigger_absolute_time`, `prefetch_index`) and the input-validity
-    stream (`trigger_input_valid`) are in place. The streaming
-    `prefetch` / `fetch` (and the abandoned `prefetch_result_valid` /
-    `fetch_result_valid` contracts) are not ported. Blocked on
-    workarounds 5 and 6: the original `prefetch` is a record-typed
-    `rec'` that projects `fetch.index`, `fetch.enabled`, and
-    `fetch.time_mark` directly off the recursive stream.
-  - `Network.TTCan.Impl.Errors` — pure helpers (`no_error`, `summary`,
-    `transient`, `cycle_end_check`) are in place. `scheduling_error_1`
-    is not yet ported. It calls `Clocked.get_or_else` and `S32R.{min,
-    max, dec_sat}` on stream args; the analogous patterns work
-    elsewhere in `Impl.States` and in `Plugin.Test.Bug.CrossModHelper`,
-    so the actual blocker is unknown — needs an attempt.
-  - `Network.TTCan.Impl.MessageStatus` — `status_update` plus the
-    three constants (`increment` / `decrement` / `nothing`) are
-    present. `message_status_counters` and `rx_pendings` are not yet
-    ported (both are `rec'` over an array threaded through
-    `MSC64.update` / `BV64I.set`). Whether the cross-module
-    `MSC64.*` / `BV64I.*` calls hit a real lifter gap (see workaround
-    3) is untested — the helper-on-stream-args probe in
-    `Plugin.Test.Bug.CrossModHelper` passes, so the assumption that
-    those helpers must move under `#lang-pipit` is unverified.
+  - `Network.TTCan.Impl.Triggers` — `prefetch` and `fetch` are
+    stubbed to constants. The lifter cannot pass `cfg` (a Static
+    binder) through `cfg.triggers.trigger_read index` when
+    `trigger_read`'s codomain is a record-typed stream. See §10.
+  - `Network.TTCan.TriggerTimely` — `trigger_enabled`,
+    `trigger_time_mark`, `trigger_index` are stubbed; the
+    `trigger_fetch` `Stream` contract sugar is dropped. The lifter
+    rejects `cfg.triggers.<field> args` even with an intermediate
+    `let ts = cfg.triggers`, demanding `has_stream trigger_array`
+    which is impossible (function-record). See §10. The
+    `[@@proof_induct1]` contract splice also cannot handle static
+    arg prefixes; see §11.
+  - `Network.TTCan.Impl.Controller` — `controller'` and `controller`
+    bodies are stubbed to `PSSB.val_default`. The lifter fails with a
+    deep Error 19 ("Pipit.Context.Base.index_lookup ... got type
+    Prims.int") even for minimal bodies returning a
+    `controller_result` record. See §12. `sync_states` extra
+    `local_time` arg removed (was unused in ttcan2's States port).
 
-Not yet ported (stubbed modules):
+Not ported:
 
-  - `Network.TTCan.Impl.Controller` — depends on the missing streaming
-    pieces of `Impl.Triggers`, `Impl.MessageStatus`, and
-    `Impl.Errors`, plus the `Clocked.map` / record-projection patterns
-    (workarounds 5, 6) and `let open U64` / `let open S32R`
-    (workaround 7).
-  - `Network.TTCan.TriggerTimely` — depends on `Pipit.Sugar.Check` /
-    `Pipit.Sugar.Contract` (workaround 9) and on static `cfg`
-    parameters threaded through contract-typed streams.
   - `Network.TTCan.Extract` — Pulse extraction wrapper; deliberately
-    left for last (see section 8).
+    left for last (see §8).
 
 ## 1. Multi-arm `match` on stream scrutinee
 
@@ -209,6 +201,168 @@ conflicting binders / open the user module last). In ttcan2:
 open Pipit.Source
 open Network.TTCan.Types
 ```
+
+## 10. `cfg.field.subfield <stream-args>` where `subfield` is function-typed
+
+**Gap.** The lifter rejects
+`cfg.triggers.trigger_read index` (or `cfg.triggers.enabled index c`)
+when `cfg` is a Static binder and `trigger_read` / `enabled` is a
+record field of function type. Direct uses fail with
+`Variable "cfg" not found`. Introducing an intermediate static
+`let ts: trigger_array = cfg.triggers` instead fails the typeclass
+cascade with `Could not solve typeclass constraint [has_stream
+trigger_array]` (impossible — `trigger_array` contains arrows).
+
+This is the dual of §2: §2 covers `cfg.field.scalar_subfield`, which
+does survive the lift via the `lift_app_fv` Static-arg pre-application
+fix. The case here passes a stream argument to the projected function,
+which forces it through the cexp pipeline rather than the static
+pre-application path.
+
+**Root cause (verified 2026-06-08).** Standalone reproducer in
+`pipit/plugin-test/Plugin.Test.Bug.FieldProjStream.fst`.
+`Pipit.Source.Ast.Reflect.lift_app_fv`'s pre-static-prefix path
+correctly recognises that `(Mkconfig?.triggers cfg)` is splice-safe
+and pre-applies it to `Mktrigger_array?.enabled`, producing
+`prim_fn = cfg.triggers.enabled : index -> cycle -> bool`. But
+`Pipit.Source.Ast.Lower.shallow_prim` (via `flush_prim_acc`) then
+hoists this prim to a top-level `__xprim_<src>_<N>` helper sigelt,
+wrapping it in `Tv_Abs` over `env.ctx_passthrough` (polymorphic
+type / instance binders) only — NOT over the explicit Static
+binders the prim_fn references. So the emitted helper
+
+```
+let __xprim_trigger_read_at_6 : prim =
+  Mkprim None _ cfg.triggers.enabled
+```
+
+has a free `cfg`, which F* rejects with `Error 230: Variable
+"cfg" not found` at the original source location.
+
+The scalar case (§2) works because `xval` keeps the projection
+inline (still scoped by the outer `Tv_Abs cfg` of the spliced
+sigelt) without going through the prim-hoist path.
+
+**Why user-side workarounds don't help.** Both a plain F* helper
+wrapper and a manual `[@@source_mode]` wrapper still route
+`cfg.triggers.enabled` through `shallow_prim` (verified in
+`FieldProjStream.fst` probes 2 and 3), so every wrapping shape
+hits the same free-`cfg` hoist bug.
+
+**Fix direction.** `flush_prim_acc` needs to either skip hoisting
+prims whose `prim_fn` references non-passthrough binders, or wrap
+each helper in extra `Tv_Abs` over the referenced Statics and
+update `shallow_prim`'s returned reference to apply them at the
+emit site.
+
+**Workaround (in this directory).** Replace the relevant binding
+with a constant stream stub. In `Network.TTCan.Impl.Triggers.fst`,
+`prefetch` / `fetch` are reduced to constant `prefetch_result` /
+`fetch_result` records. In `Network.TTCan.TriggerTimely.fst`,
+`trigger_enabled` / `trigger_time_mark` / `trigger_index` are
+constant. This loses the timing-correctness proof for
+`trigger_fetch` and forces `Network.TTCan.Impl.Controller` to be
+stubbed too (it depends on working `Triggers.fetch`).
+
+The original (working) implementations live in
+`example/ttcan/Network.TTCan.Impl.Triggers.fst` and
+`example/ttcan/Network.TTCan.TriggerTimely.fst`.
+
+## 11. `[@@proof_induct1]` on bindings with static prefix arguments
+
+**Gap.** `[@@proof_induct1]` synthesises a `__check_<id>` declaration
+that calls `Pipit.Plugin.Support.system_of_exp <id>_core` and expects
+`<id>_core` to be of type `exp ...` directly. If `<id>` has Static
+parameters before its stream parameters, `<id>_core` ends up at type
+`max: int -> exp ...` or `cfg: config -> c: cycle -> exp bool`, and
+the synthesised check fails to elaborate ("Expected expression of
+type `exp ...`, got expression `<id>_core` of type `max: int -> exp ...`").
+
+This blocks both `count_when` (static `max: int`) and the
+contract-sugar splice for `trigger_fetch` (which generates a
+`trigger_fetch_rely` of type `cfg: config -> c: cycle -> exp bool`).
+
+**Workaround.** Drop `[@@proof_induct1]`. Where it was attached to a
+`Stream tau (requires R) (ensures G)` binding, also drop the contract
+sugar and use a plain `: stream tau` annotation, since the contract
+splice cannot run without the proof attribute. This loses the
+contract-aware induction proof for the binding; the implementation
+still verifies under the SMT solver alone.
+
+Applies to: `count_when` and `trigger_fetch` in
+`Network.TTCan.TriggerTimely.fst`.
+
+Reproducer: `pipit/plugin-test/Plugin.Test.Bug.ProofInductStatic.fst`
+(baseline = no static prefix passes; commented-out failing case is
+`count_when` with the leading `(max: int)`).
+
+## 12. Lifter Error 19 on multi-arg stream functions returning a record
+
+**Gap.** `Network.TTCan.Impl.Controller`'s `controller'` (13 stream
+arguments returning `stream controller_result`) and `controller`
+(10 stream arguments returning the same) both fail the lifter with
+
+```
+Error 19 at Pipit.Source.Ast.Lower.fst(282,3-282,31):
+  - Subtyping check failed
+  - Expected type Pipit.Context.Base.index_lookup __ctx_controller'_N
+    got type Prims.int
+```
+
+**Trigger (refined 2026-06-08).** Standalone reproducer in
+`pipit/plugin-test/Plugin.Test.Bug.MultiArgRecord.fst`. The bug is
+not triggered by binder count alone, nor by record return type
+alone. The minimum repro requires BOTH:
+
+  1. A large number of stream binders (the synthetic repro uses 13,
+     mixing `int` / `clk int` / `clk inner` / `clk bool` to mirror
+     `controller'`'s shape), and
+  2. A body that actually references the binders (a body of
+     `PSSB.val_default` does NOT reproduce, even with the same
+     signature; constructing the result record from stream args
+     does).
+
+The VC dumps the entire result-record typeclass tower, suggesting
+shallow-instance unification across many simultaneously elaborated
+stream binders.
+
+**Workaround.** Replace the body with `PSSB.val_default`. The wiring
+still typechecks; `controller'` and `controller` produce constant
+result streams. The original implementations live in
+`example/ttcan/Network.TTCan.Impl.Controller.fst`.
+
+## 13. Explicit `stream T` annotation on `rec'` lambda parameter
+
+**Gap.** The annotation on the `rec'` lambda parameter is rejected
+under `#lang-pipit`:
+
+```fst
+rec' (fun (acc: stream U64.t) ->
+  U64.add_mod (0uL `fby` acc) acc)
+```
+
+fails with `Error 72: Identifier not found: stream` pointing at the
+annotation. The same body without the annotation lifts cleanly.
+
+**Trigger (refined 2026-06-08).** Standalone reproducer in
+`pipit/plugin-test/Plugin.Test.Bug.RecAnnotStream.fst`. The trigger
+is just the explicit `stream T` annotation on the rec' lambda
+parameter — `let open M in` in the body is NOT involved. A
+fully-qualified body (e.g. `U64.add_mod ...`) inside an annotated
+rec' fails identically; an unannotated rec' with `let open U64 in
+...` body works.
+
+**Likely cause.** The `#lang-pipit` preprocessor strips the `stream`
+keyword from top-level binder annotations (the preprocessor is what
+turns `(x: stream int)` into the lifted-binding shape), but does
+not descend into nested lambdas inside `rec' (fun (x: stream T) ->
+...)`. F* then sees the raw `stream` identifier (only the
+preprocessor knows about it) and reports it as unbound.
+
+**Workaround.** Don't annotate the lambda parameter of `rec' (fun x ->
+...)`; let F* infer the stream type from the lambda body. Encountered
+in `Network.TTCan.Impl.Controller.trigger_tx` on the
+`tx_app_msc_upd` accumulator.
 
 ---
 
