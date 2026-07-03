@@ -2,6 +2,8 @@
 module Network.TTCan.Impl.Controller
 #lang-pipit
 
+#set-options "--fuel 256 --ifuel 256 --z3rlimit 500"
+
 open Pipit.Source
 module PSSB = Pipit.Prim.HasStream
 
@@ -218,14 +220,64 @@ let controller'
   (tx_msc_upd:    stream (Clocked.t bool))
   (rx_msc_upd:    stream (Clocked.t bool))
     : stream controller_result =
-  (* PORT BLOCKER: lifting this body verbatim from ttcan fails with an
-     Error 19 deep inside the lifter ("Expected type
-     Pipit.Context.Base.index_lookup __ctx_controller'_N got type
-     Prims.int"). Even minimal stub bodies trigger the same error,
-     suggesting an issue with the function's many [stream T] arguments
-     and the [controller_result] return record. Workaround: return
-     [PSSB.val_default]. *)
-  PSSB.val_default
+  let current         = fetch.current in
+  let trigger_enabled = current.enabled in
+  let trigger_msg     = fetch.message_index in
+  let trigger_type    = fetch.trigger_type in
+  let is_started      = Triggers.is_started_u64 cycle_time current.time_mark in
+
+  let msc_upd         = Clocked.or_else tx_msc_upd rx_msc_upd in
+  let msc             = MsgSt.message_status_counters trigger_msg msc_upd in
+
+  let tx_time_mark    = Triggers.trigger_absolute_time input.local_time cycle_time fetch.current.time_mark in
+
+  let watch_trigger =
+    trigger_type = Watch_Trigger &&
+    trigger_enabled &&
+    is_started in
+
+  let error_Watch_Trigger_Reached = Util.latch {
+    reset = (mode = Mode_Configure);
+    set   = Util.latch { reset = (mode = Mode_Configure); set = ref_ck; } && watch_trigger
+  } in
+
+  let error_Tx_Underflow =
+    Errors.cycle_end_check {
+      reset = ref_ck;
+      set   = sync_state = In_Schedule && false;
+    } in
+
+  let error_Tx_Overflow =
+    Errors.transient {
+      reset = ref_ck;
+      set   = sync_state = In_Schedule && false;
+    } in
+
+  let error_Scheduling_Error_1 = Errors.scheduling_error_1 ref_ck
+  (if Clocked.get_clock msc_upd
+   then Some msc
+   else None) in
+
+  let error_Scheduling_Error_2 = Errors.transient {
+    reset = ref_ck;
+    set   = Clocked.get_clock tx_msc_upd && msc = S32R.s32r 7 && trigger_type = Tx_Trigger;
+  } in
+
+  let fault_bits: stream fault_bits = {
+    scheduling_error_1 = error_Scheduling_Error_1;
+    tx_underflow = error_Tx_Underflow;
+    scheduling_error_2 = error_Scheduling_Error_2;
+    tx_overflow = error_Tx_Overflow;
+    can_bus_off = error_CAN_Bus_Off;
+    watch_trigger_reached = error_Watch_Trigger_Reached;
+  } in
+
+  let error = Errors.summary fault_bits in
+  let driver_enable_acks = (sync_state <> Sync_Off) && (error <> S3_Severe) in
+
+  { error; driver_enable_acks; tx_ref; tx_app; tx_time_mark; }
+
+#set-options "--fuel 128 --ifuel 128"
 
 let controller
   (cfg:           config)
@@ -240,7 +292,7 @@ let controller
                   stream bool)
   (error:         stream error_severity)
     : stream controller_result =
-  (* PORT BLOCKER: same lifter Error 19 as [controller'] above
-     (Pipit.Context.Base.index_lookup vs Prims.int). Stubbed for
-     the same reason. *)
-  PSSB.val_default
+  let tx_ref = trigger_ref cfg input.local_time input.tx_status input.bus_status cycle_index cycle_time fetch sync_state error in
+  let rx_msc_upd = trigger_rx input.rx_app cycle_time fetch in
+  let tx = trigger_tx cfg input.tx_status input.bus_status cycle_time fetch sync_state error in
+  controller' cfg input ref_ck mode cycle_time fetch sync_state error_CAN_Bus_Off error tx_ref (fst tx) (snd tx) rx_msc_upd
