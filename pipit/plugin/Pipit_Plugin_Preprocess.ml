@@ -51,6 +51,48 @@ let mk_rec_extract t id0 index: FPA.term =
   { t with tm = FPA.App (fst, x0, Nothing) }
 
 
+(* Collect ALL argument patterns from a top-level let pattern that are
+   statically-typed (no `stream` type annotation), filtering out stream
+   binders wherever they appear.  In F*'s surface syntax, top-level
+   function arguments live in the LHS pattern as
+     PatAscribed (PatApp (f, [arg1; arg2; ...]), ret_ty)
+   rather than as Abs binders on the RHS body.
+
+   Collecting ALL statics (not just a leading prefix) is necessary for
+   mixed argument lists such as
+     (inc: stream bool) (max: int)
+   where the static `max` follows a stream binder.  The lifter always
+   hoists static binders to the outermost positions of `_core` in
+   source order, so filtering preserves the right application order.
+
+   Must be called on the ORIGINAL pattern (before mode_of_pattern strips
+   the `stream` annotations), because `stream` is the only marker
+   distinguishing static from stream binders. *)
+let rec static_pat_binders (p: FPA.pattern): FPA.pattern list =
+  match p.pat with
+  | FPA.PatAscribed (inner, _) -> static_pat_binders inner
+  | FPA.PatApp (_, args) ->
+    List.filter_map (fun arg ->
+      let (m, _, _) = Pipit_Plugin_Support.mode_of_pattern arg in
+      if Pipit_Plugin_Support.mode_any_stream m
+      then None   (* stream binder: skip *)
+      else Some arg
+    ) args
+  | _ -> []
+
+(* Extract a `Var <id>` term from a simple binder pattern
+   (`PatVar id` or `PatAscribed (PatVar id, ...)`).  Used to build the
+   static-arg applications inside a parameterised `__check_<id>`. *)
+let rec pat_var_term (range: FStarC_Range.range) (p: FPA.pattern): FPA.term =
+  let level = FPA.Expr in
+  match p.pat with
+  | FPA.PatAscribed (inner, _) -> pat_var_term range inner
+  | FPA.PatVar (id, _, _) ->
+    { tm = FPA.Var (FI.lid_of_ids [id]); range; level }
+  | _ ->
+    Pipit_Plugin_Support.fatal range
+      "proof_induct1: cannot extract variable from static binder pattern"
+
 let rec pre_term (t: FPA.term): FPA.term =
   let go2 (t,i) = (pre_term t, i) in
 
@@ -63,8 +105,14 @@ let rec pre_term (t: FPA.term): FPA.term =
   | Construct (l,ts) ->
     { t with tm = Construct (l, List.map go2 ts) }
   | Abs (ps, body) ->
-    (* TODO map mode_of_pat ps, but where to introduce attrs? *)
-    { t with tm = Abs (ps, pre_term body) }
+    (* Strip `stream` from parameter type annotations (like pre_letbind does
+       for let bindings). Attributes are not attached here since Abs parameters
+       are not top-level; stream-mode is already captured by mode_of_pattern. *)
+    let ps' = List.map (fun p ->
+      let (_, _, p') = Pipit_Plugin_Support.mode_of_pattern p in
+      p'
+    ) ps in
+    { t with tm = Abs (ps', pre_term body) }
   | Function (br,r) ->
     { t with tm = Function (List.map pre_branch br, r)}
   | App (a, b, c) ->
@@ -262,6 +310,7 @@ let mk_derive_has_stream_splice
 let mk_check_induct1_decl
     (pat: FPA.pattern)
     (mode: Pipit_Plugin_Support.mode)
+    (static_pats: FPA.pattern list)
     (expect_failure: bool)
     (drange: FStarC_Range.range): FPA.decl =
   let open FPA in
@@ -271,10 +320,17 @@ let mk_check_induct1_decl
   let core_id  = FI.mk_ident (FI.string_of_id id ^ "_core",  range) in
   let check_id = FI.mk_ident ("__check_" ^ FI.string_of_id id, range) in
   let core_var = { tm = Var (FI.lid_of_ids [core_id]); range; level } in
+  (* Apply any leading static binders to core_var, producing e.g.
+     `count_when_core max` from `count_when_core` and `[max_pat]`. *)
+  let core_applied =
+    List.fold_left (fun app p ->
+      mkExplicitApp app [pat_var_term range p] range
+    ) core_var static_pats
+  in
   let mk_lid_var lid =
     { tm = Var (lid range); range; level }
   in
-  let sys_expr   = mkExplicitApp (mk_lid_var Pipit_Plugin_Support.system_of_exp_lid) [core_var] range in
+  let sys_expr   = mkExplicitApp (mk_lid_var Pipit_Plugin_Support.system_of_exp_lid) [core_applied] range in
   let ind_expr   = mkExplicitApp (mk_lid_var Pipit_Plugin_Support.induct1_lid)        [sys_expr] range in
   let nil_list   = { tm = ListLiteral []; range; level } in
   let norm_call  = mkExplicitApp (mk_lid_var Pipit_Plugin_Support.norm_full_lid)      [nil_list] range in
@@ -286,10 +342,18 @@ let mk_check_induct1_decl
     range; level
   } in
   let assert_call = mkExplicitApp (mk_lid_var Pipit_Plugin_Support.assert_by_tactic_lid) [ind_expr; thunk_term] range in
-  let bless_call  = mkExplicitApp (mk_lid_var Pipit_Plugin_Support.bless_lid)            [core_var] range in
+  let bless_call  = mkExplicitApp (mk_lid_var Pipit_Plugin_Support.bless_lid)            [core_applied] range in
   let body = { tm = Seq (assert_call, bless_call); range; level } in
+  (* If there are static prefix binders, wrap the body in an Abs so
+     the emitted declaration reads:
+       let __check_count_when (max: int) = assert ...; bless (count_when_core max)
+     rather than a raw value that fails to elaborate at `system_of_exp`. *)
+  let check_body = match static_pats with
+    | [] -> body
+    | _  -> { tm = Abs (static_pats, body); range; level }
+  in
   let check_pat = { pat = PatVar (check_id, None, []); prange = range } in
-  let let_decl = TopLevelLet (NoLetQualifier, [(check_pat, body)]) in
+  let let_decl = TopLevelLet (NoLetQualifier, [(check_pat, check_body)]) in
   let src_vquote = {
     tm = VQuote { tm = Var (FI.lid_of_ids [id]); range; level };
     range; level
@@ -336,6 +400,7 @@ let mk_check_induct1_decl
 let mk_contract_decl
     (pat: FPA.pattern)
     (mode: Pipit_Plugin_Support.mode)
+    (static_pats: FPA.pattern list)
     (rely: FI.ident)
     (guar: FI.ident)
     (drange: FStarC_Range.range): FPA.decl =
@@ -353,9 +418,16 @@ let mk_contract_decl
   let mk_local_var (i: FI.ident) =
     { tm = Var (FI.lid_of_ids [i]); range; level }
   in
-  let r_var = mk_local_var rely_core_id in
-  let g_var = mk_local_var guar_core_id in
-  let b_var = mk_local_var core_id in
+  (* Apply any leading static binders to each core var, producing e.g.
+     `rely_core cfg` / `guar_core cfg` / `body_core cfg`. *)
+  let apply_static base =
+    List.fold_left (fun app p ->
+      mkExplicitApp app [pat_var_term range p] range
+    ) base static_pats
+  in
+  let r_var = apply_static (mk_local_var rely_core_id) in
+  let g_var = apply_static (mk_local_var guar_core_id) in
+  let b_var = apply_static (mk_local_var core_id) in
   let sys_expr =
     mkExplicitApp (mk_lid_var Pipit_Plugin_Support.system_of_contract_lid)
       [r_var; g_var; b_var] range in
@@ -376,8 +448,14 @@ let mk_contract_decl
     mkExplicitApp (mk_lid_var Pipit_Plugin_Support.bless_contract_lid)
       [r_var; g_var; b_var] range in
   let body = { tm = Seq (assert_call, bless_call); range; level } in
+  (* Same Abs-wrap as mk_check_induct1_decl: static prefix args become
+     top-level parameters of <id>_contract. *)
+  let contract_body = match static_pats with
+    | [] -> body
+    | _  -> { tm = Abs (static_pats, body); range; level }
+  in
   let contract_pat = { pat = PatVar (contract_id, None, []); prange = range } in
-  let let_decl = TopLevelLet (NoLetQualifier, [(contract_pat, body)]) in
+  let let_decl = TopLevelLet (NoLetQualifier, [(contract_pat, contract_body)]) in
   let src_vquote = {
     tm = VQuote { tm = Var (FI.lid_of_ids [id]); range; level };
     range; level
@@ -588,6 +666,10 @@ let rec pre_decl (r: FStarC_Range.range) (d: FPA.decl) =
        if Pipit_Plugin_Support.mode_any_stream pm
        then begin
          let attr = Pipit_Plugin_Support.quote_mode_attr pm r in
+         (* Collect static prefix binders from the ORIGINAL pattern before
+            mode_of_pattern strips the `stream` annotations that distinguish
+            static from stream binders. *)
+         let static_pats = static_pat_binders pat in
          let tm = pre_term tm in
          (* prerr_endline (FPA.term_to_string tm); *)
          let splice = { d with d = mk_splice pat pm; attrs = []; quals = [] } in
@@ -596,9 +678,9 @@ let rec pre_decl (r: FStarC_Range.range) (d: FPA.decl) =
          let proof_check =
            match parsed.proof with
            | Some Pipit_Plugin_Attributes.Induct1 ->
-             [mk_check_induct1_decl pat pm parsed.proof_expect_failure r]
+             [mk_check_induct1_decl pat pm static_pats parsed.proof_expect_failure r]
            | Some (Pipit_Plugin_Attributes.Contract { rely; guar }) ->
-             [mk_contract_decl pat pm rely guar r]
+             [mk_contract_decl pat pm static_pats rely guar r]
            | None -> []
          in
          Inr ([{ d with d = TopLevelLet (NoLetQualifier, [pp, tm]); attrs = attr :: src_attrs };

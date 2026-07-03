@@ -23,15 +23,18 @@
    sees the raw `stream` identifier (which only the preprocessor
    resolves) and reports "Identifier not found: stream".
 
+   Fixed: `pre_term`'s `Abs` case now applies `mode_of_pattern` to
+   each lambda parameter, stripping `stream` from type annotations
+   just like `pre_letbind` does for top-level let bindings. The
+   parameter type annotation is processed before F* sees it.
+
    This file pins the boundary:
      - `eg_rec_unannot` (baseline) — no annotation on the rec'
        lambda param. Works.
-     - `eg_rec_annot` (commented out, even without let open) —
-       reproduces "Identifier not found: stream".
+     - `eg_rec_annot` — now PASSES after the fix.
 
-   Uncomment to reproduce. When fixed (e.g. by having the
-   preprocessor descend into rec' lambdas), remove the comment-out
-   and drop workaround 13 from `example/ttcan2/README.md`. *)
+   Remove this TODO comment and workaround 13 from
+   `example/ttcan2/README.md` once the fix ships. *)
 module Plugin.Test.Bug.RecAnnotStream
 #lang-pipit
 
@@ -67,7 +70,11 @@ let eg_rec_unannot_let_open (x: stream U64.t): stream U64.t =
    parameter is annotated.
 
    Commented out so the rest of the module compiles. *)
-//
-// let eg_rec_annot (x: stream U64.t): stream U64.t =
-//   rec' (fun (acc: stream U64.t) ->
-//     U64.add_mod (0uL `fby` acc) x)
+let eg_rec_annot (x: stream U64.t): stream U64.t =
+  rec' (fun (acc: stream U64.t) ->
+    U64.add_mod (0uL `fby` acc) x)
+
+let eg_inner_let_stream_annot (x: stream U64.t): stream U64.t =
+  rec' (fun (acc: stream U64.t) ->
+    let count': stream U64.t = U64.add_mod (0uL `fby` acc) x in
+    count')

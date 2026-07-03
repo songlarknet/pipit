@@ -47,24 +47,33 @@ let count_when_no_static (inc: stream bool): stream int =
    but `__core_count_when` has type `max: int -> exp ...`, so the
    elaboration fails inside the splice itself.
 
-(* Failing case: identical body but the bound `100` is lifted to a
-   Static `max: int` parameter. The auto-emitted `__check_count_when`
-   splice tries to evaluate
-     assert (induct1 (system_of_exp __core_count_when))
-   but `__core_count_when` has type `max: int -> exp ...`, so the
-   elaboration fails inside the splice itself with
+   Fixed: `mk_check_induct1_decl` now extracts the static prefix
+   binders and emits:
+     let __check_count_when (max: int) =
+       assert (induct1 (system_of_exp (count_when_core max))) by ...
 
-     Error 189: Expected expression of type Pipit.Exp.Base.exp _ _ _
-                got expression count_when_core
-                of type max: Prims.int -> Pipit.Exp.Base.exp _ _ _
+   Both the baseline (no static arg) and the static-prefix case now
+   verify. Remove this TODO comment and workaround 11 from
+   example/ttcan2/README.md once TriggerTimely is re-enabled. *)
 
-   Commented out so the rest of the module compiles. *)
-//
-// [@@proof_induct1]
-// let count_when (max: int) (inc: stream bool): stream int =
-//   let rec count =
-//     let count' = (0 `fby` count) + (if inc then 1 else 0) in
-//     if count' > max then max else count'
-//   in
-//   check (0 <= count && count <= max);
-//   count
+[@@proof_induct1]
+let count_when (max: int { max >= 0 }) (inc: stream bool): stream int =
+  let rec count =
+    let count' = (0 `fby` count) + (if inc then 1 else 0) in
+    if count' > max then max else count'
+  in
+  check (0 <= count && count <= max);
+  count
+
+(* Mixed ordering: stream arg before static arg.  The lifter still hoists
+   `max` as the outermost binder of `count_when_mixed_core`, so
+   `__check_count_when_mixed` must apply `max` even though it follows
+   `inc` in source order. *) 
+[@@proof_induct1]
+let count_when_mixed (inc: stream bool) (max: int { max >= 0 }): stream int =
+  let rec count =
+    let count' = (0 `fby` count) + (if inc then 1 else 0) in
+    if count' > max then max else count'
+  in
+  check (0 <= count && count <= max);
+  count
