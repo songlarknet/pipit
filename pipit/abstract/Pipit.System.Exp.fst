@@ -103,10 +103,10 @@ let rec system_of_exp
     | XLet b e1 e2 ->
       system_let (fun i v -> (v, i)) (system_of_exp e1) (system_of_exp e2)
     | XCheck status e1 ->
-      system_check "XCheck" status (system_of_exp e1)
+      system_check "XCheck" status (system_map_result bool_to_prop (system_of_exp e1))
     | XContract status rely guar impl ->
-      let tr = system_of_exp rely in
-      let tg = system_of_exp guar in
+      let tr = system_map_result bool_to_prop (system_of_exp rely) in
+      let tg = system_map_result bool_to_prop (system_of_exp guar) in
       system_contract_instance status tr tg
 
 and system_of_exp_apps
@@ -131,7 +131,7 @@ let system_of_contract
   (g: exp t (a :: c) t.propty)
   (i: exp t       c         a):
     system (row c) (oracle_of_contract_definition r g i) (state_of_contract_definition r g i) (t.ty_sem a) =
-  let tr = system_of_exp r in
-  let tg = system_of_exp g in
+  let tr = system_map_result bool_to_prop (system_of_exp r) in
+  let tg = system_map_result bool_to_prop (system_of_exp g) in
   let ti = system_of_exp i in
   system_contract_definition tr tg ti
