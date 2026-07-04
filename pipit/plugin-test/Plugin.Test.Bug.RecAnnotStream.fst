@@ -33,8 +33,8 @@
        lambda param. Works.
      - `eg_rec_annot` — now PASSES after the fix.
 
-   Remove this TODO comment and workaround 13 from
-   `example/ttcan2/README.md` once the fix ships. *)
+  Remove this TODO comment and workaround 13 from
+  `example/ttcan/readme.md` once the fix ships. *)
 module Plugin.Test.Bug.RecAnnotStream
 #lang-pipit
 

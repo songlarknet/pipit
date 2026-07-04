@@ -5,9 +5,7 @@
   *)
 module Network.TTCan.Prim.MSC64
 
-module SugarBase = Pipit.Sugar.Base
-module Sugar     = Pipit.Sugar.Shallow
-module SugarTac  = Pipit.Sugar.Shallow.Tactics
+module PSSB  = Pipit.Prim.HasStream
 
 module BV64  = PipitRuntime.Bits.BV64
 module BV64X3 = PipitRuntime.Bits.BV64.X3
@@ -23,7 +21,7 @@ type index_t = Types.trigger_index
 
 type t = BV64X3.t
 
-instance has_stream_t: Sugar.has_stream t = {
+instance has_stream_t: PSSB.has_stream t = {
   ty_id = [`%t];
   val_default = BV64X3.zero;
 }

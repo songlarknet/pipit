@@ -13,8 +13,8 @@
 
    This file pins the current behaviour as a regression probe. If a
    future change re-breaks the projector form, comment out the
-   `eg_map_proj_*` cases below and re-add the workaround to
-   `example/ttcan2/README.md`. *)
+  `eg_map_proj_*` cases below and re-add the workaround to the TTCAN
+  notes in `example/ttcan/readme.md`. *)
 module Plugin.Test.Bug.MapProjector
 #lang-pipit
 

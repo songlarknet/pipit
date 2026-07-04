@@ -20,8 +20,8 @@
        leading `(max: int)`; `[@@proof_induct1]` cannot elaborate.
 
    Uncomment the second block to reproduce. When fixed, drop the
-   comment-out and remove workaround 11 from
-   `example/ttcan2/README.md`. *)
+  comment-out and remove workaround 11 from the TTCAN notes in
+  `example/ttcan/readme.md`. *)
 module Plugin.Test.Bug.ProofInductStatic
 #lang-pipit
 
@@ -53,8 +53,8 @@ let count_when_no_static (inc: stream bool): stream int =
        assert (induct1 (system_of_exp (count_when_core max))) by ...
 
    Both the baseline (no static arg) and the static-prefix case now
-   verify. Remove this TODO comment and workaround 11 from
-   example/ttcan2/README.md once TriggerTimely is re-enabled. *)
+  verify. Remove this TODO comment and workaround 11 from
+  example/ttcan/readme.md once TriggerTimely is re-enabled. *)
 
 [@@proof_induct1]
 let count_when (max: int { max >= 0 }) (inc: stream bool): stream int =

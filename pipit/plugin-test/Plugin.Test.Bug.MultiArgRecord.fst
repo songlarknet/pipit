@@ -20,8 +20,8 @@
      - `eg_many_args_min_body` (commented out) — large N stream args,
        record return, `PSSB.val_default` body: reproduces Error 19.
 
-   Uncomment to reproduce. When fixed, remove the comment-out and drop
-   workaround 12 from `example/ttcan2/README.md`. *)
+  Uncomment to reproduce. When fixed, remove the comment-out and drop
+  workaround 12 from `example/ttcan/readme.md`. *)
 module Plugin.Test.Bug.MultiArgRecord
 #lang-pipit
 

@@ -2,8 +2,8 @@
 
 Self-contained reproduction of the apparent SMT/lifter explosion seen
 when checking `Network.TTCan.Impl.States.master_modes` and (worse)
-`tx_ref_messages`. See `example/ttcan2/README.md` §D for the full
-analysis and proposed workaround.
+`tx_ref_messages`. See TTCAN notes in `example/ttcan/readme.md` and
+git history for detailed analysis and prior workarounds.
 
 These files are deliberately **not** built by `make verify` in
 `pipit/plugin-test/`. V1 alone is ~2.5 min; V2b and V2c blow up the

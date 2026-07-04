@@ -10,8 +10,8 @@
      - `eg_map_lambda` (failing): pass `(fun p -> p.px)` directly.
 
    When anonymous-lambda map arguments start working, drop the
-   `[@@expect_failure]` and remove workaround 5 from
-   `example/ttcan2/README.md`. *)
+  `[@@expect_failure]` and remove workaround 5 from the TTCAN notes
+  in `example/ttcan/readme.md`. *)
 module Plugin.Test.Bug.MapLambda
 #lang-pipit
 

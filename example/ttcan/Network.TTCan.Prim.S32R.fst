@@ -4,7 +4,7 @@
 *)
 module Network.TTCan.Prim.S32R
 
-module Sugar     = Pipit.Sugar.Shallow
+module PSSB      = Pipit.Prim.HasStream
 
 module REPR    = FStar.Int32
 module Int     = FStar.Int
@@ -27,7 +27,7 @@ let s32r (#b: bounds) (x: int { b.min <= x /\ x <= b.max })
   { repr = REPR.int_to_t x }
 
 // disable instance: each instance should instantiate itself
-let has_stream_S32R (b: bounds): Sugar.has_stream (t b) = {
+let has_stream_S32R (b: bounds): PSSB.has_stream (t b) = {
   ty_id = [`%t; string_of_int b.min; string_of_int b.max];
   val_default = s32r b.min;
 }

@@ -14,8 +14,8 @@
 
    This file pins the current behaviour as a regression probe. If a
    future change re-breaks the explicit form, comment out the
-   `eg_pre_explicit_*` cases below and re-add the workaround to
-   `example/ttcan2/README.md`. *)
+  `eg_pre_explicit_*` cases below and re-add the workaround to the
+  TTCAN notes in `example/ttcan/readme.md`. *)
 module Plugin.Test.Bug.PreExplicitType
 #lang-pipit
 

@@ -9,9 +9,9 @@
    operators lift cleanly inside a `let open U64 in ...` block.
 
    This file pins the current behaviour as a regression probe. If a
-   future change re-breaks operator resolution under `let open`,
-   comment out the `eg_ops_let_open_*` cases below and re-add the
-   workaround to `example/ttcan2/README.md`. *)
+  future change re-breaks operator resolution under `let open`,
+  comment out the `eg_ops_let_open_*` cases below and re-add the
+  workaround to the TTCAN notes in `example/ttcan/readme.md`. *)
 module Plugin.Test.Bug.LetOpenOps
 #lang-pipit
 

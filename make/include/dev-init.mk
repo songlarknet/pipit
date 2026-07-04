@@ -34,8 +34,9 @@ dev-refresh:
 	@echo "* Using OPAMMAKE=$(OPAM_MAKE)"
 	@echo "* Using PATH prefix $(OPAM_GNUBIN_DIR)"
 	@echo "* Ensuring ocamlfind and visitors in local switch"
-	@$(OPAM_ENV_PREFIX) OPAMMAKE=$(OPAM_MAKE) opam install --switch . --yes --no-depexts ocamlfind visitors
+	@$(OPAM_ENV_PREFIX) OPAMMAKE=$(OPAM_MAKE) opam install --switch . --yes --no-depexts ocamlfind visitors ocaml-lsp-server
 	@echo "* Re-pinning F* to $(FSTAR_PIN_HASH)"
 	@$(OPAM_ENV_PREFIX) OPAMMAKE=$(OPAM_MAKE) opam pin add fstar git+$(FSTAR_PIN_REPO)#$(FSTAR_PIN_HASH) --yes --no-depexts
+	@echo "* Note: current karamel pin may fail against this F* pin (expects --cmi). If that happens, update karamel pin or use prior matching F* commit."
 	@echo "* Re-pinning karamel to $(KARAMEL_PIN_HASH)"
 	@$(OPAM_ENV_PREFIX) LOWSTAR=false OPAMMAKE=$(OPAM_MAKE) opam pin add karamel git+$(KARAMEL_PIN_REPO)#$(KARAMEL_PIN_HASH) --yes --no-depexts
