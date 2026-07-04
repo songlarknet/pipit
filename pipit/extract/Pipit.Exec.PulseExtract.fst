@@ -1,5 +1,5 @@
 (* Simple Pulse-based integration for mutable state extraction. *)
-module Pipit.Exec.Pulse
+module Pipit.Exec.PulseExtract
 #lang-pulse
 
 open Pulse.Lib.Pervasives
@@ -15,7 +15,7 @@ module S = FStar.String
 
 let tac_extract_full_strong_core (namespaces: list string) (local_delta: list string) =
   let base_delta = [
-    "Pipit.Exec.Pulse.mk_step_pure";
+    "Pipit.Exec.PulseExtract.mk_step_pure";
     "Pipit.Context.Row.index";
     "FStar.Pervasives.coerce_eq"
   ] in
@@ -195,7 +195,7 @@ let tac_extract (namespaces: list string) () =
 
 let tac_extract_full_generic (namespaces: list string) (local_delta: list string) () =
   let base_delta = [
-    "Pipit.Exec.Pulse.mk_step_pure";
+    "Pipit.Exec.PulseExtract.mk_step_pure";
     "Pipit.Context.Row.index";
     "FStar.Pervasives.coerce_eq"
   ] in
@@ -219,12 +219,12 @@ let tac_specialize_generic (namespaces: list string) (local_delta: list string) 
     primops;
     delta_namespace namespaces;
     delta_only (local_delta @ [
-      "Pipit.Exec.Pulse.mk_init";
-      "Pipit.Exec.Pulse.mk_step_pure";
-      "Pipit.Exec.Pulse.mk_reset";
-      "Pipit.Exec.Pulse.mk_step";
-      "Pipit.Exec.Pulse.mk_reset_sys";
-      "Pipit.Exec.Pulse.mk_step_sys";
+      "Pipit.Exec.PulseExtract.mk_init";
+      "Pipit.Exec.PulseExtract.mk_step_pure";
+      "Pipit.Exec.PulseExtract.mk_reset";
+      "Pipit.Exec.PulseExtract.mk_step";
+      "Pipit.Exec.PulseExtract.mk_reset_sys";
+      "Pipit.Exec.PulseExtract.mk_step_sys";
       "Pipit.Context.Row.index";
       "FStar.Pervasives.coerce_eq"
     ])
@@ -237,12 +237,12 @@ let tac_extract_full_strong_generic (namespaces: list string) (local_delta: list
 
 let tac_specialize_strong_generic (namespaces: list string) (local_delta: list string) () =
   let base_delta = [
-    "Pipit.Exec.Pulse.mk_init";
-    "Pipit.Exec.Pulse.mk_step_pure";
-    "Pipit.Exec.Pulse.mk_reset";
-    "Pipit.Exec.Pulse.mk_step";
-    "Pipit.Exec.Pulse.mk_reset_sys";
-    "Pipit.Exec.Pulse.mk_step_sys";
+    "Pipit.Exec.PulseExtract.mk_init";
+    "Pipit.Exec.PulseExtract.mk_step_pure";
+    "Pipit.Exec.PulseExtract.mk_reset";
+    "Pipit.Exec.PulseExtract.mk_step";
+    "Pipit.Exec.PulseExtract.mk_reset_sys";
+    "Pipit.Exec.PulseExtract.mk_step_sys";
     "Pipit.Context.Row.index";
     "FStar.Pervasives.coerce_eq"
   ] in

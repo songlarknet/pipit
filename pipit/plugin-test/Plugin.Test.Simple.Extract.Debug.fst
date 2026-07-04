@@ -24,7 +24,7 @@ open Pipit.Plugin.Interface
 open Pipit.Source
 
 module XX  = Pipit.Exec.Exp
-module XL  = Pipit.Exec.Pulse
+module XL  = Pipit.Exec.PulseExtract
 module SL  = Pipit.Exp.SimplifyLet
 module PT  = Pipit.Tactics
 module Tac = FStar.Tactics

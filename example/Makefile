@@ -11,7 +11,7 @@ FSTAR_ALREADY_CACHED ?=
 # Silence F* warning 249 ("Losing precision when encoding a function literal")
 # emitted by the SMT encoder for each Pulse [fn] splice in this component.
 # The warning is encoder imprecision, not a soundness issue; see the comment
-# above [mk_reset] / [mk_step] in [pipit/extract/Pipit.Exec.Pulse.fst] for
+# above [mk_reset] / [mk_step] in [pipit/extract/Pipit.Exec.PulseExtract.fst] for
 # details. An in-file [#set-options]/[#push-options] pragma only catches half
 # of the warnings emitted during splice processing, so we apply the flag at
 # the CLI level here.

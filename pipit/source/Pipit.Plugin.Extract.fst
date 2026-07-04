@@ -41,7 +41,7 @@ module PSAU = Pipit.Source.Ast.Util
 
 module SL  = Pipit.Exp.SimplifyLet
 module XX  = Pipit.Exec.Exp
-module XL  = Pipit.Exec.Pulse
+module XL  = Pipit.Exec.PulseExtract
 module PT  = Pipit.Tactics
 
 
