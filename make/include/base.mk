@@ -17,7 +17,7 @@ FSTAR_PROOF_OPT   ?=
 FSTAR_ALL_INC_DIRS ?= $(addprefix $(PIPIT_DIR)/,$(FSTAR_INC_DIRS)) $(FSTAR_SRC_DIRS)
 # FSTAR_ALL_INC_DIRS ?= $(patsubst %,$(BUILD)/%/cache,$(FSTAR_INC_DIRS)) $(addprefix $(PIPIT_DIR)/,$(FSTAR_INC_DIRS)) $(FSTAR_SRC_DIRS)
 FSTAR_INCLUDES	  ?= $(addprefix --include ,$(FSTAR_ALL_INC_DIRS))
-FSTAR_CACHE       ?= --cache_dir $(BUILD)/cache --cache_checked_modules --already_cached Prims,FStar,LowStar,$(FSTAR_ALREADY_CACHED)
+FSTAR_CACHE       ?= --cache_dir $(BUILD)/cache --cache_checked_modules --already_cached Prims,FStar,LowStar,Pulse,PulseCore,$(FSTAR_ALREADY_CACHED)
 
 FSTAR_DEP_OPT     ?= $(FSTAR_INCLUDES) $(FSTAR_CACHE)
 
