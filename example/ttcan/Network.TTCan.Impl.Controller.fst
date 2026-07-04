@@ -23,6 +23,7 @@ module UInt8 = FStar.UInt8
 module UInt64= FStar.UInt64
 module Cast  = FStar.Int.Cast
 
+[@@derive_has_stream]
 type driver_input = {
   local_time:  ntu;
   mode_cmd:    Clocked.t mode;
@@ -33,6 +34,7 @@ type driver_input = {
 }
 
 (* Result of top-level controller node *)
+[@@derive_has_stream]
 type controller_result = {
   error:         error_severity;
 
@@ -44,6 +46,7 @@ type controller_result = {
   tx_time_mark:  ntu;
 }
 
+[@@derive_has_stream]
 type modes_result = {
   mode: mode;
   ref_ck: bool;
@@ -53,23 +56,6 @@ type modes_result = {
   sync_state: sync_mode;
   error_CAN_Bus_Off: bool;
   error: error_severity;
-}
-
-
-(**** Streaming boilerplate: struct stream instances ****)
-instance has_stream_driver_input: PSSB.has_stream driver_input = {
-  ty_id       = [`%driver_input];
-  val_default = { local_time = PSSB.val_default; mode_cmd = PSSB.val_default; tx_status = PSSB.val_default; bus_status = PSSB.val_default; rx_ref = PSSB.val_default; rx_app = PSSB.val_default; } <: driver_input;
-}
-
-instance has_stream_controller_result: PSSB.has_stream controller_result = {
-  ty_id       = [`%controller_result];
-  val_default = { error = PSSB.val_default; driver_enable_acks = PSSB.val_default; tx_ref = PSSB.val_default; tx_app = PSSB.val_default; tx_time_mark = PSSB.val_default; } <: controller_result;
-}
-
-instance has_stream_modes_result: PSSB.has_stream modes_result = {
-  ty_id       = [`%modes_result];
-  val_default = { mode = PSSB.val_default; ref_ck = PSSB.val_default; cycle_index = PSSB.val_default; cycle_time = PSSB.val_default; ref_trigger_offset = PSSB.val_default; sync_state = PSSB.val_default; error_CAN_Bus_Off = PSSB.val_default; error = PSSB.val_default; } <: modes_result
 }
 
 

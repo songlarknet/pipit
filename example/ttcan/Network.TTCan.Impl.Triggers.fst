@@ -16,6 +16,7 @@ open Network.TTCan.Types
 module UInt64 = FStar.UInt64
 
 (* Cycle and time information required by fetch and prefetch *)
+[@@derive_has_stream]
 type trigger_input = {
   reset_ck:           bool;
   cycle_time:         ntu_config;
@@ -25,32 +26,18 @@ type trigger_input = {
 
 type time_end_of_frame = S32R.t { min = 0; max = 13072; }
 
+[@@derive_has_stream]
 type prefetch_result = {
   index:     trigger_index;
   enabled:   bool;
   time_mark: ntu_config;
 }
 
+[@@derive_has_stream]
 type fetch_result = {
   current:      prefetch_result;
   trigger_type: trigger_type;
   message_index: can_buffer_id;
-}
-
-(* has_stream instances for the records (manual since cfg-aware records aren't liftable yet). *)
-instance has_stream_trigger_input: PSSB.has_stream trigger_input = {
-  ty_id       = [`%trigger_input];
-  val_default = { reset_ck = PSSB.val_default; cycle_time = PSSB.val_default; cycle_index = PSSB.val_default; ref_trigger_offset = PSSB.val_default; };
-}
-
-instance has_stream_prefetch_result: PSSB.has_stream prefetch_result = {
-  ty_id       = [`%prefetch_result];
-  val_default = { enabled = PSSB.val_default; index = PSSB.val_default; time_mark = PSSB.val_default; };
-}
-
-instance has_stream_fetch_result: PSSB.has_stream fetch_result = {
-  ty_id       = [`%fetch_result];
-  val_default = { current = PSSB.val_default; trigger_type = PSSB.val_default; message_index = PSSB.val_default; };
 }
 
 (**** Non-streaming helper functions ****)
