@@ -3,6 +3,7 @@ module Pipit.Exec.Pulse
 #lang-pulse
 
 open Pulse.Lib.Pervasives
+open FStar.List.Tot
 module R = Pulse.Lib.Reference
 
 module EE = Pipit.Exec.Exp

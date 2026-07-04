@@ -18,7 +18,7 @@ module PM = Pipit.Prop.Metadata
 
 module T    = FStar.Tactics
 
-#push-options "--split_queries always"
+#set-options "--split_queries always"
 
 
 let step_XLet_obl' (#t: table) (#c: context t) (#a b: t.ty)

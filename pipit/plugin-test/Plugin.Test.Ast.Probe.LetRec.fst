@@ -13,6 +13,8 @@
    fail to parse to record results. *)
 module Plugin.Test.Ast.Probe.LetRec
 
+#set-options "--warn_error -291"
+
 open Pipit.Source
 
 module T   = FStar.Tactics.V2

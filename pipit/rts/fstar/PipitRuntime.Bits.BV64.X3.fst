@@ -20,7 +20,7 @@ type t = { bv0: BV64.t; bv1: BV64.t; bv2: BV64.t; }
 
 type x3 = x3: U8.t { U8.v x3 <= 7 }
 
-#push-options "--fuel 1 --ifuel 0"
+#set-options "--fuel 1 --ifuel 0"
 
 private
 let mk_x3 (b0 b1 b2: bool): x3 =

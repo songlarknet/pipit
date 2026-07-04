@@ -6,8 +6,7 @@ module List = FStar.List.Tot
 
 module Tac = FStar.Tactics
 
-#push-options "--ext pipit:cse:debug"
-#push-options "--print_implicits --print_bound_var_types"
+#set-options "--ext pipit:cse:debug --print_implicits --print_bound_var_types"
 // #push-options "--print_full_names"
 // #push-options "--print_implicits --print_full_names --ugly --print_bound_var_types"
 

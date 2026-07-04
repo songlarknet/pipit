@@ -25,9 +25,9 @@ module PM = Pipit.Prop.Metadata
 module List = FStar.List.Tot
 module T    = FStar.Tactics
 
-#push-options "--split_queries always"
+#set-options "--split_queries always"
 
-let rec contract_invariant_holds
+let contract_invariant_holds
   (#t: table) (#c: context t) (#a: t.ty)
   (rows: list (row c) { Cons? rows })
   (r: exp t       c  t.propty { XC.causal r })
@@ -149,7 +149,7 @@ let rec contract_invariant_holds
 
 
 
-let rec system_holds_exp_of_contract
+let system_holds_exp_of_contract
   (#t: table) (#c: context t) (#a: t.ty)
   (rows: list (row c) { Cons? rows })
   (r: exp t       c  t.propty { XC.causal r })

@@ -135,7 +135,7 @@ let induct_k (k: nat) (#input #value: Type) (#oracle #state: option Type)
     base_case_k k t /\ step_case_k k t
 
 
-let rec induct2_sound (#input #value: Type) (#oracle #state: option Type)
+let induct2_sound (#input #value: Type) (#oracle #state: option Type)
   (t: system input oracle state value)
   (inputs: list (input & option_type_sem oracle))
   : Lemma
