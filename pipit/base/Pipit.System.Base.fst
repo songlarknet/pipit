@@ -101,6 +101,27 @@ let checks_of_prop (status: PM.prop_status) (f: prop): checks =
   | PM.PSValid   -> checks_assumption f
   | PM.PSUnknown -> checks_obligation f
 
+(* Contract/check expressions evaluate to bool in the translated system.
+  This helper marks the single bool-to-prop boundary used by system checks. *)
+let bool_to_prop (b: bool): prop = b2t b
+
+let system_map_result
+  (#input #result #result': Type)
+  (#oracle #state: option Type)
+  (f: result -> result')
+  (t: system input oracle state result):
+    system input oracle state result' =
+  {
+    init = t.init;
+    step = (fun i o s ->
+      let stp = t.step i o s in
+      {
+        s = stp.s;
+        v = f stp.v;
+        chck = stp.chck;
+      });
+  }
+
 let checks_join (c1 c2: checks): checks = {
   assumptions = prop_join c1.assumptions c2.assumptions;
   obligations = prop_join c1.obligations c2.obligations;
@@ -132,7 +153,7 @@ let system_const (#input #result: Type) (v: result): system input None None resu
 let system_check (#input: Type) (#oracle #state: option Type)
   (name: string)
   (status: PM.prop_status)
-  (t1: system input oracle state bool):
+  (t1: system input oracle state prop):
        system input oracle state unit =
   { init = t1.init;
     step = (fun i o s ->
@@ -140,15 +161,22 @@ let system_check (#input: Type) (#oracle #state: option Type)
       {
         s = s1.s;
         v = ();
-        chck = s1.chck `checks_join` checks_of_prop status (s1.v == true);
+        chck = s1.chck `checks_join` checks_of_prop status s1.v;
       });
   }
+
+let system_check_bool (#input: Type) (#oracle #state: option Type)
+  (name: string)
+  (status: PM.prop_status)
+  (t1: system input oracle state bool):
+       system input oracle state unit =
+  system_check name status (system_map_result bool_to_prop t1)
 
 let system_contract_instance (#input: Type)
   (#oracle1 #oracle2 #state1 #state2: option Type)
   (status: PM.prop_status)
-  (tr: system input oracle1 state1 bool)
-  (tg: system ('a & input) oracle2 state2 bool):
+  (tr: system input oracle1 state1 prop)
+  (tg: system ('a & input) oracle2 state2 prop):
        system input (Some 'a `type_join` (oracle1 `type_join` oracle2)) (state1 `type_join` state2) 'a =
   { init = tr.init `type_join_tup` tg.init;
     step = (fun i vo s ->
@@ -160,8 +188,8 @@ let system_contract_instance (#input: Type)
         let s2 = type_join_snd s in
         let stp1 = tr.step     i  o1 s1 in
         let stp2 = tg.step (v, i) o2 s2 in
-        let rprop = stp1.v == true in
-        let gprop = stp2.v == true in
+        let rprop = stp1.v in
+        let gprop = stp2.v in
         let stp2_chck = {
           assumptions = (match stp2.chck.assumptions with
             | None -> None
@@ -177,10 +205,20 @@ let system_contract_instance (#input: Type)
         });
   }
 
+let system_contract_instance_bool (#input: Type)
+  (#oracle1 #oracle2 #state1 #state2: option Type)
+  (status: PM.prop_status)
+  (tr: system input oracle1 state1 bool)
+  (tg: system ('a & input) oracle2 state2 bool):
+       system input (Some 'a `type_join` (oracle1 `type_join` oracle2)) (state1 `type_join` state2) 'a =
+  system_contract_instance status
+    (system_map_result bool_to_prop tr)
+    (system_map_result bool_to_prop tg)
+
 let system_contract_definition (#input: Type)
   (#oracle1 #oracle2 #oracle3 #state1 #state2 #state3: option Type)
-  (tr: system input oracle1 state1 bool)
-  (tg: system ('a & input) oracle2 state2 bool)
+  (tr: system input oracle1 state1 prop)
+  (tg: system ('a & input) oracle2 state2 prop)
   (ti: system input oracle3 state3 'a):
        system input (oracle1 `type_join` (oracle2 `type_join` oracle3)) (state1 `type_join` (state2 `type_join` state3)) 'a =
   { init = tr.init `type_join_tup` (tg.init `type_join_tup` ti.init);
@@ -196,8 +234,8 @@ let system_contract_definition (#input: Type)
         let v    = stp3.v          in
         let stp1 = tr.step i o1 s1 in
         let stp2 = tg.step (v, i) o2 s2 in
-        let rprop = stp1.v == true in
-        let gprop = stp2.v == true in
+        let rprop = stp1.v in
+        let gprop = stp2.v in
         {
           s = stp1.s `type_join_tup` (stp2.s `type_join_tup` stp3.s);
           v = v;
@@ -206,6 +244,17 @@ let system_contract_definition (#input: Type)
                  stp1.chck `checks_join` stp2.chck `checks_join` stp3.chck;
         });
   }
+
+let system_contract_definition_bool (#input: Type)
+  (#oracle1 #oracle2 #oracle3 #state1 #state2 #state3: option Type)
+  (tr: system input oracle1 state1 bool)
+  (tg: system ('a & input) oracle2 state2 bool)
+  (ti: system input oracle3 state3 'a):
+       system input (oracle1 `type_join` (oracle2 `type_join` oracle3)) (state1 `type_join` (state2 `type_join` state3)) 'a =
+  system_contract_definition
+    (system_map_result bool_to_prop tr)
+    (system_map_result bool_to_prop tg)
+    ti
 
 let system_project (#input #result: Type) (f: input -> result):
        system input None None result =

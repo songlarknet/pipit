@@ -8,6 +8,15 @@ FSTAR_ALREADY_CACHED ?=
 # Note: example/ttcan/ is currently disabled (see example/readme.md); it has
 # its own dormant wiring and is not picked up here.
 
+# Silence F* warning 249 ("Losing precision when encoding a function literal")
+# emitted by the SMT encoder for each Pulse [fn] splice in this component.
+# The warning is encoder imprecision, not a soundness issue; see the comment
+# above [mk_reset] / [mk_step] in [pipit/extract/Pipit.Exec.PulseExtract.fst] for
+# details. An in-file [#set-options]/[#push-options] pragma only catches half
+# of the warnings emitted during splice processing, so we apply the flag at
+# the CLI level here.
+FSTAR_EXTRA_OPT += --warn_error -249
+
 include $(ROOT_DIR)/make/include/base.mk
 
 extract: $(BUILD)/Example.Simple.Extract.extract

@@ -1,10 +1,6 @@
 (* Pipit streaming integration for 64-bit bit vectors *)
 module Network.TTCan.Prim.BV64.Index
 
-module SugarBase = Pipit.Sugar.Base
-module Sugar     = Pipit.Sugar.Shallow
-module SugarTac  = Pipit.Sugar.Shallow.Tactics
-
 module BV64      = PipitRuntime.Bits.BV64
 module BV64I     = PipitRuntime.Bits.BV64.Index
 module U64       = Network.TTCan.Prim.U64

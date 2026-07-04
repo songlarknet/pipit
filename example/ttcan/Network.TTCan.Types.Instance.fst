@@ -8,7 +8,7 @@ module Network.TTCan.Types.Instance
 
 open Network.TTCan.Types.Base
 
-module Sugar     = Pipit.Sugar.Shallow
+module Sugar    = Pipit.Prim.HasStream
 module Subrange   = Network.TTCan.Prim.S32R
 
 (* These subrange instances aren't strictly necessary, but they speed up the typeclass

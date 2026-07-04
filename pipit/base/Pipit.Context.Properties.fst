@@ -8,7 +8,7 @@ module C = Pipit.Context.Base
 module R = Pipit.Context.Row
 
 (* Properties should only require one implicit unrolling of recursive definitions, and one implicit inversion *)
-#push-options "--fuel 1 --ifuel 1"
+#set-options "--fuel 1 --ifuel 1"
 
 let lemma_drop0 (c: C.context 'a { List.length c > 0 }):
   Lemma (ensures (C.drop1 c 0 == List.tl c)) = ()

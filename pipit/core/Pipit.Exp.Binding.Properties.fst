@@ -16,7 +16,7 @@ module CP = Pipit.Context.Properties
 module PM = Pipit.Prop.Metadata
 
 // #push-options "--split_queries always"
-#push-options "--fuel 1 --ifuel 1"
+#set-options "--fuel 1 --ifuel 1"
 
 let lemma_lift_lift_commute_base (#a: ('t).ty) (#c: context 't) (e: exp_base 't c a) (i1: C.index_insert c) (i2: C.index { i2 <= i1 }) (t1 t2: ('t).ty):
   Lemma (ensures (lift1_base' (lift1_base' e i1 t1) i2 t2 === lift1_base' (lift1_base' e i2 t2) (i1 + 1) t1)) =
@@ -130,7 +130,7 @@ let lemma_lift_subst_distribute_le_base (#a: ('t).ty) (#c: context 't) (e: exp_b
 
 #pop-options
 
-#push-options "--fuel 1 --ifuel 1 --split_queries always --z3rlimit_factor 5"
+#set-options "--fuel 1 --ifuel 1 --split_queries always --z3rlimit_factor 5"
 
 let rec lemma_lift_subst_distribute_le (#a: ('t).ty) (#c: context 't) (e: exp 't c a) (i1: C.index_lookup c) (i2: C.index { i2 <= i1 }) (t2: ('t).ty) (p: exp 't (C.drop1 c i1) (C.get_index c i1)):
   Lemma (ensures (lemma_lift_subst_distribute_le_def e i1 i2 t2 p))

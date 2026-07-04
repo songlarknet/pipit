@@ -34,6 +34,14 @@ let core_lifted = ()
 irreducible
 let core_lifted_prim = ()
 
+(* Marker on hoisted `__ctx_<N>` ctx helpers emitted by the lifter
+   (`Pipit.Source.Ast.Lower.flush_ctx_acc`). These helpers are
+   intentionally NOT `unfold` qualified to keep splice re-typecheck
+   cheap, so the discharge tactic must delta-unfold them explicitly
+   via `Pipit.Tactics.norm_full`'s `delta_attr` list. *)
+irreducible
+let core_lifted_ctx = ()
+
 (* Mark a source function as one whose `check`s should be discharged
   automatically by 1-induction. The preprocessor synthesises a
   `__check_<id>` binding that asserts `induct1 (system_of_exp __core_<id>)`
@@ -41,6 +49,24 @@ let core_lifted_prim = ()
   arity-polymorphic, so it works for any number of stream arguments. *)
 irreducible
 let proof_induct1 = ()
+
+(* Ask the preprocessor to synthesise a `<id>_contract` wrapper that
+  bundles the body with a rely + guar pair via
+  `Pipit.Exp.Checked.Base.bless_contract`. The wrapper discharges
+  `induct1 (system_of_contract rely guar body)` by normalisation, then
+  yields an `exp` carrying the blessed contract.
+
+  Usage: place on the BODY's let-binding, alongside `[@@source_mode]`:
+
+    [@@source_mode (ModeFun Stream true Stream); proof_contract (`%rely) (`%guar)]
+    let body (x: int): int = ...
+
+  The `rely` and `guar` arguments are vquoted source identifiers (`\`%nm`).
+  Both must be plain source bindings with their own `[@@source_mode ...]`
+  and `lift_ast_tac1` splice; `guar` takes the body's inputs followed by
+  the body's result (last param = result, per the source convention). *)
+irreducible
+let proof_contract (rely: string) (guar: string) = ()
 
 (* Modifier for a `proof_*` attribute: the synthesised proof obligation is
   expected to *fail*. The synthesised `__check_<id>` is tagged with

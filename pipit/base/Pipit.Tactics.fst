@@ -12,7 +12,7 @@ let norm_attr = ()
 let norm_delta_options (namespaces: list string) = [
   delta_namespace ("Pipit" :: "FStar.Pervasives" :: "FStar.List" :: "FStar.Option" :: "FStar.Seq" :: namespaces);
   // Evaluate anything marked [@@norm_attr], explicit core expressions, and typeclass instances
-  delta_attr [`%norm_attr; "Pipit.Plugin.Interface.core_lifted"; "Pipit.Plugin.Interface.core_lifted_prim"; `%FStar.Tactics.Typeclasses.tcinstance];
+  delta_attr [`%norm_attr; "Pipit.Plugin.Interface.core_lifted"; "Pipit.Plugin.Interface.core_lifted_prim"; "Pipit.Plugin.Interface.core_lifted_ctx"; `%FStar.Tactics.Typeclasses.tcinstance];
   nbe; zeta; iota; primops
 ]
 
@@ -74,10 +74,10 @@ let rec type_is_product (ty: T.typ): T.Tac bool =
 (* Break apart any product types bound in `b`.
    NOTE: F* tactic binder/view APIs changed across versions; keep this
    conservative path stable during toolchain migration. *)
-let rec tac_break_binder (_: T.binder): T.Tac unit =
+let tac_break_binder (_: T.binder): T.Tac unit =
   ()
 
-and tac_break_intros (): T.Tac unit =
+let rec tac_break_intros (): T.Tac unit =
   match T.trytac T.intro with
   | None -> ()
   | Some _ ->

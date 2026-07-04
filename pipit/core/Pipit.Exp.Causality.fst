@@ -189,7 +189,7 @@ let lemma_bigstep_substitute_elim_base
        | BSBase _ _ _ (BSVar _latest _prefix ix_drop) ->
          BSVar latest' (List.Tot.tl rows') i')
 
-#push-options "--split_queries always"
+#set-options "--split_queries always --warn_error -290"
 
 let rec lemma_bigstep_substitute_elim
   (#t: table)

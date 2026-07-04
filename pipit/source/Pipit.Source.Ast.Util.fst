@@ -9,6 +9,7 @@ module L   = FStar.List.Tot
 
 module Ast = Pipit.Source.Ast
 module PPI = Pipit.Plugin.Interface
+module PTB = Pipit.Tactics.Base
 
 (* Drop implicit / typeclass-instance binders, keep explicit ones in
    declaration order. *)
@@ -55,3 +56,75 @@ let rec skip_implicit_modes (m: PPI.mode): PPI.mode =
   match m with
   | PPI.ModeFun _ false rm -> skip_implicit_modes rm
   | _ -> m
+
+
+(* Does sigelt [se] carry attribute [`%PPI.core_of_source nm _]
+   matching source FQN string [nm_src_fqn]? *)
+let sigelt_core_of_source_matches
+  (se: Ref.sigelt)
+  (nm_src_fqn: string)
+: T.Tac bool
+=
+  let rec go (attrs: list T.term): T.Tac bool =
+    match attrs with
+    | [] -> false
+    | hd :: tl ->
+      let (h, args) = T.collect_app hd in
+      if PTB.term_check_fv h (`%PPI.core_of_source) then
+        (match args with
+         | (arg, _) :: _ ->
+           (match T.inspect arg with
+            | T.Tv_Const (Ref.C_String s) ->
+              if s = nm_src_fqn then true else go tl
+            | _ -> go tl)
+         | _ -> go tl)
+      else go tl
+  in
+  go (Ref.sigelt_attrs se)
+
+(* Find the core binding for source FQN [nm_src_fqn] by attribute
+   lookup. Returns the FQN of the chosen core binding.
+
+   Both the auto-generated `<nm>_core` splice (emitted by
+   `Pipit.Plugin.Lift.lift_ast_tac`) and any blessed wrapper
+   (e.g. a `body_contract` that re-wraps the core in `XContract` +
+   `bless`, or the `__check_<id>` synthesised by `[@@proof_induct1]`)
+   can carry the `[@@core_of_source nm _]` attribute. When multiple
+   candidates exist we pick the one defined latest in scope: F*'s
+   attribute table cons'es each new sigelt to the front of the result
+   of `Ref.lookup_attr`, so `List.hd` is the most recently defined
+   binding (matching the usual F* shadowing convention "later
+   definition wins"). Wrappers are emitted *after* the raw
+   `<id>_core` splice, so they win automatically.
+
+   Wrappers must also be tagged `[@@core_lifted]` so that
+   `Pipit.Tactics.norm_full` can unfold them during caller-side
+   induction; otherwise the dispatch routes through an opaque binding
+   and normalisation gets stuck.
+
+   This is the single source of truth for source -> core dispatch.
+   Callers should pass through here rather than munging names with a
+   `_core` suffix. *)
+let find_core_for_source
+  (tac_env: T.env)
+  (nm_src_fqn: string)
+: T.Tac Ast.fqn
+=
+  let cof_fvs = Ref.lookup_attr (`PPI.core_of_source) tac_env in
+  let classify (fv: Ref.fv): T.Tac (option Ref.name) =
+    let nm = T.inspect_fv fv in
+    match T.lookup_typ tac_env nm with
+    | None -> None
+    | Some se ->
+      if sigelt_core_of_source_matches se nm_src_fqn
+      then Some nm
+      else None
+  in
+  let candidates = T.filter_map classify cof_fvs in
+  match candidates with
+  | nm :: _ -> nm
+  | [] ->
+    T.fail ("Pipit.Source.Ast.Util.find_core_for_source: no core binding "
+            ^ "tagged [@@core_of_source \"" ^ nm_src_fqn
+            ^ "\"] in scope. Did the source binding get lifted via "
+            ^ "[%splice[] (PPL.lift_ast_tac1 \"...\")]?")

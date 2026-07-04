@@ -1,8 +1,9 @@
 (** Message status counters and receive-pending bits *)
 module Network.TTCan.Impl.MessageStatus
+#lang-pipit
 
-module S     = Pipit.Sugar.Shallow
-
+open Pipit.Source
+module PSSB  = Pipit.Prim.HasStream
 module BV64I = Network.TTCan.Prim.BV64.Index
 module MSC64 = Network.TTCan.Prim.MSC64
 
@@ -13,15 +14,9 @@ module Util  = Network.TTCan.Impl.Util
 
 open Network.TTCan.Types
 
-module SugarBase = Pipit.Sugar.Base
-module SugarTac  = Pipit.Sugar.Shallow.Tactics
-
 module UInt8 = FStar.UInt8
 module UInt64= FStar.UInt64
 module Cast  = FStar.Int.Cast
-
-open Pipit.Sugar.Shallow.Tactics.Lift
-module Tac = FStar.Tactics
 
 type status_update = Clocked.t bool
 
@@ -29,7 +24,6 @@ let increment: status_update = Some true
 let decrement: status_update = Some false
 let nothing:   status_update = None
 
-[@@Tac.preprocess_with preprocess]
 let message_status_counters
   (message_id: stream can_buffer_id)
   (update: stream (Clocked.t bool))
@@ -46,9 +40,6 @@ let message_status_counters
       pre_array
   in MSC64.index array message_id
 
-%splice[] (autolift_binds [`%message_status_counters])
-
-[@@Tac.preprocess_with preprocess]
 let rx_pendings
   (chk: stream (Clocked.t can_buffer_id))
   (rx:  stream (Clocked.t can_buffer_id))
@@ -73,5 +64,3 @@ let rx_pendings
   if Clocked.get_clock chk
   then BV64I.index array (Clocked.get_value chk)
   else true
-
-%splice[] (autolift_binds [`%rx_pendings])

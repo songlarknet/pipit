@@ -20,7 +20,7 @@ module List = FStar.List.Tot
 
 module T    = FStar.Tactics
 
-#push-options "--split_queries always"
+#set-options "--split_queries always"
 
 (*
    The invariant describes the transition system's state after it has been fed with all of `rows` as inputs.

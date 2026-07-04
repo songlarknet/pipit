@@ -19,7 +19,7 @@ module PM  = Pipit.Prop.Metadata
 
 module T   = FStar.Tactics
 
-#push-options "--split_queries always"
+#set-options "--split_queries always"
 
 let step_XContract_asm' (#t: table) (#c: context t) (#a: t.ty)
   (ps: PM.prop_status)

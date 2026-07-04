@@ -26,7 +26,7 @@ module PM = Pipit.Prop.Metadata
 module List = FStar.List.Tot
 module T    = FStar.Tactics
 
-#push-options "--split_queries always"
+#set-options "--split_queries always"
 
 let rec entailment
   (#t: table) (#c: context t) (#a: t.ty)
