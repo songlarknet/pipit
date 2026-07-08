@@ -1,10 +1,10 @@
 (* Extensional stream semantics for transition systems.
 
-   This module provides stream projections of a system's observable
-   behavior and predicates for observational equivalence.
+   This module provides stream projections of a system's observable behavior,
+   an oracle/state-hiding system package, and the [mu] recursion combinator.
 
-   The key design choice is to compare systems extensionally by their
-   output/check streams, not by internal state representation.
+   Observational-equivalence predicates live in [Pipit.Extensional.System.Eq];
+   the [system_let] / [system_const] laws are gathered in a section at the end.
 *)
 module Pipit.Extensional.System
 
@@ -84,231 +84,54 @@ let stream_of_obligations
   =
   EPS.obligations (pstream_of_system t ios)
 
-(* Split the oracle/input stream used by [system_let] into the left
-   component consumed by [t1]. *)
-let let_ios_left
-  (#input: Type)
-  (#oracle1 #oracle2: option Type)
-  (ios: io_stream input (oracle1 `type_join` oracle2))
-  : io_stream input oracle1
-  =
-  fun n ->
-    let io = ios n in
-    (fst io, type_join_fst (snd io))
+(*** Oracle/state-hiding system package ***)
 
-(* Build the right-component input stream consumed by [t2], given an
-   extension function and a stream of values from [t1]. *)
-let let_ios_right
-  (#input #input' #v1: Type)
-  (#oracle1 #oracle2: option Type)
-  (extend: input -> v1 -> input')
-  (ios: io_stream input (oracle1 `type_join` oracle2))
-  (x: E.stream v1)
-  : io_stream input' oracle2
-  =
-  fun n ->
-    let io = ios n in
-    (extend (fst io) (x n), type_join_snd (snd io))
+(* A transition system with its oracle and state types hidden.
 
-(* Step-indexed alignment for [system_let]: the right state/output match
-   running [t2] on the stream extended with [t1]'s outputs. *)
-let rec lemma_step_result_at_system_let
-  (#input #input' #v1 #v2: Type)
-  (#oracle1 #oracle2 #state1 #state2: option Type)
-  (extend: input -> v1 -> input')
-  (t1: system input oracle1 state1 v1)
-  (t2: system input' oracle2 state2 v2)
-  (ios: io_stream input (oracle1 `type_join` oracle2))
-  (n: nat)
-  : Lemma
-    (ensures
-      type_join_fst (step_result_at (system_let extend t1 t2) ios n).s ==
-      (step_result_at t1 (let_ios_left ios) n).s /\
-      type_join_snd (step_result_at (system_let extend t1 t2) ios n).s ==
-      (step_result_at t2
-        (let_ios_right extend ios (stream_of_output t1 (let_ios_left ios)))
-        n).s /\
-      (step_result_at (system_let extend t1 t2) ios n).v ==
-      (step_result_at t2
-        (let_ios_right extend ios (stream_of_output t1 (let_ios_left ios)))
-        n).v)
-    (decreases n)
-  =
-  match n with
-  | 0 ->
-    ()
-  | _ ->
-    lemma_step_result_at_system_let extend t1 t2 ios (n - 1)
+   Hiding [oracle] and [state] lets clients present a system uniformly as
+   [sys input output]. [state] disappears observably (it is threaded away by
+   [stream_of_output]); [oracle] hides as a type, but its per-step values must
+   still be quantified by the client. *)
+noeq
+type sys (input output: Type) = {
+  oracle: option Type;
+  state:  option Type;
+  raw:    system input oracle state output;
+}
 
-(* Extensional law for [system_let] outputs.
-   Intuition: run [def = t1] first, then feed its output stream into [body = t2]
-   through [extend]. *)
-let stream_of_output_system_let
-  (#input #input' #v1 #v2: Type)
-  (#oracle1 #oracle2 #state1 #state2: option Type)
-  (extend: input -> v1 -> input')
-  (t1: system input oracle1 state1 v1)
-  (t2: system input' oracle2 state2 v2)
-  (ios: io_stream input (oracle1 `type_join` oracle2))
-  : Lemma
-    (ensures
-      ES.eq
-        (stream_of_output (system_let extend t1 t2) ios)
-        (stream_of_output t2
-          (let_ios_right extend ios (stream_of_output t1 (let_ios_left ios)))))
+(* Pair an input stream with an oracle stream into the io-stream consumed by
+   the underlying system. *)
+let with_oracle
+  (#input #output: Type)
+  (t: sys input output)
+  (is: E.stream input)
+  (orc: E.stream (option_type_sem t.oracle))
+  : io_stream input t.oracle
   =
-  introduce forall (n: nat).
-    stream_of_output (system_let extend t1 t2) ios n ==
-    stream_of_output t2
-      (let_ios_right extend ios (stream_of_output t1 (let_ios_left ios)))
-      n
-  with (
-    lemma_step_result_at_system_let extend t1 t2 ios n
-  )
+  fun n -> (is n, orc n)
 
-(* Extensional equivalence on outputs only. *)
-let output_equiv
-  (#input #result: Type)
-  (#oracle #state: option Type)
-  (t1 t2: system input oracle state result)
-  : prop
+(* Observable output stream of [t] on input stream [is] under oracle [orc]. *)
+let outputs
+  (#input #output: Type)
+  (t: sys input output)
+  (is: E.stream input)
+  (orc: E.stream (option_type_sem t.oracle))
+  : E.stream output
   =
-  forall (ios: io_stream input oracle).
-    ES.eq
-      (stream_of_output t1 ios)
-      (stream_of_output t2 ios)
+  stream_of_output t.raw (with_oracle t is orc)
 
-(* Full observational equivalence: outputs and check streams agree. *)
-let observational_equiv
-  (#input #result: Type)
-  (#oracle #state: option Type)
-  (t1 t2: system input oracle state result)
-  : prop
+(* Recursive knot as a system combinator: [system_mu] hides the extra oracle
+   component (the guessed recursive value) and the body state. *)
+let mu
+  (#input #output: Type)
+  (body: sys (output & input) output)
+  : sys input output
   =
-  forall (ios: io_stream input oracle).
-    EPS.eq
-      (pstream_of_system t1 ios)
-      (pstream_of_system t2 ios)
-
-(* Observational equivalence is reflexive. *)
-let observational_equiv_refl
-  (#input #result: Type)
-  (#oracle #state: option Type)
-  (t: system input oracle state result)
-  : Lemma (ensures observational_equiv t t)
-  =
-  ()
-
-(* Full observational equivalence implies output equivalence. *)
-let output_equiv_of_observational_equiv
-  (#input #result: Type)
-  (#oracle #state: option Type)
-  (t1 t2: system input oracle state result)
-  : Lemma
-    (requires observational_equiv t1 t2)
-    (ensures output_equiv t1 t2)
-  =
-  introduce forall (ios: io_stream input oracle).
-    ES.eq (stream_of_output t1 ios) (stream_of_output t2 ios)
-  with (
-    EPS.values_eq_of_eq
-      (pstream_of_system t1 ios)
-      (pstream_of_system t2 ios)
-  )
-
-(* Output-equivalent systems preserve any pointwise output-stream predicate
-   under the same input stream. *)
-let stream_holds_of_output_equiv
-  (#input #result: Type)
-  (#oracle #state: option Type)
-  (t1 t2: system input oracle state result)
-  (ios: io_stream input oracle)
-  (p: result -> prop)
-  : Lemma
-    (requires
-      output_equiv t1 t2 /\
-      ES.holds p (stream_of_output t1 ios))
-    (ensures
-      ES.holds p (stream_of_output t2 ios))
-  =
-  ES.holds_of_eq p
-    (stream_of_output t1 ios)
-    (stream_of_output t2 ios)
-
-(* Observationally equivalent systems preserve pointwise predicates over
-   the assumptions stream. *)
-let stream_holds_of_assumptions_equiv
-  (#input #result: Type)
-  (#oracle #state: option Type)
-  (t1 t2: system input oracle state result)
-  (ios: io_stream input oracle)
-  (p: prop -> prop)
-  : Lemma
-    (requires
-      observational_equiv t1 t2 /\
-      ES.holds p (stream_of_assumptions t1 ios))
-    (ensures
-      ES.holds p (stream_of_assumptions t2 ios))
-  =
-  EPS.assumptions_eq_of_eq
-    (pstream_of_system t1 ios)
-    (pstream_of_system t2 ios);
-  ES.holds_of_eq p
-    (stream_of_assumptions t1 ios)
-    (stream_of_assumptions t2 ios)
-
-(* Observationally equivalent systems preserve pointwise predicates over
-   the obligations stream. *)
-let stream_holds_of_obligations_equiv
-  (#input #result: Type)
-  (#oracle #state: option Type)
-  (t1 t2: system input oracle state result)
-  (ios: io_stream input oracle)
-  (p: prop -> prop)
-  : Lemma
-    (requires
-      observational_equiv t1 t2 /\
-      ES.holds p (stream_of_obligations t1 ios))
-    (ensures
-      ES.holds p (stream_of_obligations t2 ios))
-  =
-  EPS.obligations_eq_of_eq
-    (pstream_of_system t1 ios)
-    (pstream_of_system t2 ios);
-  ES.holds_of_eq p
-    (stream_of_obligations t1 ios)
-    (stream_of_obligations t2 ios)
-
-(* Step-indexed execution of [system_const] always returns the same value. *)
-let rec lemma_step_result_at_system_const
-  (#input #result: Type)
-  (v: result)
-  (ios: io_stream input None)
-  (n: nat)
-  : Lemma
-    (ensures (step_result_at (system_const v) ios n).v == v)
-    (decreases n)
-  =
-  match n with
-  | 0 -> ()
-  | _ -> lemma_step_result_at_system_const v ios (n - 1)
-
-(* Concrete extensional law for constant systems. *)
-let stream_of_output_system_const
-  (#input #result: Type)
-  (v: result)
-  (ios: io_stream input None)
-  : Lemma
-    (ensures
-      ES.eq
-        (stream_of_output (system_const v) ios)
-        (ES.const v))
-  =
-  introduce forall (n: nat).
-    stream_of_output (system_const v) ios n == ES.const v n
-  with (
-    lemma_step_result_at_system_const v ios n
-  )
+  {
+    oracle = Some output `type_join` body.oracle;
+    state  = body.state;
+    raw    = system_mu body.raw;
+  }
 
 (*** system_mu ***)
 
@@ -456,3 +279,118 @@ let lemma_stream_of_obligations_congruence
     (ensures stream_of_obligations t j1 n == stream_of_obligations t j2 n)
   =
   lemma_step_result_at_congruence t j1 j2 n
+
+(*** [system_let] and [system_const] laws ***)
+
+(* Split the oracle/input stream used by [system_let] into the left
+   component consumed by [t1]. *)
+let let_ios_left
+  (#input: Type)
+  (#oracle1 #oracle2: option Type)
+  (ios: io_stream input (oracle1 `type_join` oracle2))
+  : io_stream input oracle1
+  =
+  fun n ->
+    let io = ios n in
+    (fst io, type_join_fst (snd io))
+
+(* Build the right-component input stream consumed by [t2], given an
+   extension function and a stream of values from [t1]. *)
+let let_ios_right
+  (#input #input' #v1: Type)
+  (#oracle1 #oracle2: option Type)
+  (extend: input -> v1 -> input')
+  (ios: io_stream input (oracle1 `type_join` oracle2))
+  (x: E.stream v1)
+  : io_stream input' oracle2
+  =
+  fun n ->
+    let io = ios n in
+    (extend (fst io) (x n), type_join_snd (snd io))
+
+(* Step-indexed alignment for [system_let]: the right state/output match
+   running [t2] on the stream extended with [t1]'s outputs. *)
+let rec lemma_step_result_at_system_let
+  (#input #input' #v1 #v2: Type)
+  (#oracle1 #oracle2 #state1 #state2: option Type)
+  (extend: input -> v1 -> input')
+  (t1: system input oracle1 state1 v1)
+  (t2: system input' oracle2 state2 v2)
+  (ios: io_stream input (oracle1 `type_join` oracle2))
+  (n: nat)
+  : Lemma
+    (ensures
+      type_join_fst (step_result_at (system_let extend t1 t2) ios n).s ==
+      (step_result_at t1 (let_ios_left ios) n).s /\
+      type_join_snd (step_result_at (system_let extend t1 t2) ios n).s ==
+      (step_result_at t2
+        (let_ios_right extend ios (stream_of_output t1 (let_ios_left ios)))
+        n).s /\
+      (step_result_at (system_let extend t1 t2) ios n).v ==
+      (step_result_at t2
+        (let_ios_right extend ios (stream_of_output t1 (let_ios_left ios)))
+        n).v)
+    (decreases n)
+  =
+  match n with
+  | 0 ->
+    ()
+  | _ ->
+    lemma_step_result_at_system_let extend t1 t2 ios (n - 1)
+
+(* Extensional law for [system_let] outputs.
+   Intuition: run [def = t1] first, then feed its output stream into [body = t2]
+   through [extend]. *)
+let stream_of_output_system_let
+  (#input #input' #v1 #v2: Type)
+  (#oracle1 #oracle2 #state1 #state2: option Type)
+  (extend: input -> v1 -> input')
+  (t1: system input oracle1 state1 v1)
+  (t2: system input' oracle2 state2 v2)
+  (ios: io_stream input (oracle1 `type_join` oracle2))
+  : Lemma
+    (ensures
+      ES.eq
+        (stream_of_output (system_let extend t1 t2) ios)
+        (stream_of_output t2
+          (let_ios_right extend ios (stream_of_output t1 (let_ios_left ios)))))
+  =
+  introduce forall (n: nat).
+    stream_of_output (system_let extend t1 t2) ios n ==
+    stream_of_output t2
+      (let_ios_right extend ios (stream_of_output t1 (let_ios_left ios)))
+      n
+  with (
+    lemma_step_result_at_system_let extend t1 t2 ios n
+  )
+
+(* Step-indexed execution of [system_const] always returns the same value. *)
+let rec lemma_step_result_at_system_const
+  (#input #result: Type)
+  (v: result)
+  (ios: io_stream input None)
+  (n: nat)
+  : Lemma
+    (ensures (step_result_at (system_const v) ios n).v == v)
+    (decreases n)
+  =
+  match n with
+  | 0 -> ()
+  | _ -> lemma_step_result_at_system_const v ios (n - 1)
+
+(* Concrete extensional law for constant systems. *)
+let stream_of_output_system_const
+  (#input #result: Type)
+  (v: result)
+  (ios: io_stream input None)
+  : Lemma
+    (ensures
+      ES.eq
+        (stream_of_output (system_const v) ios)
+        (ES.const v))
+  =
+  introduce forall (n: nat).
+    stream_of_output (system_const v) ios n == ES.const v n
+  with (
+    lemma_step_result_at_system_const v ios n
+  )

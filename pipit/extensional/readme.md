@@ -55,13 +55,19 @@ Three proof techniques are supported: Hoare-style rules, equational rewriting
 	`eq`, `holds`, the `holds_of_eq` transport lemma, and `sofar`.
 - `Pipit.Extensional.PStream`: proof-carrying stream equality (`eq`),
 	projections, and equality-transport lemmas.
-- `Pipit.Extensional.System`: stream projections of system behavior and
-	observational-equivalence predicates.
-- `Pipit.Extensional.Logic`: the `sofar`-based triple over a state/oracle-hiding
-	`sys` package. Preconditions/postconditions are `stream prop` transformers;
-	the judgement quantifies the oracle stream (restricted to runs where the
-	rely-assumptions hold so far) and bundles the postcondition with the
-	system's obligations in the consequent.
+- `Pipit.Extensional.System`: stream projections of system behavior, the
+	oracle/state-hiding `sys` package, the `mu` recursion combinator, the
+	`system_mu` alignment lemmas, prefix congruence, and (in a trailing section)
+	the `system_let` / `system_const` laws.
+- `Pipit.Extensional.System.Eq`: observational-equivalence predicates
+	(`output_equiv`, `observational_equiv`, and pointwise-preservation lemmas)
+	underpinning the equational-rewriting technique.
+- `Pipit.Extensional.Logic`: the `sofar`-based triple over `System.sys`.
+	Preconditions/postconditions are `stream prop` transformers; the judgement
+	quantifies the oracle stream (restricted to runs where the rely-assumptions
+	hold so far) and bundles the postcondition with the system's obligations in
+	the consequent. Provides the guarded recursion rule `triple_mu` for
+	`System.mu`.
 
-The `system_mu` rule and the equational-rewriting / induction rules are being
-rebuilt on top of these foundations.
+The equational-rewriting and induction rules are being built on top of these
+foundations.

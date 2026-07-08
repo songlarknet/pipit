@@ -20,40 +20,7 @@ module S   = Pipit.Extensional.System
 module Classical = FStar.Classical
 
 open Pipit.System.Base
-
-(* A transition system with its oracle and state types hidden.
-
-   Hiding [oracle] and [state] lets the logic present a system uniformly as
-   [sys input output]. [state] disappears observably (it is threaded away by
-   [stream_of_output]); [oracle] hides as a type, but its per-step values are
-   still quantified inside [triple]. *)
-noeq
-type sys (input output: Type) = {
-  oracle: option Type;
-  state:  option Type;
-  raw:    system input oracle state output;
-}
-
-(* Pair an input stream with an oracle stream into the io-stream consumed by
-   the underlying system. *)
-let with_oracle
-  (#input #output: Type)
-  (t: sys input output)
-  (is: E.stream input)
-  (orc: E.stream (option_type_sem t.oracle))
-  : S.io_stream input t.oracle
-  =
-  fun n -> (is n, orc n)
-
-(* Observable output stream of [t] on input stream [is] under oracle [orc]. *)
-let outputs
-  (#input #output: Type)
-  (t: sys input output)
-  (is: E.stream input)
-  (orc: E.stream (option_type_sem t.oracle))
-  : E.stream output
-  =
-  S.stream_of_output t.raw (with_oracle t is orc)
+open Pipit.Extensional.System
 
 (* Extensional triple judgement.
 
@@ -132,18 +99,7 @@ let causal_post
     (forall (k: nat). k <= n ==> os1 k == os2 k) ==>
     (q is1 os1 n <==> q is2 os2 n)
 
-(* Recursive knot as a system combinator: [system_mu] hides the extra oracle
-   component (the guessed recursive value) and the body state. *)
-let mu
-  (#input #output: Type)
-  (body: sys (output & input) output)
-  : sys input output
-  =
-  {
-    oracle = Some output `type_join` body.oracle;
-    state  = body.state;
-    raw    = system_mu body.raw;
-  }
+(* Recursive knot as a system combinator lives in [System] as [System.mu]. *)
 
 (* Guarded body precondition: [P] on the source input, and [pre (Q x)] on the
    recursive feedback [x]. *)
