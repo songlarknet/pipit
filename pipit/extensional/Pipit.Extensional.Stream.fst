@@ -2,6 +2,7 @@
 module Pipit.Extensional.Stream
 
 module E = Pipit.Extensional.Base
+module Classical = FStar.Classical
 
 (* Constant stream. *)
 let const (#a: Type) (x: a): E.stream a =
@@ -52,3 +53,67 @@ let pre (ps: E.stream prop): E.stream prop =
     match n with
     | 0 -> True
     | _ -> ps (n - 1)
+
+(*** Causality (prefix-determinism) ***)
+
+(* A stream predicate is causal (prefix-determined / a safety property) when its
+   truth at step [n] depends only on the stream prefix up to [n]. *)
+let causal
+  (#a: Type)
+  (p: E.stream a -> E.stream prop)
+  : prop
+  =
+  forall (xs1 xs2: E.stream a) (n: nat).
+    (forall (k: nat). k <= n ==> xs1 k == xs2 k) ==>
+    (p xs1 n <==> p xs2 n)
+
+(* Two-argument analogue of [causal]: truth at step [n] depends only on the two
+   input prefixes up to [n].
+
+   NB: this is deliberately the explicit two-stream form rather than
+   [causal (fun xys -> q (map fst xys) (map snd xys))]. The combined form is
+   strictly weaker to use: recovering [q xs1 ys1 n <==> q xs2 ys2 n] from it
+   would require rewriting [map fst (join xs1 ys1)] back to [xs1], i.e.
+   plain-arrow eta/functional extensionality, which F* does not provide. *)
+let causal2
+  (#a #b: Type)
+  (q: E.stream a -> E.stream b -> E.stream prop)
+  : prop
+  =
+  forall (xs1 xs2: E.stream a) (ys1 ys2: E.stream b) (n: nat).
+    (forall (k: nat). k <= n ==> xs1 k == xs2 k) ==>
+    (forall (k: nat). k <= n ==> ys1 k == ys2 k) ==>
+    (q xs1 ys1 n <==> q xs2 ys2 n)
+
+(* Prefix transport for a causal predicate: pointwise-equal prefixes give the
+   same truth at every step of the prefix. *)
+let lemma_causal_prefix
+  (#a: Type)
+  (p: E.stream a -> E.stream prop)
+  (xs1 xs2: E.stream a)
+  (n: nat)
+  : Lemma
+    (requires
+      causal p /\
+      (forall (k: nat). k <= n ==> xs1 k == xs2 k))
+    (ensures forall (k: nat). k <= n ==> (p xs1 k <==> p xs2 k))
+  =
+  let aux (k: nat) : Lemma (requires k <= n) (ensures p xs1 k <==> p xs2 k) = () in
+  Classical.forall_intro (Classical.move_requires aux)
+
+(* Prefix transport for a [causal2] predicate. *)
+let lemma_causal2_prefix
+  (#a #b: Type)
+  (q: E.stream a -> E.stream b -> E.stream prop)
+  (xs1 xs2: E.stream a)
+  (ys1 ys2: E.stream b)
+  (n: nat)
+  : Lemma
+    (requires
+      causal2 q /\
+      (forall (k: nat). k <= n ==> xs1 k == xs2 k) /\
+      (forall (k: nat). k <= n ==> ys1 k == ys2 k))
+    (ensures forall (k: nat). k <= n ==> (q xs1 ys1 k <==> q xs2 ys2 k))
+  =
+  let aux (k: nat) : Lemma (requires k <= n) (ensures q xs1 ys1 k <==> q xs2 ys2 k) = () in
+  Classical.forall_intro (Classical.move_requires aux)

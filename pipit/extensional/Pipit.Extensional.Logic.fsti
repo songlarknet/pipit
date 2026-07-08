@@ -58,33 +58,6 @@ let feedback
   =
   fun n -> fst (ixs n)
 
-(* A stream predicate is causal (prefix-determined / a safety property) when its
-   truth at step [n] depends only on the stream prefix up to [n]. *)
-let causal
-  (#a: Type)
-  (p: E.stream a -> E.stream prop)
-  : prop
-  =
-  forall (xs1 xs2: E.stream a) (n: nat).
-    (forall (k: nat). k <= n ==> xs1 k == xs2 k) ==>
-    (p xs1 n <==> p xs2 n)
-
-(* The postcondition analogue of [causal] over an input and an output stream.
-   NB: this is deliberately the explicit two-stream form rather than
-   [causal (fun ios -> q (map fst ios) (map snd ios))]. The combined form is
-   strictly weaker to use: recovering [q is1 os1 n <==> q is2 os2 n] from it
-   would require rewriting [map fst (join is1 os1)] back to [is1], i.e.
-   plain-arrow eta/functional extensionality, which F* does not provide. *)
-let causal_post
-  (#input #output: Type)
-  (q: E.stream input -> E.stream output -> E.stream prop)
-  : prop
-  =
-  forall (is1 is2: E.stream input) (os1 os2: E.stream output) (n: nat).
-    (forall (k: nat). k <= n ==> is1 k == is2 k) ==>
-    (forall (k: nat). k <= n ==> os1 k == os2 k) ==>
-    (q is1 os1 n <==> q is2 os2 n)
-
 (* Guarded body precondition: [P] on the source input, and [pre (Q x)] on the
    recursive feedback [x]. *)
 let mu_body_pre
@@ -122,8 +95,8 @@ val mu
   (q: E.stream input -> E.stream output -> E.stream prop)
   : Lemma
     (requires
-      causal p /\
-      causal_post q /\
+      ES.causal p /\
+      ES.causal2 q /\
       triple (mu_body_pre p q) body (mu_body_post q))
     (ensures
       triple p (S.mu body) q)

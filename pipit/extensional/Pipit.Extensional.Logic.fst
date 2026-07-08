@@ -20,40 +20,6 @@ let mu_body_input
   =
   fun n -> (fb n, is n)
 
-(* Prefix transport for a causal predicate: pointwise-equal prefixes give the
-   same truth at every step of the prefix. *)
-let lemma_causal_prefix
-  (#a: Type)
-  (p: E.stream a -> E.stream prop)
-  (xs1 xs2: E.stream a)
-  (n: nat)
-  : Lemma
-    (requires
-      causal p /\
-      (forall (k: nat). k <= n ==> xs1 k == xs2 k))
-    (ensures forall (k: nat). k <= n ==> (p xs1 k <==> p xs2 k))
-  =
-  let aux (k: nat) : Lemma (requires k <= n) (ensures p xs1 k <==> p xs2 k) = () in
-  Classical.forall_intro (Classical.move_requires aux)
-
-(* Prefix transport for a causal postcondition: pointwise-equal input and output
-   prefixes give the same postcondition truth at every step of the prefix. *)
-let lemma_causal_post_prefix
-  (#input #output: Type)
-  (q: E.stream input -> E.stream output -> E.stream prop)
-  (is1 is2: E.stream input)
-  (os1 os2: E.stream output)
-  (n: nat)
-  : Lemma
-    (requires
-      causal_post q /\
-      (forall (k: nat). k <= n ==> is1 k == is2 k) /\
-      (forall (k: nat). k <= n ==> os1 k == os2 k))
-    (ensures forall (k: nat). k <= n ==> (q is1 os1 k <==> q is2 os2 k))
-  =
-  let aux (k: nat) : Lemma (requires k <= n) (ensures q is1 os1 k <==> q is2 os2 k) = () in
-  Classical.forall_intro (Classical.move_requires aux)
-
 (* Auxiliary induction: for a fixed input and oracle stream, every prefix of a
    [mu] run satisfies the postcondition and obligations. *)
 #push-options "--z3rlimit 40"
@@ -67,8 +33,8 @@ let rec mu_aux
   (n: nat)
   : Lemma
     (requires
-      causal p /\
-      causal_post q /\
+      ES.causal p /\
+      ES.causal2 q /\
       triple (mu_body_pre p q) body (mu_body_post q) /\
       ES.sofar (p is) n /\
       ES.sofar (S.stream_of_assumptions (S.mu body).raw (S.with_oracle (S.mu body) is orc)) n)
@@ -131,9 +97,9 @@ let rec mu_aux
 
   (* Causal transports: swap the body's projected input/feedback for the source
      input / [os_mu] on the prefix. *)
-  lemma_causal_prefix p (source is') is n;
-  lemma_causal_post_prefix q (source is') is (feedback is') os_mu n;
-  lemma_causal_post_prefix q (source is') is os' os_mu n;
+  ES.lemma_causal_prefix p (source is') is n;
+  ES.lemma_causal2_prefix q (source is') is (feedback is') os_mu n;
+  ES.lemma_causal2_prefix q (source is') is os' os_mu n;
 
   (* Body triple premise 1: the guarded precondition. *)
   assert (forall (k: nat). k <= n ==> p (source is') k);
