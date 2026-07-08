@@ -10,14 +10,13 @@ module E = Pipit.Extensional.Base
 module ES = Pipit.Extensional.Stream
 module EPS = Pipit.Extensional.PStream
 module S = Pipit.Extensional.System
-
-open Pipit.System.Base
+module SB = Pipit.System.Base
 
 (* Extensional equivalence on outputs only. *)
 let output_equiv
   (#input #result: Type)
   (#oracle #state: option Type)
-  (t1 t2: system input oracle state result)
+  (t1 t2: SB.system input oracle state result)
   : prop
   =
   forall (ios: S.io_stream input oracle).
@@ -29,7 +28,7 @@ let output_equiv
 let observational_equiv
   (#input #result: Type)
   (#oracle #state: option Type)
-  (t1 t2: system input oracle state result)
+  (t1 t2: SB.system input oracle state result)
   : prop
   =
   forall (ios: S.io_stream input oracle).
@@ -41,7 +40,7 @@ let observational_equiv
 let observational_equiv_refl
   (#input #result: Type)
   (#oracle #state: option Type)
-  (t: system input oracle state result)
+  (t: SB.system input oracle state result)
   : Lemma (ensures observational_equiv t t)
   =
   ()
@@ -50,7 +49,7 @@ let observational_equiv_refl
 let output_equiv_of_observational_equiv
   (#input #result: Type)
   (#oracle #state: option Type)
-  (t1 t2: system input oracle state result)
+  (t1 t2: SB.system input oracle state result)
   : Lemma
     (requires observational_equiv t1 t2)
     (ensures output_equiv t1 t2)
@@ -68,7 +67,7 @@ let output_equiv_of_observational_equiv
 let stream_holds_of_output_equiv
   (#input #result: Type)
   (#oracle #state: option Type)
-  (t1 t2: system input oracle state result)
+  (t1 t2: SB.system input oracle state result)
   (ios: S.io_stream input oracle)
   (p: result -> prop)
   : Lemma
@@ -87,7 +86,7 @@ let stream_holds_of_output_equiv
 let stream_holds_of_assumptions_equiv
   (#input #result: Type)
   (#oracle #state: option Type)
-  (t1 t2: system input oracle state result)
+  (t1 t2: SB.system input oracle state result)
   (ios: S.io_stream input oracle)
   (p: prop -> prop)
   : Lemma
@@ -109,7 +108,7 @@ let stream_holds_of_assumptions_equiv
 let stream_holds_of_obligations_equiv
   (#input #result: Type)
   (#oracle #state: option Type)
-  (t1 t2: system input oracle state result)
+  (t1 t2: SB.system input oracle state result)
   (ios: S.io_stream input oracle)
   (p: prop -> prop)
   : Lemma

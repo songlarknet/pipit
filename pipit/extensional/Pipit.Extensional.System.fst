@@ -11,22 +11,21 @@ module Pipit.Extensional.System
 module E = Pipit.Extensional.Base
 module ES = Pipit.Extensional.Stream
 module EPS = Pipit.Extensional.PStream
-
-open Pipit.System.Base
+module SB = Pipit.System.Base
 
 (* Input stream consumed by a system step-by-step. *)
 type io_stream (input: Type) (oracle: option Type) =
-  E.stream (input & option_type_sem oracle)
+  E.stream (input & SB.option_type_sem oracle)
 
 (* Execute exactly n+1 steps and return the final step result.
    n = 0 corresponds to one step from init using ios 0. *)
 let rec step_result_at
   (#input #result: Type)
   (#oracle #state: option Type)
-  (t: system input oracle state result)
+  (t: SB.system input oracle state result)
   (ios: io_stream input oracle)
   (n: nat)
-  : Tot (step_result state result)
+  : Tot (SB.step_result state result)
   (decreases n)
   =
   match n with
@@ -42,7 +41,7 @@ let rec step_result_at
 let pstream_of_system
   (#input #result: Type)
   (#oracle #state: option Type)
-  (t: system input oracle state result)
+  (t: SB.system input oracle state result)
   (ios: io_stream input oracle)
   : E.pstream result
   =
@@ -50,15 +49,15 @@ let pstream_of_system
     let stp = step_result_at t ios n in
     {
       pv = stp.v;
-      pasm = option_prop_sem stp.chck.assumptions;
-      pobl = option_prop_sem stp.chck.obligations;
+      pasm = SB.option_prop_sem stp.chck.assumptions;
+      pobl = SB.option_prop_sem stp.chck.obligations;
     }
 
 (* Observable output stream. *)
 let stream_of_output
   (#input #result: Type)
   (#oracle #state: option Type)
-  (t: system input oracle state result)
+  (t: SB.system input oracle state result)
   (ios: io_stream input oracle)
   : E.stream result
   =
@@ -68,7 +67,7 @@ let stream_of_output
 let stream_of_assumptions
   (#input #result: Type)
   (#oracle #state: option Type)
-  (t: system input oracle state result)
+  (t: SB.system input oracle state result)
   (ios: io_stream input oracle)
   : E.stream prop
   =
@@ -78,7 +77,7 @@ let stream_of_assumptions
 let stream_of_obligations
   (#input #result: Type)
   (#oracle #state: option Type)
-  (t: system input oracle state result)
+  (t: SB.system input oracle state result)
   (ios: io_stream input oracle)
   : E.stream prop
   =
@@ -96,7 +95,7 @@ noeq
 type sys (input output: Type) = {
   oracle: option Type;
   state:  option Type;
-  raw:    system input oracle state output;
+  raw:    SB.system input oracle state output;
 }
 
 (* Pair an input stream with an oracle stream into the io-stream consumed by
@@ -105,7 +104,7 @@ let with_oracle
   (#input #output: Type)
   (t: sys input output)
   (is: E.stream input)
-  (orc: E.stream (option_type_sem t.oracle))
+  (orc: E.stream (SB.option_type_sem t.oracle))
   : io_stream input t.oracle
   =
   fun n -> (is n, orc n)
@@ -115,7 +114,7 @@ let outputs
   (#input #output: Type)
   (t: sys input output)
   (is: E.stream input)
-  (orc: E.stream (option_type_sem t.oracle))
+  (orc: E.stream (SB.option_type_sem t.oracle))
   : E.stream output
   =
   stream_of_output t.raw (with_oracle t is orc)
@@ -128,9 +127,9 @@ let mu
   : sys input output
   =
   {
-    oracle = Some output `type_join` body.oracle;
+    oracle = SB.type_join (Some output) body.oracle;
     state  = body.state;
-    raw    = system_mu body.raw;
+    raw    = SB.system_mu body.raw;
   }
 
 (*** system_mu ***)
@@ -140,21 +139,21 @@ let mu
 let mu_guess
   (#input #value: Type)
   (#oracle: option Type)
-  (ios: io_stream input (Some value `type_join` oracle))
+  (ios: io_stream input (SB.type_join (Some value) oracle))
   : E.stream value
   =
-  fun n -> type_join_fst #(Some value) #oracle (snd (ios n))
+  fun n -> SB.type_join_fst #(Some value) #oracle (snd (ios n))
 
 (* The io-stream that [system_mu t1] feeds to its body [t1]: the guessed value
    paired with the source input, and the remaining oracle component. *)
 let mu_body_ios
   (#input #value: Type)
   (#oracle: option Type)
-  (ios: io_stream input (Some value `type_join` oracle))
+  (ios: io_stream input (SB.type_join (Some value) oracle))
   : io_stream (value & input) oracle
   =
   fun n ->
-    ((mu_guess ios n, fst (ios n)), type_join_snd #(Some value) #oracle (snd (ios n)))
+    ((mu_guess ios n, fst (ios n)), SB.type_join_snd #(Some value) #oracle (snd (ios n)))
 
 (* Step-indexed alignment for [system_mu]: its state and checks are exactly the
    body's run on [mu_body_ios], with the output overridden by the guess and an
@@ -162,18 +161,19 @@ let mu_body_ios
 let rec lemma_step_result_at_system_mu
   (#input #value: Type)
   (#oracle #state: option Type)
-  (t1: system (value & input) oracle state value)
-  (ios: io_stream input (Some value `type_join` oracle))
+  (t1: SB.system (value & input) oracle state value)
+  (ios: io_stream input (SB.type_join (Some value) oracle))
   (n: nat)
   : Lemma
     (ensures
-      (step_result_at (system_mu t1) ios n).s ==
+      (step_result_at (SB.system_mu t1) ios n).s ==
         (step_result_at t1 (mu_body_ios ios) n).s /\
-      (step_result_at (system_mu t1) ios n).v == mu_guess ios n /\
-      (step_result_at (system_mu t1) ios n).chck ==
-        (checks_assumption
-          (mu_guess ios n == (step_result_at t1 (mu_body_ios ios) n).v)
-          `checks_join` (step_result_at t1 (mu_body_ios ios) n).chck))
+      (step_result_at (SB.system_mu t1) ios n).v == mu_guess ios n /\
+      (step_result_at (SB.system_mu t1) ios n).chck ==
+        (SB.checks_join
+          (SB.checks_assumption
+            (mu_guess ios n == (step_result_at t1 (mu_body_ios ios) n).v))
+          (step_result_at t1 (mu_body_ios ios) n).chck))
     (decreases n)
   =
   match n with
@@ -184,11 +184,11 @@ let rec lemma_step_result_at_system_mu
 let lemma_stream_of_output_system_mu
   (#input #value: Type)
   (#oracle #state: option Type)
-  (t1: system (value & input) oracle state value)
-  (ios: io_stream input (Some value `type_join` oracle))
+  (t1: SB.system (value & input) oracle state value)
+  (ios: io_stream input (SB.type_join (Some value) oracle))
   (n: nat)
   : Lemma
-    (ensures stream_of_output (system_mu t1) ios n == mu_guess ios n)
+    (ensures stream_of_output (SB.system_mu t1) ios n == mu_guess ios n)
   =
   lemma_step_result_at_system_mu t1 ios n
 
@@ -196,12 +196,12 @@ let lemma_stream_of_output_system_mu
 let lemma_stream_of_obligations_system_mu
   (#input #value: Type)
   (#oracle #state: option Type)
-  (t1: system (value & input) oracle state value)
-  (ios: io_stream input (Some value `type_join` oracle))
+  (t1: SB.system (value & input) oracle state value)
+  (ios: io_stream input (SB.type_join (Some value) oracle))
   (n: nat)
   : Lemma
     (ensures
-      stream_of_obligations (system_mu t1) ios n ==
+      stream_of_obligations (SB.system_mu t1) ios n ==
         stream_of_obligations t1 (mu_body_ios ios) n)
   =
   lemma_step_result_at_system_mu t1 ios n
@@ -211,12 +211,12 @@ let lemma_stream_of_obligations_system_mu
 let lemma_stream_of_assumptions_system_mu
   (#input #value: Type)
   (#oracle #state: option Type)
-  (t1: system (value & input) oracle state value)
-  (ios: io_stream input (Some value `type_join` oracle))
+  (t1: SB.system (value & input) oracle state value)
+  (ios: io_stream input (SB.type_join (Some value) oracle))
   (n: nat)
   : Lemma
     (ensures
-      (stream_of_assumptions (system_mu t1) ios n <==>
+      (stream_of_assumptions (SB.system_mu t1) ios n <==>
         ((mu_guess ios n == stream_of_output t1 (mu_body_ios ios) n) /\
          stream_of_assumptions t1 (mu_body_ios ios) n)))
   =
@@ -229,7 +229,7 @@ let lemma_stream_of_assumptions_system_mu
 let rec lemma_step_result_at_congruence
   (#input #result: Type)
   (#oracle #state: option Type)
-  (t: system input oracle state result)
+  (t: SB.system input oracle state result)
   (j1 j2: io_stream input oracle)
   (n: nat)
   : Lemma
@@ -245,7 +245,7 @@ let rec lemma_step_result_at_congruence
 let lemma_stream_of_output_congruence
   (#input #result: Type)
   (#oracle #state: option Type)
-  (t: system input oracle state result)
+  (t: SB.system input oracle state result)
   (j1 j2: io_stream input oracle)
   (n: nat)
   : Lemma
@@ -258,7 +258,7 @@ let lemma_stream_of_output_congruence
 let lemma_stream_of_assumptions_congruence
   (#input #result: Type)
   (#oracle #state: option Type)
-  (t: system input oracle state result)
+  (t: SB.system input oracle state result)
   (j1 j2: io_stream input oracle)
   (n: nat)
   : Lemma
@@ -271,7 +271,7 @@ let lemma_stream_of_assumptions_congruence
 let lemma_stream_of_obligations_congruence
   (#input #result: Type)
   (#oracle #state: option Type)
-  (t: system input oracle state result)
+  (t: SB.system input oracle state result)
   (j1 j2: io_stream input oracle)
   (n: nat)
   : Lemma
@@ -287,12 +287,12 @@ let lemma_stream_of_obligations_congruence
 let let_ios_left
   (#input: Type)
   (#oracle1 #oracle2: option Type)
-  (ios: io_stream input (oracle1 `type_join` oracle2))
+  (ios: io_stream input (SB.type_join oracle1 oracle2))
   : io_stream input oracle1
   =
   fun n ->
     let io = ios n in
-    (fst io, type_join_fst (snd io))
+    (fst io, SB.type_join_fst (snd io))
 
 (* Build the right-component input stream consumed by [t2], given an
    extension function and a stream of values from [t1]. *)
@@ -300,13 +300,13 @@ let let_ios_right
   (#input #input' #v1: Type)
   (#oracle1 #oracle2: option Type)
   (extend: input -> v1 -> input')
-  (ios: io_stream input (oracle1 `type_join` oracle2))
+  (ios: io_stream input (SB.type_join oracle1 oracle2))
   (x: E.stream v1)
   : io_stream input' oracle2
   =
   fun n ->
     let io = ios n in
-    (extend (fst io) (x n), type_join_snd (snd io))
+    (extend (fst io) (x n), SB.type_join_snd (snd io))
 
 (* Step-indexed alignment for [system_let]: the right state/output match
    running [t2] on the stream extended with [t1]'s outputs. *)
@@ -314,19 +314,19 @@ let rec lemma_step_result_at_system_let
   (#input #input' #v1 #v2: Type)
   (#oracle1 #oracle2 #state1 #state2: option Type)
   (extend: input -> v1 -> input')
-  (t1: system input oracle1 state1 v1)
-  (t2: system input' oracle2 state2 v2)
-  (ios: io_stream input (oracle1 `type_join` oracle2))
+  (t1: SB.system input oracle1 state1 v1)
+  (t2: SB.system input' oracle2 state2 v2)
+  (ios: io_stream input (SB.type_join oracle1 oracle2))
   (n: nat)
   : Lemma
     (ensures
-      type_join_fst (step_result_at (system_let extend t1 t2) ios n).s ==
+      SB.type_join_fst (step_result_at (SB.system_let extend t1 t2) ios n).s ==
       (step_result_at t1 (let_ios_left ios) n).s /\
-      type_join_snd (step_result_at (system_let extend t1 t2) ios n).s ==
+      SB.type_join_snd (step_result_at (SB.system_let extend t1 t2) ios n).s ==
       (step_result_at t2
         (let_ios_right extend ios (stream_of_output t1 (let_ios_left ios)))
         n).s /\
-      (step_result_at (system_let extend t1 t2) ios n).v ==
+      (step_result_at (SB.system_let extend t1 t2) ios n).v ==
       (step_result_at t2
         (let_ios_right extend ios (stream_of_output t1 (let_ios_left ios)))
         n).v)
@@ -345,18 +345,18 @@ let stream_of_output_system_let
   (#input #input' #v1 #v2: Type)
   (#oracle1 #oracle2 #state1 #state2: option Type)
   (extend: input -> v1 -> input')
-  (t1: system input oracle1 state1 v1)
-  (t2: system input' oracle2 state2 v2)
-  (ios: io_stream input (oracle1 `type_join` oracle2))
+  (t1: SB.system input oracle1 state1 v1)
+  (t2: SB.system input' oracle2 state2 v2)
+  (ios: io_stream input (SB.type_join oracle1 oracle2))
   : Lemma
     (ensures
       ES.eq
-        (stream_of_output (system_let extend t1 t2) ios)
+        (stream_of_output (SB.system_let extend t1 t2) ios)
         (stream_of_output t2
           (let_ios_right extend ios (stream_of_output t1 (let_ios_left ios)))))
   =
   introduce forall (n: nat).
-    stream_of_output (system_let extend t1 t2) ios n ==
+    stream_of_output (SB.system_let extend t1 t2) ios n ==
     stream_of_output t2
       (let_ios_right extend ios (stream_of_output t1 (let_ios_left ios)))
       n
@@ -371,7 +371,7 @@ let rec lemma_step_result_at_system_const
   (ios: io_stream input None)
   (n: nat)
   : Lemma
-    (ensures (step_result_at (system_const v) ios n).v == v)
+    (ensures (step_result_at (SB.system_const v) ios n).v == v)
     (decreases n)
   =
   match n with
@@ -386,11 +386,11 @@ let stream_of_output_system_const
   : Lemma
     (ensures
       ES.eq
-        (stream_of_output (system_const v) ios)
+        (stream_of_output (SB.system_const v) ios)
         (ES.const v))
   =
   introduce forall (n: nat).
-    stream_of_output (system_const v) ios n == ES.const v n
+    stream_of_output (SB.system_const v) ios n == ES.const v n
   with (
     lemma_step_result_at_system_const v ios n
   )
