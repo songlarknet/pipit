@@ -132,6 +132,82 @@ let mu
     raw    = SB.system_mu body.raw;
   }
 
+(*** Pointwise combinators: id / map / fby ***)
+
+(* Identity system: output equals the input. *)
+let id (#input: Type) : sys input input =
+  { oracle = None; state = None; raw = SB.system_project (fun i -> i) }
+
+(* Map a pure function over a system's output. *)
+let map
+  (#input #output1 #output2: Type)
+  (f: output1 -> output2)
+  (t: sys input output1)
+  : sys input output2
+  =
+  { oracle = t.oracle; state = t.state; raw = SB.system_map_result f t.raw }
+
+(* [v0 fby t]: emit [v0] at step 0, then the previous output of [t]. Only the
+   output is delayed; the checks are [t]'s at the current step. *)
+let fby
+  (#input #output: Type)
+  (v0: output)
+  (t: sys input output)
+  : sys input output
+  =
+  { oracle = t.oracle; state = SB.type_join (Some output) t.state; raw = SB.system_pre v0 t.raw }
+
+(* Laws relating the observable streams of these combinators to their operands.
+   PROOFS DEFERRED: each is a straightforward induction on [step_result_at],
+   like the [system_mu] alignment lemmas. *)
+
+(* [system_project f] outputs [f] of the current input; no checks. *)
+let lemma_system_project
+  (#input #result: Type)
+  (f: input -> result)
+  (ios: io_stream input None)
+  (n: nat)
+  : Lemma
+    (ensures
+      stream_of_output (SB.system_project f) ios n == f (fst (ios n)) /\
+      stream_of_assumptions (SB.system_project f) ios n == True /\
+      stream_of_obligations (SB.system_project f) ios n == True)
+  =
+  admit ()
+
+(* [system_map_result f] maps the output and preserves the checks. *)
+let lemma_system_map_result
+  (#input #result #result': Type)
+  (#oracle #state: option Type)
+  (f: result -> result')
+  (t: SB.system input oracle state result)
+  (ios: io_stream input oracle)
+  (n: nat)
+  : Lemma
+    (ensures
+      stream_of_output (SB.system_map_result f t) ios n == f (stream_of_output t ios n) /\
+      stream_of_assumptions (SB.system_map_result f t) ios n == stream_of_assumptions t ios n /\
+      stream_of_obligations (SB.system_map_result f t) ios n == stream_of_obligations t ios n)
+  =
+  admit ()
+
+(* [system_pre v0 t] delays the output by one step (an [fby]); checks stay at
+   the current step. *)
+let lemma_system_pre
+  (#input #value: Type)
+  (#oracle #state: option Type)
+  (v0: value)
+  (t: SB.system input oracle state value)
+  (ios: io_stream input oracle)
+  (n: nat)
+  : Lemma
+    (ensures
+      stream_of_output (SB.system_pre v0 t) ios n == ES.fby v0 (stream_of_output t ios) n /\
+      stream_of_assumptions (SB.system_pre v0 t) ios n == stream_of_assumptions t ios n /\
+      stream_of_obligations (SB.system_pre v0 t) ios n == stream_of_obligations t ios n)
+  =
+  admit ()
+
 (*** system_mu ***)
 
 (* The recursive value guessed by the oracle at each step: [system_mu] adds a

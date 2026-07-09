@@ -8,6 +8,10 @@ module Classical = FStar.Classical
 let const (#a: Type) (x: a): E.stream a =
   fun _ -> x
 
+(* Map a pure function pointwise over a stream. *)
+let map (#a #b: Type) (f: a -> b) (xs: E.stream a): E.stream b =
+  fun n -> f (xs n)
+
 (* Pointwise extensional equality on streams. *)
 let eq (#a: Type) (x y: E.stream a): prop =
   forall (n: nat). x n == y n
@@ -53,6 +57,14 @@ let pre (ps: E.stream prop): E.stream prop =
     match n with
     | 0 -> True
     | _ -> ps (n - 1)
+
+(* [fby v0 xs]: emit [v0] at step 0, then the previous value of [xs]. The value
+   analogue of [pre]. *)
+let fby (#a: Type) (v0: a) (xs: E.stream a): E.stream a =
+  fun n ->
+    match n with
+    | 0 -> v0
+    | _ -> xs (n - 1)
 
 (*** Causality (prefix-determinism) ***)
 

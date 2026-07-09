@@ -100,3 +100,47 @@ val mu
       triple (mu_body_pre p q) body (mu_body_post q))
     (ensures
       triple p (S.mu body) q)
+
+(* Rule for [System.fby]. Since [fby v0 t] only shifts the output (its checks are
+   [t]'s at the current step), a triple for [t] whose postcondition is [q]
+   post-composed with the shift [ES.fby v0] transfers to [fby v0 t]:
+
+     Q causal
+     { P } t { fun is ot -> Q is (v0 fby ot) }
+     -----------------------------------------
+     { P } System.fby v0 t { Q }
+*)
+val fby
+  (#input #output: Type)
+  (v0: output)
+  (t: S.sys input output)
+  (p: E.stream input -> E.stream prop)
+  (q: E.stream input -> E.stream output -> E.stream prop)
+  : Lemma
+    (requires
+      ES.causal2 q /\
+      triple p t (fun is ot -> q is (ES.fby v0 ot)))
+    (ensures
+      triple p (S.fby v0 t) q)
+
+(* Rule for [System.map]. Like [fby], [map f t] only transforms the output
+   (checks unchanged), so a triple for [t] with [q] post-composed with the map
+   [ES.map f] transfers to [map f t]:
+
+     Q causal
+     { P } t { fun is ot -> Q is (map f ot) }
+     -----------------------------------------
+     { P } System.map f t { Q }
+*)
+val map
+  (#input #output1 #output2: Type)
+  (f: output1 -> output2)
+  (t: S.sys input output1)
+  (p: E.stream input -> E.stream prop)
+  (q: E.stream input -> E.stream output2 -> E.stream prop)
+  : Lemma
+    (requires
+      ES.causal2 q /\
+      triple p t (fun is ot -> q is (ES.map f ot)))
+    (ensures
+      triple p (S.map f t) q)

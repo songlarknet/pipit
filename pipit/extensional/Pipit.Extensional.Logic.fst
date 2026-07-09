@@ -133,3 +133,14 @@ let mu #input #output p body q =
   in
   Classical.forall_intro_3 aux
 #pop-options
+
+(* PROOF DEFERRED: a rewrite via [System.lemma_system_pre] (fby only shifts the
+   output; checks are unchanged) plus a [causal2] transport to swap the shifted
+   output stream, exactly like the output transport in [mu_aux]. *)
+let fby #input #output v0 t p q =
+  admit ()
+
+(* PROOF DEFERRED: a rewrite via [System.lemma_system_map_result] (map only
+   transforms the output; checks are unchanged) plus a [causal2] transport. *)
+let map #input #output1 #output2 f t p q =
+  admit ()
