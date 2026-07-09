@@ -214,33 +214,30 @@ let lemma_zero_rec_mufby_step (_: unit)
 
 (*** Example 1, via transition induction:  { True } mufby 0 t_x { x = 0 } ***)
 
-(* Same result again, this time discharged by [induct1] instead of any recursion
-   rule. The only manual step is rewriting the system's output with the [mufby]
-   unfold law (a "system equivalence"): [os n == (0 fby os) n]. [induct1] then
-   supplies the induction, so the per-step goal [os n == 0] follows from the
-   induction hypothesis [os (n-1) == 0] (or the [0] seed at step 0). *)
-#push-options "--z3rlimit 60"
+(* Register-reduction lemmas as SMT patterns, so the solver rewrites
+   [type_join_fst/snd (type_join_tup a b)] on its own while unfolding the
+   transition step. *)
+let type_join_fst_tup_pat (#t1 #t2: option Type)
+  (a: SB.option_type_sem t1) (b: SB.option_type_sem t2)
+  : Lemma (SB.type_join_fst #t1 #t2 (SB.type_join_tup #t1 #t2 a b) == a)
+    [SMTPat (SB.type_join_fst #t1 #t2 (SB.type_join_tup #t1 #t2 a b))]
+  = S.lemma_type_join_fst_tup a b
+
+let type_join_snd_tup_pat (#t1 #t2: option Type)
+  (a: SB.option_type_sem t1) (b: SB.option_type_sem t2)
+  : Lemma (SB.type_join_snd #t1 #t2 (SB.type_join_tup #t1 #t2 a b) == b)
+    [SMTPat (SB.type_join_snd #t1 #t2 (SB.type_join_tup #t1 #t2 a b))]
+  = S.lemma_type_join_snd_tup a b
+
+(* Same result again, discharged by transition-system 1-induction. [induct1_pw]
+   reduces the triple to a base case and a step case over [t.step] with the state
+   abstracted (no [step_result_at] recursion): the [type_join] SMT patterns reduce
+   the register and SMT closes both one-step goals directly. *)
+#push-options "--fuel 2 --ifuel 1 --z3rlimit 150"
 let lemma_zero_rec_induct (_: unit)
   : Lemma (L.triple p_true prog_mufby q_zero)
   =
-  introduce forall (is: E.stream unit)
-                   (orc: E.stream (SB.option_type_sem prog_mufby.oracle))
-                   (n: nat).
-      (let ios = S.with_oracle prog_mufby is orc in
-       let os  = S.stream_of_output prog_mufby.raw ios in
-       (ES.sofar (p_true is) n /\
-        ES.sofar (S.stream_of_assumptions prog_mufby.raw ios) n /\
-        (forall (k: nat). k < n ==> q_zero is os k) /\
-        (forall (k: nat). k < n ==> S.stream_of_obligations prog_mufby.raw ios k))
-       ==>
-       (q_zero is os n /\ S.stream_of_obligations prog_mufby.raw ios n))
-    with introduce _ ==> _ with _hyp.
-      (let ios  = S.with_oracle prog_mufby is orc in
-       let jios = S.mufby_body_ios 0 t_x.raw ios in
-       (* system equivalence: [os == t_x] run on the [0 fby os] feedback *)
-       S.lemma_system_mufby 0 t_x.raw ios n;
-       (* [t_x = map fst id] echoes that feedback, so [os n == (0 fby os) n] *)
-       Classical.forall_intro (S.lemma_system_map_result fst (S.id #(int & unit)).raw jios);
-       Classical.forall_intro (S.lemma_system_project (fun (i: int & unit) -> i) jios));
-  L.induct1 prog_mufby p_true q_zero
+  L.induct1_pw prog_mufby
+    (fun (_: unit) (_: nat) -> True)
+    (fun (_: unit) (o: int) (_: nat) -> o == 0)
 #pop-options

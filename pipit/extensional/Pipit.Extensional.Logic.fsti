@@ -107,6 +107,80 @@ val induct1
     (requires induct1_vc t p q)
     (ensures triple p t q)
 
+(*** Transition-system 1-induction with abstract state (pointwise P/Q) ***)
+
+(* Pointwise lifts: a [P]/[Q] that inspect only the current input/output value and
+   step index, lifted to the stream pre/postconditions of a [triple]. *)
+let pw_pre
+  (#input: Type)
+  (pp: input -> nat -> prop)
+  : E.stream input -> E.stream prop
+  =
+  fun is -> (fun n -> pp (is n) n)
+
+let pw_post
+  (#input #output: Type)
+  (qq: input -> output -> nat -> prop)
+  : E.stream input -> E.stream output -> E.stream prop
+  =
+  fun is os -> (fun n -> qq (is n) (os n) n)
+
+(* Base case: one step from [init]. Given [P] at step 0 and the step's
+   assumptions, discharge the step's obligation and [Q] at step 0. *)
+let base_case
+  (#input #output: Type)
+  (#oracle #state: option Type)
+  (t: SB.system input oracle state output)
+  (pp: input -> nat -> prop)
+  (qq: input -> output -> nat -> prop)
+  : prop
+  =
+  forall (i: input) (o: SB.option_type_sem oracle).
+    {:pattern (qq i (t.step i o t.init).v 0)}
+    pp i 0 ==>
+    SB.option_prop_sem (t.step i o t.init).chck.assumptions ==>
+    (SB.option_prop_sem (t.step i o t.init).chck.obligations /\
+     qq i (t.step i o t.init).v 0)
+
+(* Step case (abstract state [s]): the current step [r'] (index [n > 0]) is
+   reached from the previous step [r] (index [n-1], from an arbitrary state [s]).
+   If [Q] held at [r] then it holds at [r']. This is 1-induction with [Q] as the
+   invariant; [s] is universally quantified, so [step_result_at] never appears. *)
+let step_case
+  (#input #output: Type)
+  (#oracle #state: option Type)
+  (t: SB.system input oracle state output)
+  (pp: input -> nat -> prop)
+  (qq: input -> output -> nat -> prop)
+  : prop
+  =
+  forall (n: nat) (s: SB.option_type_sem state)
+         (i0: input) (o0: SB.option_type_sem oracle)
+         (i1: input) (o1: SB.option_type_sem oracle).
+    {:pattern (qq i1 (t.step i1 o1 (t.step i0 o0 s).s).v n)}
+    0 < n ==>
+    pp i0 (n - 1) ==>
+    SB.option_prop_sem (t.step i0 o0 s).chck.assumptions ==>
+    SB.option_prop_sem (t.step i0 o0 s).chck.obligations ==>
+    qq i0 (t.step i0 o0 s).v (n - 1) ==>
+    pp i1 n ==>
+    SB.option_prop_sem (t.step i1 o1 (t.step i0 o0 s).s).chck.assumptions ==>
+    (SB.option_prop_sem (t.step i1 o1 (t.step i0 o0 s).s).chck.obligations /\
+     qq i1 (t.step i1 o1 (t.step i0 o0 s).s).v n)
+
+(* 1-induction with abstract state: the base and step cases (each a single
+   application of [t.step], with the state abstracted) discharge the triple for
+   pointwise [P]/[Q]. Both VCs normalise to goals over [t.step] alone, so a
+   [norm]/SMT pass on a concrete system finishes them. *)
+val induct1_pw
+  (#input #output: Type)
+  (t: S.sys input output)
+  (pp: input -> nat -> prop)
+  (qq: input -> output -> nat -> prop)
+  : Lemma
+    (requires base_case t.raw pp qq /\ step_case t.raw pp qq)
+    (ensures triple (pw_pre pp) t (pw_post qq))
+
 (*** Guarded recursion ***)
 
 (* Projections of a [mu]-body input stream: the source input and the recursive

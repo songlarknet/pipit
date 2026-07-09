@@ -58,6 +58,66 @@ let induct1 #input #output t p q =
     (fun is orc n -> Classical.move_requires (induct1_aux t p q is orc) n)
 #pop-options
 
+(* 1-induction with abstract state. Strong induction on [n]: at [n = 0] the base
+   case (one step from [init]) applies; at [n > 0] the step case connects
+   [step_result_at (n-1)] to [step_result_at n], both exposed by unfolding
+   [step_result_at] one level (fuel 2). The abstract state [s] in [step_case] is
+   instantiated to the previous step's state. *)
+#push-options "--fuel 2 --ifuel 1 --z3rlimit 100"
+let rec induct1_pw_aux
+  (#input #output: Type)
+  (t: S.sys input output)
+  (pp: input -> nat -> prop)
+  (qq: input -> output -> nat -> prop)
+  (is: E.stream input)
+  (orc: E.stream (SB.option_type_sem t.oracle))
+  (n: nat)
+  : Lemma
+    (requires
+      base_case t.raw pp qq /\
+      step_case t.raw pp qq /\
+      ES.sofar (pw_pre pp is) n /\
+      ES.sofar (S.stream_of_assumptions t.raw (S.with_oracle t is orc)) n)
+    (ensures (
+      let ios = S.with_oracle t is orc in
+      ES.sofar (pw_post qq is (S.stream_of_output t.raw ios)) n /\
+      ES.sofar (S.stream_of_obligations t.raw ios) n))
+    (decreases n)
+  =
+  let ios = S.with_oracle t is orc in
+  let os  = S.stream_of_output t.raw ios in
+  (if n > 0 then begin
+    ES.sofar_weaken (pw_pre pp is) n (n - 1);
+    ES.sofar_weaken (S.stream_of_assumptions t.raw ios) n (n - 1);
+    induct1_pw_aux t pp qq is orc (n - 1)
+  end);
+  ES.sofar_index (pw_pre pp is) n;
+  ES.sofar_index (S.stream_of_assumptions t.raw ios) n;
+  let r_curr = S.step_result_at t.raw ios n in
+  (if n = 0
+   then begin
+     assert (r_curr == t.raw.step (is 0) (orc 0) t.raw.init);
+     (* present the base_case pattern term at the ground index 0 *)
+     assert (qq (is 0) (t.raw.step (is 0) (orc 0) t.raw.init).v 0)
+   end
+   else begin
+     ES.sofar_index (pw_post qq is os) (n - 1);
+     ES.sofar_index (S.stream_of_obligations t.raw ios) (n - 1);
+     let r_prev = S.step_result_at t.raw ios (n - 1) in
+     let s0 = (if n = 1 then t.raw.init else (S.step_result_at t.raw ios (n - 2)).s) in
+     assert (r_prev == t.raw.step (is (n - 1)) (orc (n - 1)) s0);
+     assert (r_curr ==
+       t.raw.step (is n) (orc n) (t.raw.step (is (n - 1)) (orc (n - 1)) s0).s);
+     (* present the step_case pattern term at the ground index n *)
+     assert (qq (is n)
+       (t.raw.step (is n) (orc n) (t.raw.step (is (n - 1)) (orc (n - 1)) s0).s).v n)
+   end)
+
+let induct1_pw #input #output t pp qq =
+  Classical.forall_intro_3
+    (fun is orc n -> Classical.move_requires (induct1_pw_aux t pp qq is orc) n)
+#pop-options
+
 (* Assemble a [mu]-body input stream from a feedback stream and a source input
    stream. Kept transparent so [source] reduces pointwise to the inputs. *)
 let mu_body_input
