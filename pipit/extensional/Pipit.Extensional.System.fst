@@ -225,27 +225,24 @@ let lemma_system_map_result
   =
   lemma_step_result_at_system_map_result f t ios n
 
-(* [type_join_fst]/[type_join_snd] invert [type_join_tup] when the first
-   component is a [Some] (the shape [system_pre] uses for its state). *)
+(* [type_join_fst]/[type_join_snd] invert [type_join_tup]. *)
 let lemma_type_join_fst_tup
-  (#value: Type)
-  (#state: option Type)
-  (a: value)
-  (b: SB.option_type_sem state)
+  (#t1 #t2: option Type)
+  (a: SB.option_type_sem t1)
+  (b: SB.option_type_sem t2)
   : Lemma
-    (SB.type_join_fst #(Some value) #state (SB.type_join_tup #(Some value) #state a b) == a)
+    (SB.type_join_fst #t1 #t2 (SB.type_join_tup #t1 #t2 a b) == a)
   =
-  match state with | Some _ -> () | None -> ()
+  match t1, t2 with | Some _, Some _ -> () | None, _ -> () | _, None -> ()
 
 let lemma_type_join_snd_tup
-  (#value: Type)
-  (#state: option Type)
-  (a: value)
-  (b: SB.option_type_sem state)
+  (#t1 #t2: option Type)
+  (a: SB.option_type_sem t1)
+  (b: SB.option_type_sem t2)
   : Lemma
-    (SB.type_join_snd #(Some value) #state (SB.type_join_tup #(Some value) #state a b) == b)
+    (SB.type_join_snd #t1 #t2 (SB.type_join_tup #t1 #t2 a b) == b)
   =
-  match state with | Some _ -> () | None -> ()
+  match t1, t2 with | Some _, Some _ -> () | None, _ -> () | _, None -> ()
 
 (* [system_pre v0 t] carries [t]'s current step in its state (first component the
    output, second the [t]-state), emitting the previous output; checks are [t]'s
@@ -271,9 +268,9 @@ let rec lemma_step_result_at_system_pre
   | 0 -> ()
   | _ ->
     lemma_step_result_at_system_pre v0 t ios (n - 1);
-    lemma_type_join_fst_tup #value #state
+    lemma_type_join_fst_tup #(Some value) #state
       (step_result_at t ios (n - 1)).v (step_result_at t ios (n - 1)).s;
-    lemma_type_join_snd_tup #value #state
+    lemma_type_join_snd_tup #(Some value) #state
       (step_result_at t ios (n - 1)).v (step_result_at t ios (n - 1)).s
 
 let lemma_system_pre
@@ -331,6 +328,72 @@ let mufby
     state  = SB.type_join body.state (Some output);
     raw    = system_mufby v0 body.raw;
   }
+
+(* The io-stream [system_mufby v0 body] feeds to [body]: the delayed output
+   [v0 fby os] as feedback, with the original source input and oracle. *)
+let mufby_body_ios
+  (#input #output: Type)
+  (#oracle #state: option Type)
+  (v0: output)
+  (body: SB.system (output & input) oracle state output)
+  (ios: io_stream input oracle)
+  : io_stream (output & input) oracle
+  =
+  fun n ->
+    ((ES.fby v0 (stream_of_output (system_mufby v0 body) ios) n, fst (ios n)), snd (ios n))
+
+(* Alignment: [system_mufby v0 body] runs [body] on [mufby_body_ios], storing the
+   current output as the next feedback. *)
+let rec lemma_step_result_at_system_mufby
+  (#input #output: Type)
+  (#oracle #state: option Type)
+  (v0: output)
+  (body: SB.system (output & input) oracle state output)
+  (ios: io_stream input oracle)
+  (n: nat)
+  : Lemma
+    (ensures
+      (step_result_at (system_mufby v0 body) ios n).v ==
+        (step_result_at body (mufby_body_ios v0 body ios) n).v /\
+      (step_result_at (system_mufby v0 body) ios n).chck ==
+        (step_result_at body (mufby_body_ios v0 body ios) n).chck /\
+      SB.type_join_fst #state #(Some output)
+        (step_result_at (system_mufby v0 body) ios n).s ==
+        (step_result_at body (mufby_body_ios v0 body ios) n).s /\
+      SB.type_join_snd #state #(Some output)
+        (step_result_at (system_mufby v0 body) ios n).s ==
+        (step_result_at (system_mufby v0 body) ios n).v)
+    (decreases n)
+  =
+  (match n with
+   | 0 -> ()
+   | _ -> lemma_step_result_at_system_mufby v0 body ios (n - 1));
+  lemma_type_join_fst_tup #state #(Some output)
+    (step_result_at body (mufby_body_ios v0 body ios) n).s
+    (step_result_at body (mufby_body_ios v0 body ios) n).v;
+  lemma_type_join_snd_tup #state #(Some output)
+    (step_result_at body (mufby_body_ios v0 body ios) n).s
+    (step_result_at body (mufby_body_ios v0 body ios) n).v
+
+(* Observable [mufby] unfold: its output/checks are [body]'s run on the
+   [v0 fby os]-feedback io-stream. *)
+let lemma_system_mufby
+  (#input #output: Type)
+  (#oracle #state: option Type)
+  (v0: output)
+  (body: SB.system (output & input) oracle state output)
+  (ios: io_stream input oracle)
+  (n: nat)
+  : Lemma
+    (ensures
+      stream_of_output (system_mufby v0 body) ios n ==
+        stream_of_output body (mufby_body_ios v0 body ios) n /\
+      stream_of_assumptions (system_mufby v0 body) ios n ==
+        stream_of_assumptions body (mufby_body_ios v0 body ios) n /\
+      stream_of_obligations (system_mufby v0 body) ios n ==
+        stream_of_obligations body (mufby_body_ios v0 body ios) n)
+  =
+  lemma_step_result_at_system_mufby v0 body ios n
 
 (*** system_mu ***)
 
