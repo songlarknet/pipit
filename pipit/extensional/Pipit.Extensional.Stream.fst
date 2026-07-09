@@ -66,6 +66,12 @@ let fby (#a: Type) (v0: a) (xs: E.stream a): E.stream a =
     | 0 -> v0
     | _ -> xs (n - 1)
 
+(* [later xs]: drop the first element, i.e. look one step ahead. The inverse of
+   the [fby]/[pre] delay ([later (fby v0 xs) == xs]); non-causal on its own, but
+   causal when guarded by a matching [pre]. *)
+let later (#a: Type) (xs: E.stream a): E.stream a =
+  fun n -> xs (n + 1)
+
 (*** Causality (prefix-determinism) ***)
 
 (* A stream predicate is causal (prefix-determined / a safety property) when its

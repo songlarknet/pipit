@@ -173,3 +173,55 @@ val mufby
       triple (mu_body_pre p q) (S.delayed_body v0 body) (mu_body_post q))
     (ensures
       triple p (S.mufby v0 body) q)
+
+(* Body precondition for the convenience rule [mufby_step]: [P] on the source,
+   the feedback seeded at [v0], and [pre (Q -)] applied to the *un-delayed*
+   feedback [later feedback]. The [later] cancels [delayed_body]'s [fby], so this
+   specialises to [mu_body_pre] on the delayed body. It stays causal because the
+   [later] only ever occurs under a matching [pre]. *)
+let mufby_guard
+  (#input #output: Type)
+  (v0: output)
+  (p: E.stream input -> E.stream prop)
+  (q: E.stream input -> E.stream output -> E.stream prop)
+  (jxs: E.stream (output & input))
+  : E.stream prop
+  =
+  fun n ->
+    p (source jxs) n /\
+    feedback jxs 0 == v0 /\
+    ES.pre (q (source jxs) (ES.later (feedback jxs))) n
+
+(* [mufby_guard] is causal, so it composes with rules (e.g. [mu]) that require a
+   causal precondition: the non-causal [later] is always guarded by [pre]. *)
+val lemma_mufby_guard_causal
+  (#input #output: Type)
+  (v0: output)
+  (p: E.stream input -> E.stream prop)
+  (q: E.stream input -> E.stream output -> E.stream prop)
+  : Lemma
+    (requires ES.causal p /\ ES.causal2 q)
+    (ensures ES.causal (mufby_guard v0 p q))
+
+(* Convenience oracle-free recursion rule: discharge [mufby]'s premise from a
+   triple about [body] itself (fed the delayed feedback), rather than about
+   [delayed_body v0 body]:
+
+     P causal, Q causal
+     { mufby_guard v0 P Q } body { fun ixs os -> Q (source ixs) os }
+     -------------------------------------------------------------------
+     { P } System.mufby v0 body { Q }
+*)
+val mufby_step
+  (#input #output: Type)
+  (v0: output)
+  (body: S.sys (output & input) output)
+  (p: E.stream input -> E.stream prop)
+  (q: E.stream input -> E.stream output -> E.stream prop)
+  : Lemma
+    (requires
+      ES.causal p /\
+      ES.causal2 q /\
+      triple (mufby_guard v0 p q) body (mu_body_post q))
+    (ensures
+      triple p (S.mufby v0 body) q)

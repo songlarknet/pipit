@@ -201,3 +201,51 @@ let lemma_zero_rec_mufby (_: unit)
   assert (ES.causal2 q_post);
   lemma_db1_triple ();
   L.mufby 0 t_x p_true q_zero
+
+(*** Example 1, via mufby_step:  { True } mufby 0 t_x { x = 0 } ***)
+
+(* Same result as [lemma_zero_rec_mufby], but discharged with the convenience
+   rule [mufby_step]: the premise is a triple about [t_x] itself (fed the delayed
+   feedback via [mufby_guard]), so no [delayed_body] unfold is written by hand. *)
+let lemma_tx_step_aux
+  (is_x: E.stream (int & unit))
+  (orc_x: E.stream (SB.option_type_sem t_x.oracle))
+  (n: nat)
+  : Lemma
+    (requires
+      ES.sofar (L.mufby_guard 0 p_true q_zero is_x) n /\
+      ES.sofar (S.stream_of_assumptions t_x.raw (S.with_oracle t_x is_x orc_x)) n)
+    (ensures (
+      let ios = S.with_oracle t_x is_x orc_x in
+      let os  = S.stream_of_output t_x.raw ios in
+      ES.sofar (q_post is_x os) n /\
+      ES.sofar (S.stream_of_obligations t_x.raw ios) n))
+  =
+  let ios = S.with_oracle t_x is_x orc_x in
+  let os  = S.stream_of_output t_x.raw ios in
+
+  (* [t_x = map fst id] outputs the (un-delayed) feedback; its checks are trivial. *)
+  Classical.forall_intro (S.lemma_system_map_result fst (S.id #(int & unit)).raw ios);
+  Classical.forall_intro (S.lemma_system_project (fun (i: int & unit) -> i) ios);
+  assert (forall (k: nat). os k == fst (is_x k));
+  assert (forall (k: nat). S.stream_of_obligations t_x.raw ios k == True);
+
+  (* The guard gives the seed [feedback 0 = 0] and [later feedback = 0] so far. *)
+  ES.sofar_index (L.mufby_guard 0 p_true q_zero is_x) n;
+  assert (forall (k: nat). k <= n ==> L.feedback is_x 0 == 0);
+  assert (forall (k: nat). 0 < k /\ k <= n ==> L.feedback is_x k == 0);
+  assert (forall (k: nat). k <= n ==> os k == 0)
+
+let lemma_tx_step_triple (_: unit)
+  : Lemma (L.triple (L.mufby_guard 0 p_true q_zero) t_x q_post)
+  =
+  Classical.forall_intro_3
+    (fun is orc n -> Classical.move_requires (lemma_tx_step_aux is orc) n)
+
+let lemma_zero_rec_mufby_step (_: unit)
+  : Lemma (L.triple p_true prog_mufby q_zero)
+  =
+  assert (ES.causal p_true);
+  assert (ES.causal2 q_zero);
+  lemma_tx_step_triple ();
+  L.mufby_step 0 t_x p_true q_zero

@@ -329,3 +329,113 @@ let mufby #input #output v0 body p q =
   Classical.forall_intro_3
     (fun is orc n -> Classical.move_requires (mufby_transfer_aux v0 body p q is orc) n)
 #pop-options
+
+(* [mufby_guard] is causal: the [later] appears only under [pre], so its value at
+   [n] depends only on the [jxs] prefix up to [n]. *)
+let lemma_mufby_guard_causal #input #output v0 p q =
+  let g = mufby_guard v0 p q in
+  let aux (jxs1 jxs2: E.stream (output & input)) (n: nat)
+    : Lemma
+      (requires (forall (k: nat). k <= n ==> jxs1 k == jxs2 k))
+      (ensures g jxs1 n <==> g jxs2 n)
+    =
+    ES.lemma_causal_prefix p (source jxs1) (source jxs2) n;
+    (if n > 0 then
+      ES.lemma_causal2_prefix q (source jxs1) (source jxs2)
+        (ES.later (feedback jxs1)) (ES.later (feedback jxs2)) (n - 1))
+  in
+  Classical.forall_intro_3 (fun jxs1 jxs2 n -> Classical.move_requires (aux jxs1 jxs2) n)
+
+(* Core of [mufby_step]: from a triple about [body] with the [mufby_guard]
+   precondition, discharge [mu]'s premise for [delayed_body v0 body] step by
+   step. The body is run on [delayed_body_ios] (its feedback delayed by
+   [v0 fby -]); the guard's [later] cancels that [fby] so the [mufby_guard] on
+   the delayed input matches [mu_body_pre]. *)
+#push-options "--z3rlimit 100"
+let mufby_step_aux
+  (#input #output: Type)
+  (v0: output)
+  (body: S.sys (output & input) output)
+  (p: E.stream input -> E.stream prop)
+  (q: E.stream input -> E.stream output -> E.stream prop)
+  (ixs: E.stream (output & input))
+  (orc: E.stream (SB.option_type_sem (S.delayed_body v0 body).oracle))
+  (n: nat)
+  : Lemma
+    (requires
+      ES.causal p /\ ES.causal2 q /\
+      triple (mufby_guard v0 p q) body (mu_body_post q) /\
+      ES.sofar (mu_body_pre p q ixs) n /\
+      ES.sofar
+        (S.stream_of_assumptions (S.delayed_body v0 body).raw
+          (S.with_oracle (S.delayed_body v0 body) ixs orc)) n)
+    (ensures (
+      let ios = S.with_oracle (S.delayed_body v0 body) ixs orc in
+      let os  = S.stream_of_output (S.delayed_body v0 body).raw ios in
+      ES.sofar (mu_body_post q ixs os) n /\
+      ES.sofar (S.stream_of_obligations (S.delayed_body v0 body).raw ios) n))
+  =
+  let db    = S.delayed_body v0 body in
+  let ios   = S.with_oracle db ixs orc in
+  let dios  = S.delayed_body_ios v0 body.raw ios in
+  (* Body input for the triple: the delayed-feedback io-stream, viewed as a
+     plain body input stream. *)
+  let jxs : E.stream (output & input) = fun k -> fst (dios k) in
+  let ios_b = S.with_oracle body jxs orc in
+  let os_b  = S.stream_of_output body.raw ios_b in
+  let os    = S.stream_of_output db.raw ios in
+
+  (* [delayed_body] unfold, and [dios] equals the body io-stream [ios_b]. *)
+  Classical.forall_intro (S.lemma_system_delayed_body v0 body.raw ios);
+  assert (forall (k: nat). dios k == ios_b k);
+  introduce forall (k: nat). S.stream_of_output body.raw dios k == os_b k
+    with S.lemma_stream_of_output_congruence body.raw dios ios_b k;
+  introduce forall (k: nat).
+      S.stream_of_assumptions body.raw dios k == S.stream_of_assumptions body.raw ios_b k
+    with S.lemma_stream_of_assumptions_congruence body.raw dios ios_b k;
+  introduce forall (k: nat).
+      S.stream_of_obligations body.raw dios k == S.stream_of_obligations body.raw ios_b k
+    with S.lemma_stream_of_obligations_congruence body.raw dios ios_b k;
+
+  (* [jxs]'s feedback/source relate to [ixs]: [later] cancels the [fby] delay. *)
+  assert (forall (m: nat). ES.later (feedback jxs) m == feedback ixs m);
+  assert (forall (k: nat). source jxs k == source ixs k);
+  assert (feedback jxs 0 == v0);
+
+  (* Guard implication: [mu_body_pre p q ixs] ==> [mufby_guard v0 p q jxs]. *)
+  ES.lemma_causal_prefix p (source jxs) (source ixs) n;
+  (if n > 0 then
+    ES.lemma_causal2_prefix q (source jxs) (source ixs)
+      (ES.later (feedback jxs)) (feedback ixs) (n - 1));
+  ES.sofar_index (mu_body_pre p q ixs) n;
+  assert (ES.sofar (mufby_guard v0 p q jxs) n);
+
+  (* Body assumptions hold on [ios_b]; the body triple gives the post + obl. *)
+  assert (ES.sofar (S.stream_of_assumptions body.raw ios_b) n);
+  assert (ES.sofar (mu_body_post q jxs os_b) n);
+  assert (ES.sofar (S.stream_of_obligations body.raw ios_b) n);
+
+  (* Transport the postcondition and obligations back to [ixs]/[os]. *)
+  ES.lemma_causal2_prefix q (source jxs) (source ixs) os_b os n;
+  assert (ES.sofar (mu_body_post q ixs os) n);
+  assert (ES.sofar (S.stream_of_obligations db.raw ios) n)
+
+let mufby_step #input #output v0 body p q =
+  let aux
+    (ixs: E.stream (output & input))
+    (orc: E.stream (SB.option_type_sem (S.delayed_body v0 body).oracle))
+    (n: nat)
+    : Lemma
+      (ensures (
+        let ios = S.with_oracle (S.delayed_body v0 body) ixs orc in
+        let os  = S.stream_of_output (S.delayed_body v0 body).raw ios in
+        ES.sofar (mu_body_pre p q ixs) n ==>
+        ES.sofar (S.stream_of_assumptions (S.delayed_body v0 body).raw ios) n ==>
+        (ES.sofar (mu_body_post q ixs os) n /\
+         ES.sofar (S.stream_of_obligations (S.delayed_body v0 body).raw ios) n)))
+    =
+    Classical.move_requires (mufby_step_aux v0 body p q ixs orc) n
+  in
+  Classical.forall_intro_3 aux;
+  mufby v0 body p q
+#pop-options
