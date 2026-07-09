@@ -24,43 +24,26 @@ let q_zero : E.stream unit -> E.stream int -> E.stream prop = fun _ os -> (fun n
 let p_pre  = L.mu_body_pre p_true q_zero
 let q_post = L.mu_body_post q_zero
 
-(* Body triple for the projection [t_x], with [q_post] post-composed with the
-   [fby 0] shift (the premise [Logic.fby] needs). *)
-let lemma_t_x_aux
-  (is_x: E.stream (int & unit))
-  (orc_x: E.stream (SB.option_type_sem t_x.oracle))
-  (n: nat)
-  : Lemma
-    (requires
-      ES.sofar (p_pre is_x) n /\
-      ES.sofar (S.stream_of_assumptions t_x.raw (S.with_oracle t_x is_x orc_x)) n)
-    (ensures (
-      let ios = S.with_oracle t_x is_x orc_x in
-      let os  = S.stream_of_output t_x.raw ios in
-      ES.sofar (q_post is_x (ES.fby 0 os)) n /\
-      ES.sofar (S.stream_of_obligations t_x.raw ios) n))
-  =
-  let ios = S.with_oracle t_x is_x orc_x in
-  let os  = S.stream_of_output t_x.raw ios in
-
-  (* [t_x = map fst id] outputs [fst input]; its checks are trivial. *)
-  Classical.forall_intro (S.lemma_system_map_result fst (S.id #(int & unit)).raw ios);
-  Classical.forall_intro (S.lemma_system_project (fun (i: int & unit) -> i) ios);
-  assert (forall (k: nat). os k == fst (is_x k));
-  assert (forall (k: nat). S.stream_of_obligations t_x.raw ios k == True);
-
-  (* Expose the guarded precondition at every step. *)
-  ES.sofar_index (p_pre is_x) n;
-  assert (forall (k: nat). 0 < k /\ k <= n ==> fst (is_x (k - 1)) == 0);
-
-  (* [0 fby os] is zero on the prefix: base at 0, step from the precondition. *)
-  assert (forall (k: nat). k <= n ==> (ES.fby 0 os) k == 0)
-
+(* Body triple for the projection [t_x = map fst id], with [q_post] post-composed
+   with the [fby 0] shift. Built compositionally by [Logic.map] then the [id] leaf
+   rule; the leftover [id] premise is the pure stream fact
+   [sofar (p_pre is) n ==> sofar (q_post is (0 fby fst is)) n]. *)
+#push-options "--z3rlimit 50"
 let lemma_t_x_triple (_: unit)
   : Lemma (L.triple p_pre t_x (fun is ot -> q_post is (ES.fby 0 ot)))
   =
-  Classical.forall_intro_3
-    (fun is orc n -> Classical.move_requires (lemma_t_x_aux is orc) n)
+  let qid : E.stream (int & unit) -> E.stream (int & unit) -> E.stream prop =
+    fun is ot -> q_post is (ES.fby 0 (ES.map fst ot)) in
+  assert (ES.causal2 (fun (is: E.stream (int & unit)) (ot: E.stream int) ->
+                        q_post is (ES.fby 0 ot)));
+  assert (ES.causal2 qid);
+  introduce forall (is: E.stream (int & unit)) (n: nat).
+      ES.sofar (p_pre is) n ==> ES.sofar (qid is is) n
+    with introduce _ ==> _ with _.
+      ES.sofar_index (p_pre is) n;
+  L.id p_pre qid;
+  L.map fst (S.id #(int & unit)) p_pre (fun is ot -> q_post is (ES.fby 0 ot))
+#pop-options
 
 (* The final proof: [fby] shifts the body, [mu] closes the recursion. *)
 let lemma_zero_rec (_: unit)
@@ -93,40 +76,21 @@ let q_txpost : E.stream (int & unit) -> E.stream int -> E.stream prop =
 
 (* Body triple for the projection [t_x], with the postcondition shifted through
    both [map (+1)] and [fby 0]. *)
-let lemma_t_x_aux2
-  (is_x: E.stream (int & unit))
-  (orc_x: E.stream (SB.option_type_sem t_x.oracle))
-  (n: nat)
-  : Lemma
-    (requires
-      ES.sofar (p_pos is_x) n /\
-      ES.sofar (S.stream_of_assumptions t_x.raw (S.with_oracle t_x is_x orc_x)) n)
-    (ensures (
-      let ios = S.with_oracle t_x is_x orc_x in
-      let os  = S.stream_of_output t_x.raw ios in
-      ES.sofar (q_txpost is_x os) n /\
-      ES.sofar (S.stream_of_obligations t_x.raw ios) n))
-  =
-  let ios = S.with_oracle t_x is_x orc_x in
-  let os  = S.stream_of_output t_x.raw ios in
-
-  Classical.forall_intro (S.lemma_system_map_result fst (S.id #(int & unit)).raw ios);
-  Classical.forall_intro (S.lemma_system_project (fun (i: int & unit) -> i) ios);
-  assert (forall (k: nat). os k == fst (is_x k));
-  assert (forall (k: nat). S.stream_of_obligations t_x.raw ios k == True);
-
-  ES.sofar_index (p_pos is_x) n;
-  assert (forall (k: nat). 0 < k /\ k <= n ==> fst (is_x (k - 1)) > 0);
-
-  (* [(0 fby os) + 1] is positive on the prefix: base 0+1=1, step feedback+1. *)
-  assert (forall (k: nat). k <= n ==> ((ES.fby 0 os) k + 1) > 0);
-  assert (ES.sofar (q_txpost is_x os) n)
-
+#push-options "--z3rlimit 50"
 let lemma_t_x_triple2 (_: unit)
   : Lemma (L.triple p_pos t_x q_txpost)
   =
-  Classical.forall_intro_3
-    (fun is orc n -> Classical.move_requires (lemma_t_x_aux2 is orc) n)
+  let qid : E.stream (int & unit) -> E.stream (int & unit) -> E.stream prop =
+    fun is ot -> q_txpost is (ES.map fst ot) in
+  assert (ES.causal2 q_txpost);
+  assert (ES.causal2 qid);
+  introduce forall (is: E.stream (int & unit)) (n: nat).
+      ES.sofar (p_pos is) n ==> ES.sofar (qid is is) n
+    with introduce _ ==> _ with _.
+      ES.sofar_index (p_pos is) n;
+  L.id p_pos qid;
+  L.map fst (S.id #(int & unit)) p_pos q_txpost
+#pop-options
 
 (* [map (+1)] and [fby 0] shift the body, [mu] closes the recursion. *)
 let lemma_count_pos (_: unit)
@@ -207,40 +171,21 @@ let lemma_zero_rec_mufby (_: unit)
 (* Same result as [lemma_zero_rec_mufby], but discharged with the convenience
    rule [mufby_step]: the premise is a triple about [t_x] itself (fed the delayed
    feedback via [mufby_guard]), so no [delayed_body] unfold is written by hand. *)
-let lemma_tx_step_aux
-  (is_x: E.stream (int & unit))
-  (orc_x: E.stream (SB.option_type_sem t_x.oracle))
-  (n: nat)
-  : Lemma
-    (requires
-      ES.sofar (L.mufby_guard 0 p_true q_zero is_x) n /\
-      ES.sofar (S.stream_of_assumptions t_x.raw (S.with_oracle t_x is_x orc_x)) n)
-    (ensures (
-      let ios = S.with_oracle t_x is_x orc_x in
-      let os  = S.stream_of_output t_x.raw ios in
-      ES.sofar (q_post is_x os) n /\
-      ES.sofar (S.stream_of_obligations t_x.raw ios) n))
-  =
-  let ios = S.with_oracle t_x is_x orc_x in
-  let os  = S.stream_of_output t_x.raw ios in
-
-  (* [t_x = map fst id] outputs the (un-delayed) feedback; its checks are trivial. *)
-  Classical.forall_intro (S.lemma_system_map_result fst (S.id #(int & unit)).raw ios);
-  Classical.forall_intro (S.lemma_system_project (fun (i: int & unit) -> i) ios);
-  assert (forall (k: nat). os k == fst (is_x k));
-  assert (forall (k: nat). S.stream_of_obligations t_x.raw ios k == True);
-
-  (* The guard gives the seed [feedback 0 = 0] and [later feedback = 0] so far. *)
-  ES.sofar_index (L.mufby_guard 0 p_true q_zero is_x) n;
-  assert (forall (k: nat). k <= n ==> L.feedback is_x 0 == 0);
-  assert (forall (k: nat). 0 < k /\ k <= n ==> L.feedback is_x k == 0);
-  assert (forall (k: nat). k <= n ==> os k == 0)
-
+#push-options "--z3rlimit 50"
 let lemma_tx_step_triple (_: unit)
   : Lemma (L.triple (L.mufby_guard 0 p_true q_zero) t_x q_post)
   =
-  Classical.forall_intro_3
-    (fun is orc n -> Classical.move_requires (lemma_tx_step_aux is orc) n)
+  let qid : E.stream (int & unit) -> E.stream (int & unit) -> E.stream prop =
+    fun is ot -> q_post is (ES.map fst ot) in
+  assert (ES.causal2 q_post);
+  assert (ES.causal2 qid);
+  introduce forall (is: E.stream (int & unit)) (n: nat).
+      ES.sofar (L.mufby_guard 0 p_true q_zero is) n ==> ES.sofar (qid is is) n
+    with introduce _ ==> _ with _.
+      ES.sofar_index (L.mufby_guard 0 p_true q_zero is) n;
+  L.id (L.mufby_guard 0 p_true q_zero) qid;
+  L.map fst (S.id #(int & unit)) (L.mufby_guard 0 p_true q_zero) q_post
+#pop-options
 
 let lemma_zero_rec_mufby_step (_: unit)
   : Lemma (L.triple p_true prog_mufby q_zero)

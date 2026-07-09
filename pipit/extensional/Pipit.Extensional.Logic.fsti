@@ -101,6 +101,26 @@ val mu
     (ensures
       triple p (S.mu body) q)
 
+(* Leaf rule for [System.id]. It outputs its input verbatim and has no checks, so
+   the triple is a pure stream-logic implication with the output taken to be the
+   input:
+
+     Q causal
+     forall is n. sofar (P is) n ==> sofar (Q is is) n
+     -------------------------------------------------
+     { P } System.id { Q }
+*)
+val id
+  (#a: Type)
+  (p: E.stream a -> E.stream prop)
+  (q: E.stream a -> E.stream a -> E.stream prop)
+  : Lemma
+    (requires
+      ES.causal2 q /\
+      (forall (is: E.stream a) (n: nat). ES.sofar (p is) n ==> ES.sofar (q is is) n))
+    (ensures
+      triple p (S.id #a) q)
+
 (* Rule for [System.fby]. Since [fby v0 t] only shifts the output (its checks are
    [t]'s at the current step), a triple for [t] whose postcondition is [q]
    post-composed with the shift [ES.fby v0] transfers to [fby v0 t]:

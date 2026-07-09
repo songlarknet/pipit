@@ -134,6 +134,32 @@ let mu #input #output p body q =
   Classical.forall_intro_3 aux
 #pop-options
 
+(* [id] outputs its input ([lemma_system_project] with the identity function) and
+   has no checks, so the triple reduces to its premise after a [causal2] transport
+   swapping the (pointwise-equal) output stream for the input. *)
+#push-options "--z3rlimit 40"
+let id #a p q =
+  let aux
+    (is: E.stream a)
+    (orc: E.stream (SB.option_type_sem (S.id #a).oracle))
+    (n: nat)
+    : Lemma
+      (ensures (
+        let ios = S.with_oracle (S.id #a) is orc in
+        ES.sofar (p is) n ==>
+        ES.sofar (S.stream_of_assumptions (S.id #a).raw ios) n ==>
+        (ES.sofar (q is (S.stream_of_output (S.id #a).raw ios)) n /\
+         ES.sofar (S.stream_of_obligations (S.id #a).raw ios) n)))
+    =
+    let ios = S.with_oracle (S.id #a) is orc in
+    let os  = S.stream_of_output (S.id #a).raw ios in
+    Classical.forall_intro (S.lemma_system_project (fun (i: a) -> i) ios);
+    assert (forall (k: nat). os k == is k);
+    ES.lemma_causal2_prefix q is is is os n
+  in
+  Classical.forall_intro_3 aux
+#pop-options
+
 (* [fby v0 t] only shifts the output ([lemma_system_pre]: checks unchanged), so a
    triple about [t] with [q] post-composed with [ES.fby v0] transfers, after a
    [causal2] transport to swap the (pointwise-equal) output streams. *)
