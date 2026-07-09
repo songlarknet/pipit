@@ -291,6 +291,47 @@ let lemma_system_pre
   =
   lemma_step_result_at_system_pre v0 t ios n
 
+(*** Oracle-free recursion: mufby ***)
+
+(* Recursion with a built-in [fby] delay. The feedback given to [body] is the
+   *previous* output, carried in state (initialised to [v0]) — so, unlike
+   [system_mu], no oracle guess is needed. [system_mufby v0 body] computes the
+   [os] with [os == body (v0 fby os, input)]. *)
+let system_mufby
+  (#input #output: Type)
+  (#oracle #state: option Type)
+  (v0: output)
+  (body: SB.system (output & input) oracle state output)
+  : SB.system input oracle (SB.type_join state (Some output)) output
+  =
+  {
+    init = SB.type_join_tup #state #(Some output) body.init v0;
+    step = (fun i o s ->
+      let bs = SB.type_join_fst #state #(Some output) s in
+      let fb = SB.type_join_snd #state #(Some output) s in
+      let stp = body.step (fb, i) o bs in
+      {
+        s = SB.type_join_tup #state #(Some output) stp.s stp.v;
+        v = stp.v;
+        chck = stp.chck;
+      });
+  }
+
+(* Oracle-free recursion combinator on the [sys] package. Because it introduces
+   no oracle, its observable streams are functions of the input alone (hence
+   causal by construction), so it may be used in specifications. *)
+let mufby
+  (#input #output: Type)
+  (v0: output)
+  (body: sys (output & input) output)
+  : sys input output
+  =
+  {
+    oracle = body.oracle;
+    state  = SB.type_join body.state (Some output);
+    raw    = system_mufby v0 body.raw;
+  }
+
 (*** system_mu ***)
 
 (* The recursive value guessed by the oracle at each step: [system_mu] adds a
