@@ -395,6 +395,112 @@ let lemma_system_mufby
   =
   lemma_step_result_at_system_mufby v0 body ios n
 
+(*** delayed_body: the mu-body realising mufby via a guessed feedback ***)
+
+(* [system_delayed_body v0 body] is a [mu]-body: it takes [(guess, input)],
+   feeds [body] the *delayed* guess [v0 fby guess] as feedback (carried in
+   state, initialised to [v0]) together with [input]. Running it under
+   [system_mu] and tying [guess == output] reproduces [system_mufby]. *)
+let system_delayed_body
+  (#input #output: Type)
+  (#oracle #state: option Type)
+  (v0: output)
+  (body: SB.system (output & input) oracle state output)
+  : SB.system (output & input) oracle (SB.type_join state (Some output)) output
+  =
+  {
+    init = SB.type_join_tup #state #(Some output) body.init v0;
+    step = (fun i o s ->
+      let bs = SB.type_join_fst #state #(Some output) s in
+      let fb = SB.type_join_snd #state #(Some output) s in
+      let stp = body.step (fb, snd i) o bs in
+      {
+        s = SB.type_join_tup #state #(Some output) stp.s (fst i);
+        v = stp.v;
+        chck = stp.chck;
+      });
+  }
+
+(* The io-stream [system_delayed_body v0 body] feeds to [body]: the delayed
+   guess [v0 fby (fst-of-input)] as feedback, the real input, and the oracle. *)
+let delayed_body_ios
+  (#input #output: Type)
+  (#oracle #state: option Type)
+  (v0: output)
+  (body: SB.system (output & input) oracle state output)
+  (ios: io_stream (output & input) oracle)
+  : io_stream (output & input) oracle
+  =
+  fun n ->
+    ((ES.fby v0 (fun m -> fst (fst (ios m))) n, snd (fst (ios n))), snd (ios n))
+
+(* Alignment: [system_delayed_body v0 body] runs [body] on [delayed_body_ios],
+   storing the current guess as the next feedback. *)
+let rec lemma_step_result_at_system_delayed_body
+  (#input #output: Type)
+  (#oracle #state: option Type)
+  (v0: output)
+  (body: SB.system (output & input) oracle state output)
+  (ios: io_stream (output & input) oracle)
+  (n: nat)
+  : Lemma
+    (ensures
+      (step_result_at (system_delayed_body v0 body) ios n).v ==
+        (step_result_at body (delayed_body_ios v0 body ios) n).v /\
+      (step_result_at (system_delayed_body v0 body) ios n).chck ==
+        (step_result_at body (delayed_body_ios v0 body ios) n).chck /\
+      SB.type_join_fst #state #(Some output)
+        (step_result_at (system_delayed_body v0 body) ios n).s ==
+        (step_result_at body (delayed_body_ios v0 body ios) n).s /\
+      SB.type_join_snd #state #(Some output)
+        (step_result_at (system_delayed_body v0 body) ios n).s ==
+        fst (fst (ios n)))
+    (decreases n)
+  =
+  (match n with
+   | 0 -> ()
+   | _ -> lemma_step_result_at_system_delayed_body v0 body ios (n - 1));
+  lemma_type_join_fst_tup #state #(Some output)
+    (step_result_at body (delayed_body_ios v0 body ios) n).s
+    (fst (fst (ios n)));
+  lemma_type_join_snd_tup #state #(Some output)
+    (step_result_at body (delayed_body_ios v0 body ios) n).s
+    (fst (fst (ios n)))
+
+(* Observable [delayed_body] unfold: output/checks equal [body]'s run on
+   [delayed_body_ios]. *)
+let lemma_system_delayed_body
+  (#input #output: Type)
+  (#oracle #state: option Type)
+  (v0: output)
+  (body: SB.system (output & input) oracle state output)
+  (ios: io_stream (output & input) oracle)
+  (n: nat)
+  : Lemma
+    (ensures
+      stream_of_output (system_delayed_body v0 body) ios n ==
+        stream_of_output body (delayed_body_ios v0 body ios) n /\
+      stream_of_assumptions (system_delayed_body v0 body) ios n ==
+        stream_of_assumptions body (delayed_body_ios v0 body ios) n /\
+      stream_of_obligations (system_delayed_body v0 body) ios n ==
+        stream_of_obligations body (delayed_body_ios v0 body ios) n)
+  =
+  lemma_step_result_at_system_delayed_body v0 body ios n
+
+(* [delayed_body] as a [sys] package: the [mu]-body that, run under [mu] with the
+   guess tied to the output, reproduces [mufby v0 body]. *)
+let delayed_body
+  (#input #output: Type)
+  (v0: output)
+  (body: sys (output & input) output)
+  : sys (output & input) output
+  =
+  {
+    oracle = body.oracle;
+    state  = SB.type_join body.state (Some output);
+    raw    = system_delayed_body v0 body.raw;
+  }
+
 (*** system_mu ***)
 
 (* The recursive value guessed by the oracle at each step: [system_mu] adds a

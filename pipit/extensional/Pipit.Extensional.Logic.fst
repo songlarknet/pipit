@@ -234,3 +234,98 @@ let map #input #output1 #output2 f t p q =
   Classical.forall_intro_3
     (fun is orc n -> Classical.move_requires (map_aux f t p q is orc) n)
 #pop-options
+
+(*** Oracle-free guarded recursion: mufby ***)
+
+(* Transfer core: [mufby v0 body] and [mu (delayed_body v0 body)] have the same
+   observable behaviour once the [mu] oracle guesses [mufby]'s own output. So a
+   triple for the [mu]-run transfers, step by step, to the [mufby]-run. *)
+#push-options "--z3rlimit 100"
+let mufby_transfer_aux
+  (#input #output: Type)
+  (v0: output)
+  (body: S.sys (output & input) output)
+  (p: E.stream input -> E.stream prop)
+  (q: E.stream input -> E.stream output -> E.stream prop)
+  (is: E.stream input)
+  (orc: E.stream (SB.option_type_sem (S.mufby v0 body).oracle))
+  (n: nat)
+  : Lemma
+    (requires
+      ES.causal2 q /\
+      triple p (S.mu (S.delayed_body v0 body)) q /\
+      ES.sofar (p is) n /\
+      ES.sofar
+        (S.stream_of_assumptions (S.mufby v0 body).raw
+          (S.with_oracle (S.mufby v0 body) is orc)) n)
+    (ensures (
+      let ios = S.with_oracle (S.mufby v0 body) is orc in
+      ES.sofar (q is (S.stream_of_output (S.mufby v0 body).raw ios)) n /\
+      ES.sofar (S.stream_of_obligations (S.mufby v0 body).raw ios) n))
+  =
+  let mufby_sys = S.mufby v0 body in
+  let mu_sys    = S.mu (S.delayed_body v0 body) in
+  let t1        = (S.delayed_body v0 body).raw in
+  let ios_mufby = S.with_oracle mufby_sys is orc in
+  let os_mufby  = S.stream_of_output mufby_sys.raw ios_mufby in
+  let orc_mu : E.stream (SB.option_type_sem mu_sys.oracle) =
+    fun k -> SB.type_join_tup #(Some output) #body.oracle (os_mufby k) (orc k) in
+  let ios_mu : S.io_stream input (SB.type_join (Some output) body.oracle) =
+    S.with_oracle mu_sys is orc_mu in
+  let body_ios  = S.mu_body_ios ios_mu in
+  let os_mu     = S.stream_of_output mu_sys.raw ios_mu in
+  let dib       = S.delayed_body_ios v0 body.raw body_ios in
+  let mib       = S.mufby_body_ios v0 body.raw ios_mufby in
+
+  (* Oracle reductions: the [mu] guess is [mufby]'s output, and the remaining
+     oracle component is [orc]. *)
+  introduce forall (k: nat). S.mu_guess ios_mu k == os_mufby k
+    with S.lemma_type_join_fst_tup #(Some output) #body.oracle (os_mufby k) (orc k);
+  introduce forall (k: nat).
+      SB.type_join_snd #(Some output) #body.oracle (snd (ios_mu k)) == orc k
+    with S.lemma_type_join_snd_tup #(Some output) #body.oracle (os_mufby k) (orc k);
+
+  (* System [mu] laws, [delayed_body] and [mufby] unfolds, at every step. *)
+  Classical.forall_intro (S.lemma_stream_of_output_system_mu t1 ios_mu);
+  Classical.forall_intro (S.lemma_stream_of_obligations_system_mu t1 ios_mu);
+  Classical.forall_intro (S.lemma_stream_of_assumptions_system_mu t1 ios_mu);
+  Classical.forall_intro (S.lemma_system_delayed_body v0 body.raw body_ios);
+  Classical.forall_intro (S.lemma_system_mufby v0 body.raw ios_mufby);
+
+  (* The io-stream [delayed_body] feeds [body] under the [mu] run equals the one
+     [mufby] feeds [body]: both are the [v0 fby os_mufby] feedback with [is] and
+     [orc]. Congruence then equates their body runs. *)
+  assert (forall (k: nat). dib k == mib k);
+  introduce forall (k: nat).
+      S.stream_of_output body.raw dib k == S.stream_of_output body.raw mib k
+    with S.lemma_stream_of_output_congruence body.raw dib mib k;
+  introduce forall (k: nat).
+      S.stream_of_assumptions body.raw dib k == S.stream_of_assumptions body.raw mib k
+    with S.lemma_stream_of_assumptions_congruence body.raw dib mib k;
+  introduce forall (k: nat).
+      S.stream_of_obligations body.raw dib k == S.stream_of_obligations body.raw mib k
+    with S.lemma_stream_of_obligations_congruence body.raw dib mib k;
+
+  (* Consequently the two systems have equal output / assumptions / obligations. *)
+  assert (forall (k: nat). os_mu k == os_mufby k);
+  assert (forall (k: nat).
+    S.stream_of_assumptions mu_sys.raw ios_mu k <==>
+      S.stream_of_assumptions mufby_sys.raw ios_mufby k);
+  assert (forall (k: nat).
+    S.stream_of_obligations mu_sys.raw ios_mu k ==
+      S.stream_of_obligations mufby_sys.raw ios_mufby k);
+
+  (* [mufby]'s assumptions hold so far, hence [mu]'s do too; invoke the [mu]
+     triple, then transport [Q] and the obligations back to [mufby]. *)
+  assert (ES.sofar (S.stream_of_assumptions mu_sys.raw ios_mu) n);
+  assert (ES.sofar (q is os_mu) n /\
+          ES.sofar (S.stream_of_obligations mu_sys.raw ios_mu) n);
+  ES.lemma_causal2_prefix q is is os_mu os_mufby n;
+  assert (ES.sofar (q is os_mufby) n);
+  assert (ES.sofar (S.stream_of_obligations mufby_sys.raw ios_mufby) n)
+
+let mufby #input #output v0 body p q =
+  mu p (S.delayed_body v0 body) q;
+  Classical.forall_intro_3
+    (fun is orc n -> Classical.move_requires (mufby_transfer_aux v0 body p q is orc) n)
+#pop-options

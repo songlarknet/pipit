@@ -144,3 +144,32 @@ val map
       triple p t (fun is ot -> q is (ES.map f ot)))
     (ensures
       triple p (S.map f t) q)
+
+(*** Oracle-free guarded recursion ***)
+
+(* Oracle-free guarded recursion rule for [System.mufby]. [mufby v0 body]
+   introduces no oracle: its feedback is the previous output, delayed by
+   [v0 fby -] and carried in state. Soundness is derived from [mu] applied to
+   [System.delayed_body v0 body] (the [mu]-body that delays the guessed
+   feedback), so the premise is exactly [mu]'s premise for that delayed body:
+
+     P causal, Q causal
+     { fun ixs n -> P (source ixs) n /\ pre (Q (source ixs) (feedback ixs)) n }
+       System.delayed_body v0 body
+     { fun ixs os n -> Q (source ixs) os n }
+     -------------------------------------------------------------------------
+     { P } System.mufby v0 body { Q }
+*)
+val mufby
+  (#input #output: Type)
+  (v0: output)
+  (body: S.sys (output & input) output)
+  (p: E.stream input -> E.stream prop)
+  (q: E.stream input -> E.stream output -> E.stream prop)
+  : Lemma
+    (requires
+      ES.causal p /\
+      ES.causal2 q /\
+      triple (mu_body_pre p q) (S.delayed_body v0 body) (mu_body_post q))
+    (ensures
+      triple p (S.mufby v0 body) q)
