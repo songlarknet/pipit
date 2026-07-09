@@ -168,24 +168,41 @@ let lemma_zero_rec_mufby (_: unit)
 
 (*** Example 1, via mufby_step:  { True } mufby 0 t_x { x = 0 } ***)
 
-(* Same result as [lemma_zero_rec_mufby], but discharged with the convenience
-   rule [mufby_step]: the premise is a triple about [t_x] itself (fed the delayed
-   feedback via [mufby_guard]), so no [delayed_body] unfold is written by hand. *)
+(* The pure program fact, isolated from any recursion guard: [t_x = map fst id]
+   copies its feedback to its output, so pinning the feedback prefix to 0 forces
+   the output prefix to 0. *)
+let p_fb0 : E.stream (int & unit) -> E.stream prop =
+  fun is -> (fun n -> fst (is n) == 0)
+
 #push-options "--z3rlimit 50"
-let lemma_tx_step_triple (_: unit)
-  : Lemma (L.triple (L.mufby_guard 0 p_true q_zero) t_x q_post)
+let lemma_tx_feedback_zero (_: unit)
+  : Lemma (L.triple p_fb0 t_x q_post)
   =
   let qid : E.stream (int & unit) -> E.stream (int & unit) -> E.stream prop =
     fun is ot -> q_post is (ES.map fst ot) in
   assert (ES.causal2 q_post);
   assert (ES.causal2 qid);
   introduce forall (is: E.stream (int & unit)) (n: nat).
-      ES.sofar (L.mufby_guard 0 p_true q_zero is) n ==> ES.sofar (qid is is) n
+      ES.sofar (p_fb0 is) n ==> ES.sofar (qid is is) n
+    with introduce _ ==> _ with _.
+      ES.sofar_index (p_fb0 is) n;
+  L.id p_fb0 qid;
+  L.map fst (S.id #(int & unit)) p_fb0 q_post
+#pop-options
+
+(* Same result as [lemma_zero_rec_mufby], discharged with [mufby_step]: the
+   premise is a triple about [t_x] itself. The [mufby_guard] reasoning is now an
+   isolated precondition-strengthening step (rule of consequence): the guard's
+   [sofar] pins the feedback prefix to 0, which is exactly [p_fb0]. *)
+let lemma_tx_step_triple (_: unit)
+  : Lemma (L.triple (L.mufby_guard 0 p_true q_zero) t_x q_post)
+  =
+  lemma_tx_feedback_zero ();
+  introduce forall (is: E.stream (int & unit)) (n: nat).
+      ES.sofar (L.mufby_guard 0 p_true q_zero is) n ==> ES.sofar (p_fb0 is) n
     with introduce _ ==> _ with _.
       ES.sofar_index (L.mufby_guard 0 p_true q_zero is) n;
-  L.id (L.mufby_guard 0 p_true q_zero) qid;
-  L.map fst (S.id #(int & unit)) (L.mufby_guard 0 p_true q_zero) q_post
-#pop-options
+  L.consequence t_x (L.mufby_guard 0 p_true q_zero) p_fb0 q_post q_post
 
 let lemma_zero_rec_mufby_step (_: unit)
   : Lemma (L.triple p_true prog_mufby q_zero)

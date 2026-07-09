@@ -10,6 +10,11 @@ module SB  = Pipit.System.Base
 
 module Classical = FStar.Classical
 
+(* Rule of consequence. [triple] unfolds to a per-[(is, orc, n)] implication; the
+   pre-strengthening and post-weakening hypotheses chain through it for the fixed
+   actual output, so SMT closes it directly. *)
+let consequence #input #output t p p' q q' = ()
+
 (* Assemble a [mu]-body input stream from a feedback stream and a source input
    stream. Kept transparent so [source] reduces pointwise to the inputs. *)
 let mu_body_input

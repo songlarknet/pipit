@@ -40,6 +40,31 @@ let triple
     (ES.sofar (q is os) n /\
      ES.sofar (S.stream_of_obligations t.raw ios) n)
 
+(*** Structural rules ***)
+
+(* Rule of consequence: strengthen the precondition and weaken the postcondition.
+   Purely structural — [os] is the fixed actual output, so no causality is needed.
+
+     { P' } t { Q' }
+     forall is n.    sofar (P is) n ==> sofar (P' is) n
+     forall is os n. sofar (P is) n ==> sofar (Q' is os) n ==> sofar (Q is os) n
+     ----------------------------------------------------------------------------
+     { P } t { Q }
+*)
+val consequence
+  (#input #output: Type)
+  (t: S.sys input output)
+  (p p': E.stream input -> E.stream prop)
+  (q q': E.stream input -> E.stream output -> E.stream prop)
+  : Lemma
+    (requires
+      triple p' t q' /\
+      (forall (is: E.stream input) (n: nat).
+         ES.sofar (p is) n ==> ES.sofar (p' is) n) /\
+      (forall (is: E.stream input) (os: E.stream output) (n: nat).
+         ES.sofar (p is) n ==> ES.sofar (q' is os) n ==> ES.sofar (q is os) n))
+    (ensures triple p t q)
+
 (*** Guarded recursion ***)
 
 (* Projections of a [mu]-body input stream: the source input and the recursive
