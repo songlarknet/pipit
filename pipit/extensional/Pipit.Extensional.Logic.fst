@@ -134,13 +134,103 @@ let mu #input #output p body q =
   Classical.forall_intro_3 aux
 #pop-options
 
-(* PROOF DEFERRED: a rewrite via [System.lemma_system_pre] (fby only shifts the
-   output; checks are unchanged) plus a [causal2] transport to swap the shifted
-   output stream, exactly like the output transport in [mu_aux]. *)
-let fby #input #output v0 t p q =
-  admit ()
+(* [fby v0 t] only shifts the output ([lemma_system_pre]: checks unchanged), so a
+   triple about [t] with [q] post-composed with [ES.fby v0] transfers, after a
+   [causal2] transport to swap the (pointwise-equal) output streams. *)
+#push-options "--z3rlimit 40"
+let fby_aux
+  (#input #output: Type)
+  (v0: output)
+  (t: S.sys input output)
+  (p: E.stream input -> E.stream prop)
+  (q: E.stream input -> E.stream output -> E.stream prop)
+  (is: E.stream input)
+  (orc: E.stream (SB.option_type_sem (S.fby v0 t).oracle))
+  (n: nat)
+  : Lemma
+    (requires
+      ES.causal2 q /\
+      triple p t (fun is ot -> q is (ES.fby v0 ot)) /\
+      ES.sofar (p is) n /\
+      ES.sofar (S.stream_of_assumptions (S.fby v0 t).raw (S.with_oracle (S.fby v0 t) is orc)) n)
+    (ensures (
+      let ios = S.with_oracle (S.fby v0 t) is orc in
+      ES.sofar (q is (S.stream_of_output (S.fby v0 t).raw ios)) n /\
+      ES.sofar (S.stream_of_obligations (S.fby v0 t).raw ios) n))
+  =
+  let ios   = S.with_oracle (S.fby v0 t) is orc in
+  let ios_t = S.with_oracle t is orc in
+  let ot    = S.stream_of_output t.raw ios_t in
+  let os_f  = S.stream_of_output (S.fby v0 t).raw ios in
+  assert (forall (k: nat). ios k == ios_t k);
+  assert ((S.fby v0 t).raw == SB.system_pre v0 t.raw);
+  Classical.forall_intro (S.lemma_system_pre v0 t.raw ios);
+  introduce forall (k: nat). S.stream_of_output t.raw ios k == ot k
+    with S.lemma_stream_of_output_congruence t.raw ios ios_t k;
+  introduce forall (k: nat).
+      S.stream_of_assumptions t.raw ios k == S.stream_of_assumptions t.raw ios_t k
+    with S.lemma_stream_of_assumptions_congruence t.raw ios ios_t k;
+  introduce forall (k: nat).
+      S.stream_of_obligations t.raw ios k == S.stream_of_obligations t.raw ios_t k
+    with S.lemma_stream_of_obligations_congruence t.raw ios ios_t k;
+  assert (forall (k: nat). os_f k == ES.fby v0 ot k);
+  assert (ES.sofar (S.stream_of_assumptions t.raw ios_t) n);
+  assert (ES.sofar (q is (ES.fby v0 ot)) n);
+  assert (ES.sofar (S.stream_of_obligations t.raw ios_t) n);
+  ES.lemma_causal2_prefix q is is (ES.fby v0 ot) os_f n;
+  assert (ES.sofar (q is os_f) n);
+  assert (ES.sofar (S.stream_of_obligations (S.fby v0 t).raw ios) n)
 
-(* PROOF DEFERRED: a rewrite via [System.lemma_system_map_result] (map only
-   transforms the output; checks are unchanged) plus a [causal2] transport. *)
+let fby #input #output v0 t p q =
+  Classical.forall_intro_3
+    (fun is orc n -> Classical.move_requires (fby_aux v0 t p q is orc) n)
+
+(* [map f t] only transforms the output ([lemma_system_map_result]: checks
+   unchanged); same rewrite + [causal2] transport as [fby]. *)
+let map_aux
+  (#input #output1 #output2: Type)
+  (f: output1 -> output2)
+  (t: S.sys input output1)
+  (p: E.stream input -> E.stream prop)
+  (q: E.stream input -> E.stream output2 -> E.stream prop)
+  (is: E.stream input)
+  (orc: E.stream (SB.option_type_sem (S.map f t).oracle))
+  (n: nat)
+  : Lemma
+    (requires
+      ES.causal2 q /\
+      triple p t (fun is ot -> q is (ES.map f ot)) /\
+      ES.sofar (p is) n /\
+      ES.sofar (S.stream_of_assumptions (S.map f t).raw (S.with_oracle (S.map f t) is orc)) n)
+    (ensures (
+      let ios = S.with_oracle (S.map f t) is orc in
+      ES.sofar (q is (S.stream_of_output (S.map f t).raw ios)) n /\
+      ES.sofar (S.stream_of_obligations (S.map f t).raw ios) n))
+  =
+  let ios   = S.with_oracle (S.map f t) is orc in
+  let ios_t = S.with_oracle t is orc in
+  let ot    = S.stream_of_output t.raw ios_t in
+  let os_m  = S.stream_of_output (S.map f t).raw ios in
+  assert (forall (k: nat). ios k == ios_t k);
+  assert ((S.map f t).raw == SB.system_map_result f t.raw);
+  Classical.forall_intro (S.lemma_system_map_result f t.raw ios);
+  introduce forall (k: nat). S.stream_of_output t.raw ios k == ot k
+    with S.lemma_stream_of_output_congruence t.raw ios ios_t k;
+  introduce forall (k: nat).
+      S.stream_of_assumptions t.raw ios k == S.stream_of_assumptions t.raw ios_t k
+    with S.lemma_stream_of_assumptions_congruence t.raw ios ios_t k;
+  introduce forall (k: nat).
+      S.stream_of_obligations t.raw ios k == S.stream_of_obligations t.raw ios_t k
+    with S.lemma_stream_of_obligations_congruence t.raw ios ios_t k;
+  assert (forall (k: nat). os_m k == ES.map f ot k);
+  assert (ES.sofar (S.stream_of_assumptions t.raw ios_t) n);
+  assert (ES.sofar (q is (ES.map f ot)) n);
+  assert (ES.sofar (S.stream_of_obligations t.raw ios_t) n);
+  ES.lemma_causal2_prefix q is is (ES.map f ot) os_m n;
+  assert (ES.sofar (q is os_m) n);
+  assert (ES.sofar (S.stream_of_obligations (S.map f t).raw ios) n)
+
 let map #input #output1 #output2 f t p q =
-  admit ()
+  Classical.forall_intro_3
+    (fun is orc n -> Classical.move_requires (map_aux f t p q is orc) n)
+#pop-options

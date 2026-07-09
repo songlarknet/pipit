@@ -158,10 +158,26 @@ let fby
   { oracle = t.oracle; state = SB.type_join (Some output) t.state; raw = SB.system_pre v0 t.raw }
 
 (* Laws relating the observable streams of these combinators to their operands.
-   PROOFS DEFERRED: each is a straightforward induction on [step_result_at],
-   like the [system_mu] alignment lemmas. *)
+   Each is a step-indexed induction on [step_result_at], like the [system_mu]
+   alignment lemmas, lifted to the observable streams. *)
 
-(* [system_project f] outputs [f] of the current input; no checks. *)
+(* [system_project f] is stateless: it outputs [f] of the current input with no
+   checks. *)
+let rec lemma_step_result_at_system_project
+  (#input #result: Type)
+  (f: input -> result)
+  (ios: io_stream input None)
+  (n: nat)
+  : Lemma
+    (ensures
+      (step_result_at (SB.system_project f) ios n).v == f (fst (ios n)) /\
+      (step_result_at (SB.system_project f) ios n).chck == SB.checks_none)
+    (decreases n)
+  =
+  match n with
+  | 0 -> ()
+  | _ -> lemma_step_result_at_system_project f ios (n - 1)
+
 let lemma_system_project
   (#input #result: Type)
   (f: input -> result)
@@ -173,9 +189,27 @@ let lemma_system_project
       stream_of_assumptions (SB.system_project f) ios n == True /\
       stream_of_obligations (SB.system_project f) ios n == True)
   =
-  admit ()
+  lemma_step_result_at_system_project f ios n
 
-(* [system_map_result f] maps the output and preserves the checks. *)
+(* [system_map_result f] keeps the state and checks, mapping only the output. *)
+let rec lemma_step_result_at_system_map_result
+  (#input #result #result': Type)
+  (#oracle #state: option Type)
+  (f: result -> result')
+  (t: SB.system input oracle state result)
+  (ios: io_stream input oracle)
+  (n: nat)
+  : Lemma
+    (ensures
+      (step_result_at (SB.system_map_result f t) ios n).s == (step_result_at t ios n).s /\
+      (step_result_at (SB.system_map_result f t) ios n).v == f (step_result_at t ios n).v /\
+      (step_result_at (SB.system_map_result f t) ios n).chck == (step_result_at t ios n).chck)
+    (decreases n)
+  =
+  match n with
+  | 0 -> ()
+  | _ -> lemma_step_result_at_system_map_result f t ios (n - 1)
+
 let lemma_system_map_result
   (#input #result #result': Type)
   (#oracle #state: option Type)
@@ -189,10 +223,59 @@ let lemma_system_map_result
       stream_of_assumptions (SB.system_map_result f t) ios n == stream_of_assumptions t ios n /\
       stream_of_obligations (SB.system_map_result f t) ios n == stream_of_obligations t ios n)
   =
-  admit ()
+  lemma_step_result_at_system_map_result f t ios n
 
-(* [system_pre v0 t] delays the output by one step (an [fby]); checks stay at
-   the current step. *)
+(* [type_join_fst]/[type_join_snd] invert [type_join_tup] when the first
+   component is a [Some] (the shape [system_pre] uses for its state). *)
+let lemma_type_join_fst_tup
+  (#value: Type)
+  (#state: option Type)
+  (a: value)
+  (b: SB.option_type_sem state)
+  : Lemma
+    (SB.type_join_fst #(Some value) #state (SB.type_join_tup #(Some value) #state a b) == a)
+  =
+  match state with | Some _ -> () | None -> ()
+
+let lemma_type_join_snd_tup
+  (#value: Type)
+  (#state: option Type)
+  (a: value)
+  (b: SB.option_type_sem state)
+  : Lemma
+    (SB.type_join_snd #(Some value) #state (SB.type_join_tup #(Some value) #state a b) == b)
+  =
+  match state with | Some _ -> () | None -> ()
+
+(* [system_pre v0 t] carries [t]'s current step in its state (first component the
+   output, second the [t]-state), emitting the previous output; checks are [t]'s
+   at the current step. *)
+let rec lemma_step_result_at_system_pre
+  (#input #value: Type)
+  (#oracle #state: option Type)
+  (v0: value)
+  (t: SB.system input oracle state value)
+  (ios: io_stream input oracle)
+  (n: nat)
+  : Lemma
+    (ensures
+      (step_result_at (SB.system_pre v0 t) ios n).chck == (step_result_at t ios n).chck /\
+      (step_result_at (SB.system_pre v0 t) ios n).s ==
+        SB.type_join_tup #(Some value) #state
+          (step_result_at t ios n).v (step_result_at t ios n).s /\
+      (step_result_at (SB.system_pre v0 t) ios n).v ==
+        (if n = 0 then v0 else (step_result_at t ios (n - 1)).v))
+    (decreases n)
+  =
+  match n with
+  | 0 -> ()
+  | _ ->
+    lemma_step_result_at_system_pre v0 t ios (n - 1);
+    lemma_type_join_fst_tup #value #state
+      (step_result_at t ios (n - 1)).v (step_result_at t ios (n - 1)).s;
+    lemma_type_join_snd_tup #value #state
+      (step_result_at t ios (n - 1)).v (step_result_at t ios (n - 1)).s
+
 let lemma_system_pre
   (#input #value: Type)
   (#oracle #state: option Type)
@@ -206,7 +289,7 @@ let lemma_system_pre
       stream_of_assumptions (SB.system_pre v0 t) ios n == stream_of_assumptions t ios n /\
       stream_of_obligations (SB.system_pre v0 t) ios n == stream_of_obligations t ios n)
   =
-  admit ()
+  lemma_step_result_at_system_pre v0 t ios n
 
 (*** system_mu ***)
 
