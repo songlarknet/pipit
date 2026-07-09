@@ -211,3 +211,36 @@ let lemma_zero_rec_mufby_step (_: unit)
   assert (ES.causal2 q_zero);
   lemma_tx_step_triple ();
   L.mufby_step 0 t_x p_true q_zero
+
+(*** Example 1, via transition induction:  { True } mufby 0 t_x { x = 0 } ***)
+
+(* Same result again, this time discharged by [induct1] instead of any recursion
+   rule. The only manual step is rewriting the system's output with the [mufby]
+   unfold law (a "system equivalence"): [os n == (0 fby os) n]. [induct1] then
+   supplies the induction, so the per-step goal [os n == 0] follows from the
+   induction hypothesis [os (n-1) == 0] (or the [0] seed at step 0). *)
+#push-options "--z3rlimit 60"
+let lemma_zero_rec_induct (_: unit)
+  : Lemma (L.triple p_true prog_mufby q_zero)
+  =
+  introduce forall (is: E.stream unit)
+                   (orc: E.stream (SB.option_type_sem prog_mufby.oracle))
+                   (n: nat).
+      (let ios = S.with_oracle prog_mufby is orc in
+       let os  = S.stream_of_output prog_mufby.raw ios in
+       (ES.sofar (p_true is) n /\
+        ES.sofar (S.stream_of_assumptions prog_mufby.raw ios) n /\
+        (forall (k: nat). k < n ==> q_zero is os k) /\
+        (forall (k: nat). k < n ==> S.stream_of_obligations prog_mufby.raw ios k))
+       ==>
+       (q_zero is os n /\ S.stream_of_obligations prog_mufby.raw ios n))
+    with introduce _ ==> _ with _hyp.
+      (let ios  = S.with_oracle prog_mufby is orc in
+       let jios = S.mufby_body_ios 0 t_x.raw ios in
+       (* system equivalence: [os == t_x] run on the [0 fby os] feedback *)
+       S.lemma_system_mufby 0 t_x.raw ios n;
+       (* [t_x = map fst id] echoes that feedback, so [os n == (0 fby os) n] *)
+       Classical.forall_intro (S.lemma_system_map_result fst (S.id #(int & unit)).raw jios);
+       Classical.forall_intro (S.lemma_system_project (fun (i: int & unit) -> i) jios));
+  L.induct1 prog_mufby p_true q_zero
+#pop-options

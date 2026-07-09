@@ -15,6 +15,49 @@ module Classical = FStar.Classical
    actual output, so SMT closes it directly. *)
 let consequence #input #output t p p' q q' = ()
 
+(* Transition-system 1-induction. Strong induction on the step index [n]: the
+   induction hypothesis supplies [Q]/obligations at every earlier step, and the
+   per-step VC re-establishes them at [n]. Factors out the induction skeleton
+   shared by the hand-written [mu]/[fby]/[map] auxiliaries. *)
+#push-options "--z3rlimit 40"
+let rec induct1_aux
+  (#input #output: Type)
+  (t: S.sys input output)
+  (p: E.stream input -> E.stream prop)
+  (q: E.stream input -> E.stream output -> E.stream prop)
+  (is: E.stream input)
+  (orc: E.stream (SB.option_type_sem t.oracle))
+  (n: nat)
+  : Lemma
+    (requires
+      induct1_vc t p q /\
+      ES.sofar (p is) n /\
+      ES.sofar (S.stream_of_assumptions t.raw (S.with_oracle t is orc)) n)
+    (ensures (
+      let ios = S.with_oracle t is orc in
+      ES.sofar (q is (S.stream_of_output t.raw ios)) n /\
+      ES.sofar (S.stream_of_obligations t.raw ios) n))
+    (decreases n)
+  =
+  let ios = S.with_oracle t is orc in
+  let os  = S.stream_of_output t.raw ios in
+  (if n > 0 then begin
+    ES.sofar_weaken (p is) n (n - 1);
+    ES.sofar_weaken (S.stream_of_assumptions t.raw ios) n (n - 1);
+    induct1_aux t p q is orc (n - 1)
+  end);
+  ES.sofar_index (p is) n;
+  ES.sofar_index (S.stream_of_assumptions t.raw ios) n;
+  (if n > 0 then begin
+    ES.sofar_index (q is os) (n - 1);
+    ES.sofar_index (S.stream_of_obligations t.raw ios) (n - 1)
+  end)
+
+let induct1 #input #output t p q =
+  Classical.forall_intro_3
+    (fun is orc n -> Classical.move_requires (induct1_aux t p q is orc) n)
+#pop-options
+
 (* Assemble a [mu]-body input stream from a feedback stream and a source input
    stream. Kept transparent so [source] reduces pointwise to the inputs. *)
 let mu_body_input

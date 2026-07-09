@@ -65,6 +65,48 @@ val consequence
          ES.sofar (p is) n ==> ES.sofar (q' is os) n ==> ES.sofar (q is os) n))
     (ensures triple p t q)
 
+(*** Transition-system induction ***)
+
+(* Per-step verification condition for [induct1]. For every input/oracle stream
+   and step [n], assuming the precondition [P] and the system's assumptions hold
+   so far, and the postcondition [Q] and obligations held at every *strictly
+   earlier* step, re-establish [Q] and the obligation at step [n].
+
+   This folds the stream pre/postcondition into a 1-induction over the transition
+   system: [P] (so far) is an extra hypothesis, [Q n] and the obligation at [n]
+   are the goals, and the induction hypothesis supplies [Q]/obligations before
+   [n]. After unfolding to a concrete system, [stream_of_output t.raw ios n]
+   exposes [t.step (ios n) (prev state)], so the step reasoning is discharged
+   against the system's own transition function. *)
+let induct1_vc
+  (#input #output: Type)
+  (t: S.sys input output)
+  (p: E.stream input -> E.stream prop)
+  (q: E.stream input -> E.stream output -> E.stream prop)
+  : prop
+  =
+  forall (is: E.stream input)
+         (orc: E.stream (SB.option_type_sem t.oracle))
+         (n: nat).
+    let ios = S.with_oracle t is orc in
+    let os  = S.stream_of_output t.raw ios in
+    (ES.sofar (p is) n /\
+     ES.sofar (S.stream_of_assumptions t.raw ios) n /\
+     (forall (k: nat). k < n ==> q is os k) /\
+     (forall (k: nat). k < n ==> S.stream_of_obligations t.raw ios k))
+    ==>
+    (q is os n /\ S.stream_of_obligations t.raw ios n)
+
+(* Transition-system 1-induction: discharge a triple by its per-step VC. *)
+val induct1
+  (#input #output: Type)
+  (t: S.sys input output)
+  (p: E.stream input -> E.stream prop)
+  (q: E.stream input -> E.stream output -> E.stream prop)
+  : Lemma
+    (requires induct1_vc t p q)
+    (ensures triple p t q)
+
 (*** Guarded recursion ***)
 
 (* Projections of a [mu]-body input stream: the source input and the recursive
