@@ -238,8 +238,8 @@ let lemma_zero_rec_induct (_: unit)
    [System.Logic.triple] carries no causality side-condition. Here we discharge
    it via the stream fallback: decode to [Logic.triple] and reuse the proof of
    [lemma_zero_rec_mufby] through the rule of consequence. *)
-let sl_pre  : SL.dsys unit prop = SL.sconst True
-let sl_post : SL.dsys (unit & int) prop = SL.smap (fun (io: unit & int) -> snd io == 0) SL.svar
+let sl_pre  : S.sys unit prop = S.const True
+let sl_post : S.sys (unit & int) prop = S.map (fun (io: unit & int) -> snd io == 0) S.id
 
 #push-options "--z3rlimit 40"
 let lemma_zero_rec_sys (_: unit)

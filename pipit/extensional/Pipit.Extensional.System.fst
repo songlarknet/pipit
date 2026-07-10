@@ -138,6 +138,10 @@ let mu
 let id (#input: Type) : sys input input =
   { oracle = None; state = None; raw = SB.system_project (fun i -> i) }
 
+(* Constant system: emits [v] at every step. *)
+let const (#input #output: Type) (v: output) : sys input output =
+  { oracle = None; state = None; raw = SB.system_const v }
+
 (* Map a pure function over a system's output. *)
 let map
   (#input #output1 #output2: Type)

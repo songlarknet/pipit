@@ -53,16 +53,21 @@ let spred2
   =
   fun is os -> outputs_det q (pair_streams is os)
 
-(* System-valued triple, defined by decoding the spec systems into the stream
-   [Logic.triple]. *)
+(* System-valued triple. The pre/postconditions are ordinary systems; [triple]
+   only decodes them when they are deterministic (oracle-free), so the guards
+   make it stateable over any [sys] while [induct1_sys] carries [oracle == None]
+   as a precondition. For oracle-free specs (the usual case) the guards vanish
+   and this is exactly [Logic.triple] on the decoded predicates. *)
 unfold
 let triple
   (#input #output: Type)
-  (pre: dsys input prop)
+  (pre: S.sys input prop)
   (t: S.sys input output)
-  (post: dsys (input & output) prop)
+  (post: S.sys (input & output) prop)
   : prop
   =
+  pre.oracle == None ==>
+  post.oracle == None ==>
   L.triple (spred pre) t (spred2 post)
 
 (*** Causality is free ***)
@@ -99,24 +104,6 @@ let lemma_spred2_causal2
          (S.with_oracle q (pair_streams is1 os1) (fun (_: nat) -> ()))
          (S.with_oracle q (pair_streams is2 os2) (fun (_: nat) -> ()))
          n
-
-(*** Deterministic spec constructors ***)
-
-(* Constant spec system. *)
-let sconst (#input #output: Type) (v: output) : dsys input output =
-  { oracle = None; state = None; raw = SB.system_const v }
-
-(* The input itself as a spec system. *)
-let svar (#a: Type) : dsys a a = S.id #a
-
-(* Map a pure function over a spec system's output. *)
-let smap
-  (#input #a #b: Type)
-  (f: a -> b)
-  (p: dsys input a)
-  : dsys input b
-  =
-  S.map f p
 
 (*** Transition-system 1-induction for system-valued triples ***)
 
@@ -339,9 +326,10 @@ let rec induct1_sys_aux
 
 let induct1_sys
   (#input #output: Type)
-  (pre: dsys input prop) (t: S.sys input output) (post: dsys (input & output) prop)
+  (pre: S.sys input prop) (t: S.sys input output) (post: S.sys (input & output) prop)
   : Lemma
-    (requires base_case_sys pre t post /\ step_case_sys pre t post)
+    (requires pre.oracle == None /\ post.oracle == None /\
+              base_case_sys pre t post /\ step_case_sys pre t post)
     (ensures triple pre t post)
   =
   let aux
