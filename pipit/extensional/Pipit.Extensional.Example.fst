@@ -8,12 +8,10 @@ module Pipit.Extensional.Example
 module E  = Pipit.Extensional.Base
 module ES = Pipit.Extensional.Stream
 module S  = Pipit.Extensional.System
-module SB = Pipit.System.Base
 module L  = Pipit.Extensional.Logic
 module SL = Pipit.Extensional.System.Logic
 module SEq = Pipit.Extensional.System.Eq
 module PT = Pipit.Tactics
-module Classical = FStar.Classical
 (* The program  µx. 0 fby x  (unit input, int output). *)
 let t_x   : S.sys (int & unit) int = S.map fst S.id
 let body  : S.sys (int & unit) int = S.fby 0 t_x
@@ -58,163 +56,10 @@ let lemma_zero_rec (_: unit)
   L.fby 0 t_x p_pre q_post;
   L.mu p_true body q_zero
 
-(*** Example 2:  { True } µx. (0 fby x) + 1 { x. x > 0 } ***)
-
-(* The recursive body  (0 fby x) + 1  is an outer [map (+1)] over  0 fby x. *)
-let fb0    : S.sys (int & unit) int = S.fby 0 t_x
-let body2  : S.sys (int & unit) int = S.map (fun v -> v + 1) fb0
-let prog2  : S.sys unit int         = S.mu body2
-
-let q_pos : E.stream unit -> E.stream int -> E.stream prop = fun _ os -> (fun n -> os n > 0)
-
-let p_pos      = L.mu_body_pre p_true q_pos
-let q_post_pos = L.mu_body_post q_pos
-(* [q_post_pos] shifted through [map (+1)] (the premise [Logic.map] leaves), then
-   through [fby 0] (the premise [Logic.fby] leaves). *)
-let q_map : E.stream (int & unit) -> E.stream int -> E.stream prop =
-  fun is ot -> q_post_pos is (ES.map (fun v -> v + 1) ot)
-let q_txpost : E.stream (int & unit) -> E.stream int -> E.stream prop =
-  fun is ot -> q_map is (ES.fby 0 ot)
-
-(* Body triple for the projection [t_x], with the postcondition shifted through
-   both [map (+1)] and [fby 0]. *)
-#push-options "--z3rlimit 50"
-let lemma_t_x_triple2 (_: unit)
-  : Lemma (L.triple p_pos t_x q_txpost)
-  =
-  let qid : E.stream (int & unit) -> E.stream (int & unit) -> E.stream prop =
-    fun is ot -> q_txpost is (ES.map fst ot) in
-  assert (ES.causal2 q_txpost);
-  assert (ES.causal2 qid);
-  introduce forall (is: E.stream (int & unit)) (n: nat).
-      ES.sofar (p_pos is) n ==> ES.sofar (qid is is) n
-    with introduce _ ==> _ with _.
-      ES.sofar_index (p_pos is) n;
-  L.id p_pos qid;
-  L.map fst (S.id #(int & unit)) p_pos q_txpost
-#pop-options
-
-(* [map (+1)] and [fby 0] shift the body, [mu] closes the recursion. *)
-let lemma_count_pos (_: unit)
-  : Lemma (L.triple p_true prog2 q_pos)
-  =
-  assert (ES.causal p_true);
-  assert (ES.causal2 q_pos);
-  assert (ES.causal2 q_post_pos);
-  assert (ES.causal2 q_map);
-  lemma_t_x_triple2 ();
-  L.fby 0 t_x p_pos q_map;
-  L.map (fun v -> v + 1) fb0 p_pos q_post_pos;
-  L.mu p_true body2 q_pos
-
-(*** Example 1, oracle-free:  { True } µfby x. 0 fby x { x. x = 0 } ***)
-
-(* Same specification as [lemma_zero_rec], but the recursion is closed by the
-   oracle-free [mufby] combinator, so [prog_mufby] carries no oracle and is
-   usable in specifications. [Logic.mufby]'s premise is [mu]'s premise for
-   [delayed_body 0 t_x] (the mu-body that delays the guessed feedback). *)
+(* The oracle-free program  µfby x. 0 fby x  (= constant 0), closed by the
+   [mufby] combinator so it carries no oracle and can appear in specifications;
+   used by the induction examples below. *)
 let prog_mufby : S.sys unit int = S.mufby 0 t_x
-
-let db1 : S.sys (int & unit) int = S.delayed_body 0 t_x
-
-(* Body triple for [delayed_body 0 t_x]: it runs [t_x] on the delayed feedback,
-   so its output is [0 fby feedback], which is zero on the guarded prefix. *)
-#push-options "--split_queries always"
-let lemma_db1_aux
-  (is_x: E.stream (int & unit))
-  (orc_x: E.stream (SB.option_type_sem db1.oracle))
-  (n: nat)
-  : Lemma
-    (requires
-      ES.sofar (p_pre is_x) n /\
-      ES.sofar (S.stream_of_assumptions db1.raw (S.with_oracle db1 is_x orc_x)) n)
-    (ensures (
-      let ios = S.with_oracle db1 is_x orc_x in
-      let os  = S.stream_of_output db1.raw ios in
-      ES.sofar (q_post is_x os) n /\
-      ES.sofar (S.stream_of_obligations db1.raw ios) n))
-  =
-  let ios  = S.with_oracle db1 is_x orc_x in
-  let dios = S.delayed_body_ios 0 t_x.raw ios in
-  let os   = S.stream_of_output db1.raw ios in
-
-  (* [delayed_body] unfold: [db1] runs [t_x] on the delayed-feedback io-stream. *)
-  Classical.forall_intro (S.lemma_system_delayed_body 0 t_x.raw ios);
-  (* [t_x = map fst id] outputs [fst] of its input; its checks are trivial. *)
-  Classical.forall_intro (S.lemma_map fst (S.id #(int & unit)) dios);
-  Classical.forall_intro (S.lemma_system_project (fun (i: int & unit) -> i) dios);
-  assert (forall (k: nat). os k == ES.fby 0 (fun m -> fst (is_x m)) k);
-  assert (forall (k: nat). S.stream_of_obligations db1.raw ios k == True);
-
-  (* Expose the guarded precondition [pre (feedback = 0)] at every step. *)
-  ES.sofar_index (p_pre is_x) n;
-  assert (forall (k: nat). 0 < k /\ k <= n ==> fst (is_x (k - 1)) == 0);
-
-  (* [0 fby feedback] is zero on the prefix: base at 0, step from the guard. *)
-  assert (forall (k: nat). k <= n ==> os k == 0)
-#pop-options
-
-let lemma_db1_triple (_: unit)
-  : Lemma (L.triple p_pre db1 q_post)
-  =
-  Classical.forall_intro_3
-    (fun is orc n -> Classical.move_requires (lemma_db1_aux is orc) n)
-
-(* The final proof: [mufby] closes the recursion without an oracle. *)
-let lemma_zero_rec_mufby (_: unit)
-  : Lemma (L.triple p_true prog_mufby q_zero)
-  =
-  assert (ES.causal p_true);
-  assert (ES.causal2 q_zero);
-  assert (ES.causal2 q_post);
-  lemma_db1_triple ();
-  L.mufby 0 t_x p_true q_zero
-
-(*** Example 1, via mufby_step:  { True } mufby 0 t_x { x = 0 } ***)
-
-(* The pure program fact, isolated from any recursion guard: [t_x = map fst id]
-   copies its feedback to its output, so pinning the feedback prefix to 0 forces
-   the output prefix to 0. *)
-let p_fb0 : E.stream (int & unit) -> E.stream prop =
-  fun is -> (fun n -> fst (is n) == 0)
-
-#push-options "--z3rlimit 50"
-let lemma_tx_feedback_zero (_: unit)
-  : Lemma (L.triple p_fb0 t_x q_post)
-  =
-  let qid : E.stream (int & unit) -> E.stream (int & unit) -> E.stream prop =
-    fun is ot -> q_post is (ES.map fst ot) in
-  assert (ES.causal2 q_post);
-  assert (ES.causal2 qid);
-  introduce forall (is: E.stream (int & unit)) (n: nat).
-      ES.sofar (p_fb0 is) n ==> ES.sofar (qid is is) n
-    with introduce _ ==> _ with _.
-      ES.sofar_index (p_fb0 is) n;
-  L.id p_fb0 qid;
-  L.map fst (S.id #(int & unit)) p_fb0 q_post
-#pop-options
-
-(* Same result as [lemma_zero_rec_mufby], discharged with [mufby_step]: the
-   premise is a triple about [t_x] itself. The [mufby_guard] reasoning is now an
-   isolated precondition-strengthening step (rule of consequence): the guard's
-   [sofar] pins the feedback prefix to 0, which is exactly [p_fb0]. *)
-let lemma_tx_step_triple (_: unit)
-  : Lemma (L.triple (L.mufby_guard 0 p_true q_zero) t_x q_post)
-  =
-  lemma_tx_feedback_zero ();
-  introduce forall (is: E.stream (int & unit)) (n: nat).
-      ES.sofar (L.mufby_guard 0 p_true q_zero is) n ==> ES.sofar (p_fb0 is) n
-    with introduce _ ==> _ with _.
-      ES.sofar_index (L.mufby_guard 0 p_true q_zero is) n;
-  L.consequence t_x (L.mufby_guard 0 p_true q_zero) p_fb0 q_post q_post
-
-let lemma_zero_rec_mufby_step (_: unit)
-  : Lemma (L.triple p_true prog_mufby q_zero)
-  =
-  assert (ES.causal p_true);
-  assert (ES.causal2 q_zero);
-  lemma_tx_step_triple ();
-  L.mufby_step 0 t_x p_true q_zero
 
 (*** Example 1, via transition induction:  { True } mufby 0 t_x { x = 0 } ***)
 
@@ -238,34 +83,14 @@ let lemma_zero_rec_induct (_: unit)
 (* The same specification with pre/postconditions written as (prop-valued)
    systems: [const True] and "the output equals 0". Because these are systems,
    their decoded stream predicates are causal by construction, so
-   [System.Logic.triple] carries no causality side-condition. Here we discharge
-   it via the stream fallback: decode to [Logic.triple] and reuse the proof of
-   [lemma_zero_rec_mufby] through the rule of consequence. *)
+   [System.Logic.triple] carries no causality side-condition. *)
 let sl_pre  : S.sys unit prop = S.const True
 let sl_post : S.sys (unit & int) prop = S.map (fun (io: unit & int) -> snd io == 0) S.id
 
-#push-options "--z3rlimit 40"
-let lemma_zero_rec_sys (_: unit)
-  : Lemma (SL.triple sl_pre prog_mufby sl_post)
-  =
-  (* the decoded postcondition is exactly [x = 0] (map . id laws) *)
-  introduce forall (is: E.stream unit) (os: E.stream int) (n: nat).
-      SL.spred2 sl_post is os n == (os n == 0)
-  with begin
-    let jos = S.with_oracle sl_post (SL.pair_streams is os) (fun (_: nat) -> ()) in
-    S.lemma_map (fun (io: unit & int) -> snd io == 0)
-      (S.id #(unit & int)) jos n;
-    S.lemma_system_project (fun (i: unit & int) -> i) jos n
-  end;
-  lemma_zero_rec_mufby ();
-  L.consequence prog_mufby (SL.spred sl_pre) p_true (SL.spred2 sl_post) q_zero
-#pop-options
-
-(* The same system-valued triple, this time by product-system 1-induction. The
-   base and step cases run over the three step functions ([sl_pre] | [prog_mufby]
-   | [sl_post]) with the state abstracted; [norm_full] reduces the concrete
-   systems and SMT closes both — with no causality side-condition and no stream
-   reasoning at all. *)
+(* Discharged by product-system 1-induction: the base and step cases run over the
+   three step functions ([sl_pre] | [prog_mufby] | [sl_post]) with the state
+   abstracted; [norm_full] reduces the concrete systems and SMT closes both —
+   with no causality side-condition and no stream reasoning at all. *)
 let lemma_zero_rec_sys_induct (_: unit)
   : Lemma (SL.triple sl_pre prog_mufby sl_post)
   =
