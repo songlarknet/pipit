@@ -10,6 +10,7 @@ module ES = Pipit.Extensional.Stream
 module S  = Pipit.Extensional.System
 module SB = Pipit.System.Base
 module L  = Pipit.Extensional.Logic
+module PT = Pipit.Tactics
 module Classical = FStar.Classical
 
 (* The program  µx. 0 fby x  (unit input, int output). *)
@@ -214,30 +215,17 @@ let lemma_zero_rec_mufby_step (_: unit)
 
 (*** Example 1, via transition induction:  { True } mufby 0 t_x { x = 0 } ***)
 
-(* Register-reduction lemmas as SMT patterns, so the solver rewrites
-   [type_join_fst/snd (type_join_tup a b)] on its own while unfolding the
-   transition step. *)
-let type_join_fst_tup_pat (#t1 #t2: option Type)
-  (a: SB.option_type_sem t1) (b: SB.option_type_sem t2)
-  : Lemma (SB.type_join_fst #t1 #t2 (SB.type_join_tup #t1 #t2 a b) == a)
-    [SMTPat (SB.type_join_fst #t1 #t2 (SB.type_join_tup #t1 #t2 a b))]
-  = S.lemma_type_join_fst_tup a b
-
-let type_join_snd_tup_pat (#t1 #t2: option Type)
-  (a: SB.option_type_sem t1) (b: SB.option_type_sem t2)
-  : Lemma (SB.type_join_snd #t1 #t2 (SB.type_join_tup #t1 #t2 a b) == b)
-    [SMTPat (SB.type_join_snd #t1 #t2 (SB.type_join_tup #t1 #t2 a b))]
-  = S.lemma_type_join_snd_tup a b
-
 (* Same result again, discharged by transition-system 1-induction. [induct1_pw]
    reduces the triple to a base case and a step case over [t.step] with the state
-   abstracted (no [step_result_at] recursion): the [type_join] SMT patterns reduce
-   the register and SMT closes both one-step goals directly. *)
-#push-options "--fuel 2 --ifuel 1 --z3rlimit 150"
+   abstracted (no [step_result_at] recursion). Both are normalised with
+   [norm_full]: since [prog_mufby] is a concrete system, unfolding it fully
+   reduces [option_type_sem] / [type_join] (the register), leaving a trivial
+   arithmetic goal for SMT. *)
 let lemma_zero_rec_induct (_: unit)
   : Lemma (L.triple p_true prog_mufby q_zero)
   =
-  L.induct1_pw prog_mufby
-    (fun (_: unit) (_: nat) -> True)
-    (fun (_: unit) (o: int) (_: nat) -> o == 0)
-#pop-options
+  let pp : unit -> nat -> prop = fun _ _ -> True in
+  let qq : unit -> int -> nat -> prop = fun _ o _ -> o == 0 in
+  assert (L.base_case prog_mufby.raw pp qq) by (PT.norm_full []);
+  assert (L.step_case prog_mufby.raw pp qq) by (PT.norm_full []);
+  L.induct1_pw prog_mufby pp qq

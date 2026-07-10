@@ -63,7 +63,37 @@ let induct1 #input #output t p q =
    [step_result_at (n-1)] to [step_result_at n], both exposed by unfolding
    [step_result_at] one level (fuel 2). The abstract state [s] in [step_case] is
    instantiated to the previous step's state. *)
-#push-options "--fuel 2 --ifuel 1 --z3rlimit 100"
+#push-options "--fuel 2 --ifuel 1 --z3rlimit 200"
+
+(* Instantiate the (pattern-free) base_case / step_case at explicit witnesses. *)
+let elim_base_case
+  (#input #output: Type) (#oracle #state: option Type)
+  (t: SB.system input oracle state output)
+  (pp: input -> nat -> prop) (qq: input -> output -> nat -> prop)
+  (i: input) (o: SB.option_type_sem oracle)
+  : Lemma (requires base_case t pp qq)
+          (ensures base_case_body t pp qq i o)
+  =
+  eliminate forall (j: input) (p: SB.option_type_sem oracle). base_case_body t pp qq j p
+    with i o
+
+let elim_step_case
+  (#input #output: Type) (#oracle #state: option Type)
+  (t: SB.system input oracle state output)
+  (pp: input -> nat -> prop) (qq: input -> output -> nat -> prop)
+  (n: nat) (s: SB.option_type_sem state)
+  (i0: input) (o0: SB.option_type_sem oracle)
+  (i1: input) (o1: SB.option_type_sem oracle)
+  : Lemma (requires step_case t pp qq)
+          (ensures step_case_body t pp qq n s i0 o0 i1 o1)
+  =
+  eliminate
+    forall (m: nat) (ss: SB.option_type_sem state)
+           (j0: input) (p0: SB.option_type_sem oracle)
+           (j1: input) (p1: SB.option_type_sem oracle).
+      step_case_body t pp qq m ss j0 p0 j1 p1
+    with n s i0 o0 i1 o1
+
 let rec induct1_pw_aux
   (#input #output: Type)
   (t: S.sys input output)
@@ -97,20 +127,17 @@ let rec induct1_pw_aux
   (if n = 0
    then begin
      assert (r_curr == t.raw.step (is 0) (orc 0) t.raw.init);
-     (* present the base_case pattern term at the ground index 0 *)
-     assert (qq (is 0) (t.raw.step (is 0) (orc 0) t.raw.init).v 0)
+     elim_base_case t.raw pp qq (is 0) (orc 0)
    end
    else begin
      ES.sofar_index (pw_post qq is os) (n - 1);
      ES.sofar_index (S.stream_of_obligations t.raw ios) (n - 1);
-     let r_prev = S.step_result_at t.raw ios (n - 1) in
      let s0 = (if n = 1 then t.raw.init else (S.step_result_at t.raw ios (n - 2)).s) in
-     assert (r_prev == t.raw.step (is (n - 1)) (orc (n - 1)) s0);
+     assert (S.step_result_at t.raw ios (n - 1) ==
+       t.raw.step (is (n - 1)) (orc (n - 1)) s0);
      assert (r_curr ==
        t.raw.step (is n) (orc n) (t.raw.step (is (n - 1)) (orc (n - 1)) s0).s);
-     (* present the step_case pattern term at the ground index n *)
-     assert (qq (is n)
-       (t.raw.step (is n) (orc n) (t.raw.step (is (n - 1)) (orc (n - 1)) s0).s).v n)
+     elim_step_case t.raw pp qq (n - 1) s0 (is (n - 1)) (orc (n - 1)) (is n) (orc n)
    end)
 
 let induct1_pw #input #output t pp qq =

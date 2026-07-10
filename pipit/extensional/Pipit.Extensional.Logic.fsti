@@ -125,8 +125,24 @@ let pw_post
   =
   fun is os -> (fun n -> qq (is n) (os n) n)
 
-(* Base case: one step from [init]. Given [P] at step 0 and the step's
-   assumptions, discharge the step's obligation and [Q] at step 0. *)
+(* Body of the base case at a given initial input/oracle: from [init], one step
+   satisfies its obligation and [Q] at step 0. *)
+let base_case_body
+  (#input #output: Type)
+  (#oracle #state: option Type)
+  (t: SB.system input oracle state output)
+  (pp: input -> nat -> prop)
+  (qq: input -> output -> nat -> prop)
+  (i: input) (o: SB.option_type_sem oracle)
+  : prop
+  =
+  pp i 0 ==>
+  SB.option_prop_sem (t.step i o t.init).chck.assumptions ==>
+  (SB.option_prop_sem (t.step i o t.init).chck.obligations /\
+   qq i (t.step i o t.init).v 0)
+
+(* Base case: one step from [init], for every initial input/oracle. *)
+unfold
 let base_case
   (#input #output: Type)
   (#oracle #state: option Type)
@@ -135,17 +151,33 @@ let base_case
   (qq: input -> output -> nat -> prop)
   : prop
   =
-  forall (i: input) (o: SB.option_type_sem oracle).
-    {:pattern (qq i (t.step i o t.init).v 0)}
-    pp i 0 ==>
-    SB.option_prop_sem (t.step i o t.init).chck.assumptions ==>
-    (SB.option_prop_sem (t.step i o t.init).chck.obligations /\
-     qq i (t.step i o t.init).v 0)
+  forall (i: input) (o: SB.option_type_sem oracle). base_case_body t pp qq i o
 
-(* Step case (abstract state [s]): the current step [r'] (index [n > 0]) is
-   reached from the previous step [r] (index [n-1], from an arbitrary state [s]).
-   If [Q] held at [r] then it holds at [r']. This is 1-induction with [Q] as the
-   invariant; [s] is universally quantified, so [step_result_at] never appears. *)
+(* Body of the step case: from step [n] (reached from arbitrary state [s]), one
+   more step preserves the obligation and [Q] into step [n+1]. *)
+let step_case_body
+  (#input #output: Type)
+  (#oracle #state: option Type)
+  (t: SB.system input oracle state output)
+  (pp: input -> nat -> prop)
+  (qq: input -> output -> nat -> prop)
+  (n: nat) (s: SB.option_type_sem state)
+  (i0: input) (o0: SB.option_type_sem oracle)
+  (i1: input) (o1: SB.option_type_sem oracle)
+  : prop
+  =
+  pp i0 n ==>
+  SB.option_prop_sem (t.step i0 o0 s).chck.assumptions ==>
+  SB.option_prop_sem (t.step i0 o0 s).chck.obligations ==>
+  qq i0 (t.step i0 o0 s).v n ==>
+  pp i1 (n + 1) ==>
+  SB.option_prop_sem (t.step i1 o1 (t.step i0 o0 s).s).chck.assumptions ==>
+  (SB.option_prop_sem (t.step i1 o1 (t.step i0 o0 s).s).chck.obligations /\
+   qq i1 (t.step i1 o1 (t.step i0 o0 s).s).v (n + 1))
+
+(* Step case (abstract state [s]): 1-induction with [Q] as the invariant; [s] is
+   universally quantified, so [step_result_at] never appears. *)
+unfold
 let step_case
   (#input #output: Type)
   (#oracle #state: option Type)
@@ -157,16 +189,7 @@ let step_case
   forall (n: nat) (s: SB.option_type_sem state)
          (i0: input) (o0: SB.option_type_sem oracle)
          (i1: input) (o1: SB.option_type_sem oracle).
-    {:pattern (qq i1 (t.step i1 o1 (t.step i0 o0 s).s).v n)}
-    0 < n ==>
-    pp i0 (n - 1) ==>
-    SB.option_prop_sem (t.step i0 o0 s).chck.assumptions ==>
-    SB.option_prop_sem (t.step i0 o0 s).chck.obligations ==>
-    qq i0 (t.step i0 o0 s).v (n - 1) ==>
-    pp i1 n ==>
-    SB.option_prop_sem (t.step i1 o1 (t.step i0 o0 s).s).chck.assumptions ==>
-    (SB.option_prop_sem (t.step i1 o1 (t.step i0 o0 s).s).chck.obligations /\
-     qq i1 (t.step i1 o1 (t.step i0 o0 s).s).v n)
+    step_case_body t pp qq n s i0 o0 i1 o1
 
 (* 1-induction with abstract state: the base and step cases (each a single
    application of [t.step], with the state abstracted) discharge the triple for
