@@ -349,3 +349,18 @@ let induct1_sys
   in
   Classical.forall_intro_3 aux
 #pop-options
+
+(* Decode a [map g id] postcondition system: its stream predicate at [n] is just
+   [g] applied to the paired input/output at [n]. Factored out so consequence
+   steps over [map]/[id] specs need not unfold [spred2] by hand. *)
+let lemma_spred2_map_id
+  (#input #output: Type)
+  (g: (input & output) -> prop)
+  (is: E.stream input) (os: E.stream output) (n: nat)
+  : Lemma (spred2 (S.map g S.id) is os n == g (is n, os n))
+  =
+  let jos = S.with_oracle (S.map g S.id) (pair_streams is os) (fun (_: nat) -> ()) in
+  S.lemma_map g (S.id #(input & output)) jos n;
+  S.lemma_system_project (fun (i: input & output) -> i) jos n
+
+

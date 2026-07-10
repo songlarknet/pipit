@@ -291,7 +291,7 @@ let both_pre : S.sys unit prop = S.const True
 (* The applicative invariant: the two counter copies always agree. This is the
    relational fact an AIL-style analysis would synthesise ([c1 = c2]). *)
 let g_eq (io: unit & (int & int)) : prop = fst (snd io) == snd (snd io)
-let post_eq : S.sys (unit & (int & int)) prop = S.map g_eq S.id
+unfold let post_eq : S.sys (unit & (int & int)) prop = S.map g_eq S.id
 
 (* Part 1 (automatic): 1-induction over the product system discovers the
    invariant [c1 = c2]. The base/step cases reduce (via [norm_full]) to trivial
@@ -311,31 +311,29 @@ let lemma_both_agree (_: unit)
 let kbound : int = 100
 let g_bound (io: unit & (int & int)) : prop =
   fst (snd io) <= kbound ==> snd (snd io) <= kbound
-let post_bound : S.sys (unit & (int & int)) prop = S.map g_bound S.id
+unfold let post_bound : S.sys (unit & (int & int)) prop = S.map g_bound S.id
 
 (* Part 2 (manual): weaken the invariant [c1 = c2] to the target property by the
-   rule of consequence. The postcondition systems are decoded pointwise (the
-   [map]/[id] laws), and [c1 = c2] pointwise implies [c1 <= K ==> c2 <= K]. *)
+   rule of consequence. [induct1_sys] cannot prove [post_bound] directly — its
+   step case is genuinely false (knowing only [c2_{n-1} <= K] is too weak) — so
+   the weakening is an inherently separate step. The reusable [lemma_spred2_map_id]
+   decodes each [map]/[id] postcondition to a plain pointwise predicate, leaving
+   only the trivial fact [c1 = c2 ==> (c1 <= K ==> c2 <= K)] for SMT. *)
 #push-options "--z3rlimit 40"
 let lemma_both_bound (_: unit)
   : Lemma (SL.triple both_pre both post_bound)
   =
   introduce forall (is: E.stream unit) (os: E.stream (int & int)) (n: nat).
-      SL.spred2 post_eq is os n == (fst (os n) == snd (os n)) /\
-      SL.spred2 post_bound is os n ==
-        (fst (os n) <= kbound ==> snd (os n) <= kbound)
+      SL.spred2 post_eq is os n ==> SL.spred2 post_bound is os n
   with begin
-    let jos_eq = S.with_oracle post_eq (SL.pair_streams is os) (fun (_: nat) -> ()) in
-    let jos_bd = S.with_oracle post_bound (SL.pair_streams is os) (fun (_: nat) -> ()) in
-    S.lemma_map g_eq (S.id #(unit & (int & int))) jos_eq n;
-    S.lemma_system_project (fun (i: unit & (int & int)) -> i) jos_eq n;
-    S.lemma_map g_bound (S.id #(unit & (int & int))) jos_bd n;
-    S.lemma_system_project (fun (i: unit & (int & int)) -> i) jos_bd n
+    SL.lemma_spred2_map_id g_eq is os n;
+    SL.lemma_spred2_map_id g_bound is os n
   end;
   lemma_both_agree ();
   L.consequence both
     (SL.spred both_pre) (SL.spred both_pre)
     (SL.spred2 post_bound) (SL.spred2 post_eq)
 #pop-options
+
 
 
