@@ -249,7 +249,7 @@ let lemma_zero_rec_sys (_: unit)
   introduce forall (is: E.stream unit) (os: E.stream int) (n: nat).
       SL.spred2 sl_post is os n == (os n == 0)
   with begin
-    let jos = S.with_oracle sl_post (fun (m: nat) -> (is m, os m)) (fun (_: nat) -> ()) in
+    let jos = S.with_oracle sl_post (SL.pair_streams is os) (fun (_: nat) -> ()) in
     S.lemma_system_map_result (fun (io: unit & int) -> snd io == 0)
       (S.id #(unit & int)).raw jos n;
     S.lemma_system_project (fun (i: unit & int) -> i) jos n
@@ -257,3 +257,15 @@ let lemma_zero_rec_sys (_: unit)
   lemma_zero_rec_mufby ();
   L.consequence prog_mufby (SL.spred sl_pre) p_true (SL.spred2 sl_post) q_zero
 #pop-options
+
+(* The same system-valued triple, this time by product-system 1-induction. The
+   base and step cases run over the three step functions ([sl_pre] | [prog_mufby]
+   | [sl_post]) with the state abstracted; [norm_full] reduces the concrete
+   systems and SMT closes both — with no causality side-condition and no stream
+   reasoning at all. *)
+let lemma_zero_rec_sys_induct (_: unit)
+  : Lemma (SL.triple sl_pre prog_mufby sl_post)
+  =
+  assert (SL.base_case_sys sl_pre prog_mufby sl_post) by (PT.norm_full []);
+  assert (SL.step_case_sys sl_pre prog_mufby sl_post) by (PT.norm_full []);
+  SL.induct1_sys sl_pre prog_mufby sl_post
