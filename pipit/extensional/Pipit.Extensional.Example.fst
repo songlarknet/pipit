@@ -177,17 +177,17 @@ let lemma_both_bound (_: unit)
     (SL.spred2 post_bound) (SL.spred2 post_eq)
 #pop-options
 
-(*** Example 3', same property via a semantic CSE rewrite (deq + transport) ***)
+(*** Example 3', same property via a semantic CSE rewrite (equiv + transport) ***)
 
 (* The CSE'd program: one counter, output duplicated. [ap]'s two registers are
    collapsed to one -- and [ap_map_cse] proves this is observationally the same. *)
 let both_cse : S.sys unit (int & int) = S.map (fun (x: int) -> mkpair x x) counter
 
-(* The headline rewrite, admit-free: the two-register [both] is [deq] to the
+(* The headline rewrite, admit-free: the two-register [both] is [equiv] to the
    single-register [both_cse]. This is one instance of the reusable applicative
    CSE law. *)
 let lemma_both_cse (_: unit)
-  : Lemma (SEq.deq both both_cse)
+  : Lemma (SEq.equiv both both_cse)
   =
   SEq.lemma_ap_map_cse mkpair counter
 
@@ -203,14 +203,14 @@ let lemma_both_cse_triple (_: unit)
 
 (* Same goal as [lemma_both_bound], but discharged by the semantic rewrite:
    prove the property on [both_cse] (trivial), then transport it to [both]
-   along [deq]. No induction / no invariant on [both] itself. *)
+   along [equiv]. No induction / no invariant on [both] itself. *)
 let lemma_both_bound_cse (_: unit)
   : Lemma (SL.triple both_pre both post_bound)
   =
   lemma_both_cse_triple ();
   lemma_both_cse ();
   SL.lemma_spred2_causal2 post_bound;
-  SL.deq_transport (SL.spred both_pre) both both_cse (SL.spred2 post_bound)
+  SL.equiv_transport (SL.spred both_pre) both both_cse (SL.spred2 post_bound)
 
 
 

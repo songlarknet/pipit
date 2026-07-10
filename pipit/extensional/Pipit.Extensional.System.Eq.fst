@@ -125,66 +125,75 @@ let stream_holds_of_obligations_equiv
     (S.stream_of_obligations t1 ios)
     (S.stream_of_obligations t2 ios)
 
-(*** Deterministic package-level equivalence (for CSE-style rewrites) ***)
+(*** Package-level observational equivalence (state-blind) ***)
 
-(* Observational equivalence at the [sys] package level for oracle-free
-   (deterministic) systems. Unlike [observational_equiv], the two systems may
-   have *different* state (and oracle) representations — only their observable
-   streams are compared. This is what CSE-style rewrites need, since sharing a
-   subcomputation changes the state shape. *)
-let deq
+(* Observational equivalence at the [sys] package level. The two systems must
+   share the same oracle type but may have *different* state representations —
+   only their observable streams are compared, run under the same input and
+   oracle stream. This is what CSE-style rewrites need, since sharing a
+   subcomputation changes the state shape; and unlike [observational_equiv] it
+   does not fix the state type. It carries no [oracle == None] restriction, so
+   the transport and congruence rules built on it apply to oracle-carrying
+   systems too — the oracle-free case (e.g. CSE) is just the [oracle == None]
+   instance, where the oracle stream is the unique unit stream. *)
+let equiv
   (#input #output: Type)
-  (t1: S.sys input output { t1.oracle == None })
-  (t2: S.sys input output { t2.oracle == None })
+  (t1: S.sys input output)
+  (t2: S.sys input output { t2.oracle == t1.oracle })
   : prop
   =
-  forall (is: E.stream input) (n: nat).
-    let ios1 = S.with_oracle t1 is (fun (_: nat) -> ()) in
-    let ios2 = S.with_oracle t2 is (fun (_: nat) -> ()) in
+  forall (is: E.stream input)
+         (orc: E.stream (SB.option_type_sem t1.oracle))
+         (n: nat).
+    let ios1 = S.with_oracle t1 is orc in
+    let ios2 = S.with_oracle t2 is orc in
     S.stream_of_output t1.raw ios1 n == S.stream_of_output t2.raw ios2 n /\
     (S.stream_of_assumptions t1.raw ios1 n <==> S.stream_of_assumptions t2.raw ios2 n) /\
     (S.stream_of_obligations t1.raw ios1 n <==> S.stream_of_obligations t2.raw ios2 n)
 
-let deq_refl
+let equiv_refl
   (#input #output: Type)
-  (t: S.sys input output { t.oracle == None })
-  : Lemma (deq t t)
+  (t: S.sys input output)
+  : Lemma (equiv t t)
   = ()
 
-let deq_sym
+let equiv_sym
   (#input #output: Type)
-  (t1: S.sys input output { t1.oracle == None })
-  (t2: S.sys input output { t2.oracle == None })
-  : Lemma (requires deq t1 t2) (ensures deq t2 t1)
+  (t1: S.sys input output)
+  (t2: S.sys input output { t2.oracle == t1.oracle })
+  : Lemma (requires equiv t1 t2) (ensures equiv t2 t1)
   = ()
 
 (* Applicative common-subexpression law: applying a binary function to two runs
    of the *same* deterministic system [t] is the same as running [t] once and
    applying the diagonal. This is the core CSE rewrite —
    [ap (map f t) t] has two copies of [t]'s state, [map (fun x -> f x x) t] has
-   one, and [deq] equates them across that state change. *)
+   one, and [equiv] equates them across that state change. Both sides are
+   oracle-free, so this is the [oracle == None] instance of [equiv]. *)
 #push-options "--split_queries always --z3rlimit 60"
 let lemma_ap_map_cse
   (#input #a #b: Type)
   (f: a -> a -> b)
   (t: S.sys input a { t.oracle == None })
-  : Lemma (deq (S.ap (S.map f t) t) (S.map (fun (x: a) -> f x x) t))
+  : Lemma (equiv (S.ap (S.map f t) t) (S.map (fun (x: a) -> f x x) t))
   =
   let lhs = S.ap (S.map f t) t in
   let rhs = S.map (fun (x: a) -> f x x) t in
-  introduce forall (is: E.stream input) (n: nat).
-      (let ios1 = S.with_oracle lhs is (fun (_: nat) -> ()) in
-       let ios2 = S.with_oracle rhs is (fun (_: nat) -> ()) in
+  introduce forall (is: E.stream input)
+                   (orc: E.stream (SB.option_type_sem lhs.oracle))
+                   (n: nat).
+      (let ios1 = S.with_oracle lhs is orc in
+       let ios2 = S.with_oracle rhs is orc in
        S.stream_of_output lhs.raw ios1 n == S.stream_of_output rhs.raw ios2 n /\
        (S.stream_of_assumptions lhs.raw ios1 n <==> S.stream_of_assumptions rhs.raw ios2 n) /\
        (S.stream_of_obligations lhs.raw ios1 n <==> S.stream_of_obligations rhs.raw ios2 n))
   with begin
-    let ios1 = S.with_oracle lhs is (fun (_: nat) -> ()) in
-    let ios2 = S.with_oracle rhs is (fun (_: nat) -> ()) in
+    let ios1 = S.with_oracle lhs is orc in
+    let ios2 = S.with_oracle rhs is orc in
     let iof = S.io_fst #input #(S.map f t).oracle #t.oracle ios1 in
     let ios = S.io_snd #input #(S.map f t).oracle #t.oracle ios1 in
     (* For [None] oracles the projections are the identity, and both packages
-       feed the same unit oracle, so all three io-streams coincide. *)
+       feed the same (unit) oracle, so all three io-streams coincide. *)
     assert (forall (k: nat). iof k == ios1 k);
     assert (forall (k: nat). ios k == ios1 k);
     assert (forall (k: nat). ios1 k == ios2 k);
@@ -211,19 +220,20 @@ let lemma_ap_map_cse
   end
 #pop-options
 
-(* Eliminator: extract [deq]'s per-index agreement at a chosen input and step.
-   Lives in this module so [deq] unfolds locally. *)
-let deq_elim
+(* Eliminator: extract [equiv]'s per-index agreement at a chosen input, oracle
+   and step. Lives in this module so [equiv] unfolds locally. *)
+let equiv_elim
   (#input #output: Type)
-  (t1: S.sys input output { t1.oracle == None })
-  (t2: S.sys input output { t2.oracle == None })
+  (t1: S.sys input output)
+  (t2: S.sys input output { t2.oracle == t1.oracle })
   (is: E.stream input)
+  (orc: E.stream (SB.option_type_sem t1.oracle))
   (n: nat)
   : Lemma
-    (requires deq t1 t2)
+    (requires equiv t1 t2)
     (ensures (
-      let ios1 = S.with_oracle t1 is (fun (_: nat) -> ()) in
-      let ios2 = S.with_oracle t2 is (fun (_: nat) -> ()) in
+      let ios1 = S.with_oracle t1 is orc in
+      let ios2 = S.with_oracle t2 is orc in
       S.stream_of_output t1.raw ios1 n == S.stream_of_output t2.raw ios2 n /\
       (S.stream_of_assumptions t1.raw ios1 n <==> S.stream_of_assumptions t2.raw ios2 n) /\
       (S.stream_of_obligations t1.raw ios1 n <==> S.stream_of_obligations t2.raw ios2 n)))
