@@ -271,3 +271,71 @@ let lemma_zero_rec_sys_induct (_: unit)
   assert (SL.base_case_sys sl_pre prog_mufby sl_post) by (PT.norm_full []);
   assert (SL.step_case_sys sl_pre prog_mufby sl_post) by (PT.norm_full []);
   SL.induct1_sys sl_pre prog_mufby sl_post
+
+(*** Example 3: two counters sharing a subcomputation (applicative invariant) ***)
+
+(* A saturation-free counter  µx. (0 fby x) + 1  built with [mufby]; its output
+   is the step index plus one (1, 2, 3, ...). *)
+let incr    : S.sys (int & unit) int = S.map (fun (p: int & unit) -> fst p + 1) S.id
+let counter : S.sys unit int         = S.mufby 0 incr
+
+(* [both] runs two independent copies of [counter] in lock-step via the
+   applicative [ap], pairing their outputs. Crucially [ap] joins the two counter
+   states, so the product carries *two* separate registers: the analysis cannot
+   see a priori that the two components agree. *)
+let both : S.sys unit (int & int) =
+  S.ap (S.map (fun (a: int) (b: int) -> (a, b)) counter) counter
+
+let both_pre : S.sys unit prop = S.const True
+
+(* The applicative invariant: the two counter copies always agree. This is the
+   relational fact an AIL-style analysis would synthesise ([c1 = c2]). *)
+let g_eq (io: unit & (int & int)) : prop = fst (snd io) == snd (snd io)
+let post_eq : S.sys (unit & (int & int)) prop = S.map g_eq S.id
+
+(* Part 1 (automatic): 1-induction over the product system discovers the
+   invariant [c1 = c2]. The base/step cases reduce (via [norm_full]) to trivial
+   arithmetic because both registers step identically. *)
+let lemma_both_agree (_: unit)
+  : Lemma (SL.triple both_pre both post_eq)
+  =
+  assert (SL.base_case_sys both_pre both post_eq) by (PT.norm_full []);
+  assert (SL.step_case_sys both_pre both post_eq) by (PT.norm_full []);
+  SL.induct1_sys both_pre both post_eq
+
+(* The target safety property: a bound established on the first counter transfers
+   to the second. This is NOT inductive on its own — the step case needs
+   [c1_{n-1} < K] to conclude [c2_n <= K], but knowing only [c2_{n-1} <= K] (the
+   property at [n-1]) is too weak, since the two registers are independent. It
+   goes through only once we know the applicative invariant [c1 = c2]. *)
+let kbound : int = 100
+let g_bound (io: unit & (int & int)) : prop =
+  fst (snd io) <= kbound ==> snd (snd io) <= kbound
+let post_bound : S.sys (unit & (int & int)) prop = S.map g_bound S.id
+
+(* Part 2 (manual): weaken the invariant [c1 = c2] to the target property by the
+   rule of consequence. The postcondition systems are decoded pointwise (the
+   [map]/[id] laws), and [c1 = c2] pointwise implies [c1 <= K ==> c2 <= K]. *)
+#push-options "--z3rlimit 40"
+let lemma_both_bound (_: unit)
+  : Lemma (SL.triple both_pre both post_bound)
+  =
+  introduce forall (is: E.stream unit) (os: E.stream (int & int)) (n: nat).
+      SL.spred2 post_eq is os n == (fst (os n) == snd (os n)) /\
+      SL.spred2 post_bound is os n ==
+        (fst (os n) <= kbound ==> snd (os n) <= kbound)
+  with begin
+    let jos_eq = S.with_oracle post_eq (SL.pair_streams is os) (fun (_: nat) -> ()) in
+    let jos_bd = S.with_oracle post_bound (SL.pair_streams is os) (fun (_: nat) -> ()) in
+    S.lemma_map g_eq (S.id #(unit & (int & int))) jos_eq n;
+    S.lemma_system_project (fun (i: unit & (int & int)) -> i) jos_eq n;
+    S.lemma_map g_bound (S.id #(unit & (int & int))) jos_bd n;
+    S.lemma_system_project (fun (i: unit & (int & int)) -> i) jos_bd n
+  end;
+  lemma_both_agree ();
+  L.consequence both
+    (SL.spred both_pre) (SL.spred both_pre)
+    (SL.spred2 post_bound) (SL.spred2 post_eq)
+#pop-options
+
+
