@@ -118,6 +118,18 @@ let both : S.sys unit (int & int) =
 
 let both_pre : S.sys unit prop = S.const True
 
+(* Lightweight non-constant example: the counter is always positive. Exercises
+   [mufby] + [induct1_sys] on a *counting* program (output [1], then register+1),
+   discharged by [norm_full] with no auxiliary invariant. *)
+let counter_pos : S.sys (unit & int) prop = S.map (fun (io: unit & int) -> b2t (snd io >= 1)) S.id
+
+let lemma_counter_pos (_: unit)
+  : Lemma (SL.triple both_pre counter counter_pos)
+  =
+  assert (SL.base_case_sys both_pre counter counter_pos) by (PT.norm_full []);
+  assert (SL.step_case_sys both_pre counter counter_pos) by (PT.norm_full []);
+  SL.induct1_sys both_pre counter counter_pos
+
 (* The applicative invariant: the two counter copies always agree. This is the
    relational fact an AIL-style analysis would synthesise ([c1 = c2]). *)
 let g_eq (io: unit & (int & int)) : prop = fst (snd io) == snd (snd io)
