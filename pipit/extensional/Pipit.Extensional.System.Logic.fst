@@ -13,6 +13,7 @@ module ES = Pipit.Extensional.Stream
 module S  = Pipit.Extensional.System
 module SB = Pipit.System.Base
 module L  = Pipit.Extensional.Logic
+module SEq = Pipit.Extensional.System.Eq
 module Classical = FStar.Classical
 
 (* A deterministic (oracle-free) system. Its output is a function of the input. *)
@@ -362,5 +363,71 @@ let lemma_spred2_map_id
   let jos = S.with_oracle (S.map g S.id) (pair_streams is os) (fun (_: nat) -> ()) in
   S.lemma_map g (S.id #(input & output)) jos n;
   S.lemma_system_project (fun (i: input & output) -> i) jos n
+
+(*** Transport a triple along a deterministic equivalence ***)
+
+(* Rewriting rule: if the program [t] is observationally equivalent to [t']
+   ([System.Eq.deq]) and the postcondition [q] is causal, a triple about [t'] is
+   a triple about [t]. This is how an equational rewrite is *applied* to a proof:
+   discharge the property on the convenient (e.g. common-subexpression-shared)
+   form [t'], then move it back to [t]. Both systems must be oracle-free, as
+   [deq] equates deterministic behaviour (see [System.Eq.deq]). *)
+#push-options "--split_queries always --z3rlimit 100"
+let deq_transport
+  (#input #output: Type)
+  (p: E.stream input -> E.stream prop)
+  (t t': S.sys input output)
+  (q: E.stream input -> E.stream output -> E.stream prop)
+  : Lemma
+    (requires
+      t.oracle == None /\ t'.oracle == None /\ ES.causal2 q /\
+      L.triple p t' q /\ SEq.deq t t')
+    (ensures L.triple p t q)
+  =
+  let aux
+    (is: E.stream input)
+    (orc: E.stream (SB.option_type_sem t.oracle))
+    (n: nat)
+    : Lemma
+      (requires (
+        let ios = S.with_oracle t is orc in
+        ES.sofar (p is) n /\ ES.sofar (S.stream_of_assumptions t.raw ios) n))
+      (ensures (
+        let ios = S.with_oracle t is orc in
+        let os  = S.stream_of_output t.raw ios in
+        ES.sofar (q is os) n /\ ES.sofar (S.stream_of_obligations t.raw ios) n))
+    =
+    let ios    = S.with_oracle t is orc in
+    let ios_t  = S.with_oracle t is (fun (_: nat) -> ()) in
+    let ios_t' = S.with_oracle t' is (fun (_: nat) -> ()) in
+    let os     = S.stream_of_output t.raw ios in
+    let os'    = S.stream_of_output t'.raw ios_t' in
+    (* [orc] is a unit stream, so [ios] and the unit-oracle [ios_t] coincide. *)
+    assert (forall (k: nat). ios k == ios_t k);
+    (* [t]'s streams on [ios] equal those on [ios_t] (congruence). *)
+    introduce forall (k: nat).
+        S.stream_of_output t.raw ios k == S.stream_of_output t.raw ios_t k /\
+        (S.stream_of_assumptions t.raw ios k <==> S.stream_of_assumptions t.raw ios_t k) /\
+        (S.stream_of_obligations t.raw ios k <==> S.stream_of_obligations t.raw ios_t k)
+      with begin
+        S.lemma_stream_of_output_congruence t.raw ios ios_t k;
+        S.lemma_stream_of_assumptions_congruence t.raw ios ios_t k;
+        S.lemma_stream_of_obligations_congruence t.raw ios ios_t k
+      end;
+    (* [deq]: [t] on [ios_t] equals [t'] on [ios_t']. *)
+    introduce forall (k: nat).
+        S.stream_of_output t.raw ios_t k == S.stream_of_output t'.raw ios_t' k /\
+        (S.stream_of_assumptions t.raw ios_t k <==> S.stream_of_assumptions t'.raw ios_t' k) /\
+        (S.stream_of_obligations t.raw ios_t k <==> S.stream_of_obligations t'.raw ios_t' k)
+      with SEq.deq_elim t t' is k;
+    (* Assumptions transport to [t'], so the [t']-triple fires. *)
+    assert (ES.sofar (S.stream_of_assumptions t'.raw ios_t') n);
+    assert (ES.sofar (q is os') n /\ ES.sofar (S.stream_of_obligations t'.raw ios_t') n);
+    (* [os] and [os'] agree pointwise; causality moves [q] back to [os]. *)
+    ES.lemma_causal2_prefix q is is os' os n
+  in
+  Classical.forall_intro_3 (fun is orc n -> Classical.move_requires (aux is orc) n)
+#pop-options
+
 
 
