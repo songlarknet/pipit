@@ -344,6 +344,26 @@ let lemma_system_ap
   lemma_step_result_at_system_ap tf ta ios n
 #pop-options
 
+(* Sys-package-level [ap] law: the same as [lemma_system_ap] but phrased over
+   [(ap tf ta).raw], so callers connect through the [sys] combinator without
+   having to delta-unfold [ap] to expose the raw [system_ap]. *)
+let lemma_ap
+  (#input #a #b: Type)
+  (tf: sys input (a -> b))
+  (ta: sys input a)
+  (ios: io_stream input (ap tf ta).oracle)
+  (n: nat)
+  : Lemma
+    (ensures
+      stream_of_output (ap tf ta).raw ios n ==
+        (stream_of_output tf.raw (io_fst ios) n) (stream_of_output ta.raw (io_snd ios) n) /\
+      (stream_of_assumptions (ap tf ta).raw ios n <==>
+        (stream_of_assumptions tf.raw (io_fst ios) n /\ stream_of_assumptions ta.raw (io_snd ios) n)) /\
+      (stream_of_obligations (ap tf ta).raw ios n <==>
+        (stream_of_obligations tf.raw (io_fst ios) n /\ stream_of_obligations ta.raw (io_snd ios) n)))
+  =
+  lemma_system_ap tf.raw ta.raw ios n
+
 (* Derived law for [map f t = pure f <*> t]. Because [pure]'s oracle and state
    are [None], the join projections reduce definitionally and [system_ap
    (system_const f) t] behaves exactly like the old [system_map_result f t]:

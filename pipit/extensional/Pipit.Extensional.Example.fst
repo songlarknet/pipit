@@ -11,6 +11,7 @@ module S  = Pipit.Extensional.System
 module SB = Pipit.System.Base
 module L  = Pipit.Extensional.Logic
 module SL = Pipit.Extensional.System.Logic
+module SEq = Pipit.Extensional.System.Eq
 module PT = Pipit.Tactics
 module Classical = FStar.Classical
 (* The program  µx. 0 fby x  (unit input, int output). *)
@@ -279,12 +280,16 @@ let lemma_zero_rec_sys_induct (_: unit)
 let incr    : S.sys (int & unit) int = S.map (fun (p: int & unit) -> fst p + 1) S.id
 let counter : S.sys unit int         = S.mufby 0 incr
 
+(* Named pair constructor so the [ap]/[map] CSE law's [fun x -> mkpair x x]
+   matches [both_cse] syntactically (avoids alpha/beta lambda non-unification). *)
+let mkpair (a b: int) : int & int = (a, b)
+
 (* [both] runs two independent copies of [counter] in lock-step via the
    applicative [ap], pairing their outputs. Crucially [ap] joins the two counter
    states, so the product carries *two* separate registers: the analysis cannot
    see a priori that the two components agree. *)
 let both : S.sys unit (int & int) =
-  S.ap (S.map (fun (a: int) (b: int) -> (a, b)) counter) counter
+  S.ap (S.map mkpair counter) counter
 
 let both_pre : S.sys unit prop = S.const True
 
@@ -334,6 +339,104 @@ let lemma_both_bound (_: unit)
     (SL.spred both_pre) (SL.spred both_pre)
     (SL.spred2 post_bound) (SL.spred2 post_eq)
 #pop-options
+
+(*** Example 3', same property via a semantic CSE rewrite (deq + transport) ***)
+
+(* Transport a [triple] along a deterministic equivalence of the program: if
+   [t] and [t'] have the same observable behaviour ([deq]) and [q] is causal,
+   a triple about [t'] is a triple about [t]. This is how a rewrite is *applied*:
+   prove the property on the convenient (shared) form, then move it back. *)
+#push-options "--split_queries always --z3rlimit 100"
+let deq_transport
+  (#input #output: Type)
+  (p: E.stream input -> E.stream prop)
+  (t t': S.sys input output)
+  (q: E.stream input -> E.stream output -> E.stream prop)
+  : Lemma
+    (requires
+      t.oracle == None /\ t'.oracle == None /\ ES.causal2 q /\
+      L.triple p t' q /\ SEq.deq t t')
+    (ensures L.triple p t q)
+  =
+  let aux
+    (is: E.stream input)
+    (orc: E.stream (SB.option_type_sem t.oracle))
+    (n: nat)
+    : Lemma
+      (requires (
+        let ios = S.with_oracle t is orc in
+        ES.sofar (p is) n /\ ES.sofar (S.stream_of_assumptions t.raw ios) n))
+      (ensures (
+        let ios = S.with_oracle t is orc in
+        let os  = S.stream_of_output t.raw ios in
+        ES.sofar (q is os) n /\ ES.sofar (S.stream_of_obligations t.raw ios) n))
+    =
+    let ios    = S.with_oracle t is orc in
+    let ios_t  = S.with_oracle t is (fun (_: nat) -> ()) in
+    let ios_t' = S.with_oracle t' is (fun (_: nat) -> ()) in
+    let os     = S.stream_of_output t.raw ios in
+    let os'    = S.stream_of_output t'.raw ios_t' in
+    (* [orc] is a unit stream, so [ios] and the unit-oracle [ios_t] coincide. *)
+    assert (forall (k: nat). ios k == ios_t k);
+    (* [t]'s streams on [ios] equal those on [ios_t] (congruence). *)
+    introduce forall (k: nat).
+        S.stream_of_output t.raw ios k == S.stream_of_output t.raw ios_t k /\
+        (S.stream_of_assumptions t.raw ios k <==> S.stream_of_assumptions t.raw ios_t k) /\
+        (S.stream_of_obligations t.raw ios k <==> S.stream_of_obligations t.raw ios_t k)
+      with begin
+        S.lemma_stream_of_output_congruence t.raw ios ios_t k;
+        S.lemma_stream_of_assumptions_congruence t.raw ios ios_t k;
+        S.lemma_stream_of_obligations_congruence t.raw ios ios_t k
+      end;
+    (* [deq]: [t] on [ios_t] equals [t'] on [ios_t']. *)
+    introduce forall (k: nat).
+        S.stream_of_output t.raw ios_t k == S.stream_of_output t'.raw ios_t' k /\
+        (S.stream_of_assumptions t.raw ios_t k <==> S.stream_of_assumptions t'.raw ios_t' k) /\
+        (S.stream_of_obligations t.raw ios_t k <==> S.stream_of_obligations t'.raw ios_t' k)
+      with SEq.deq_elim t t' is k;
+    (* Assumptions transport to [t'], so the [t']-triple fires. *)
+    assert (ES.sofar (S.stream_of_assumptions t'.raw ios_t') n);
+    assert (ES.sofar (q is os') n /\ ES.sofar (S.stream_of_obligations t'.raw ios_t') n);
+    (* [os] and [os'] agree pointwise; causality moves [q] back to [os]. *)
+    ES.lemma_causal2_prefix q is is os' os n
+  in
+  Classical.forall_intro_3 (fun is orc n -> Classical.move_requires (aux is orc) n)
+#pop-options
+
+(* The CSE'd program: one counter, output duplicated. [ap]'s two registers are
+   collapsed to one -- and [ap_map_cse] proves this is observationally the same. *)
+let both_cse : S.sys unit (int & int) = S.map (fun (x: int) -> mkpair x x) counter
+
+(* The headline rewrite, admit-free: the two-register [both] is [deq] to the
+   single-register [both_cse]. This is one instance of the reusable applicative
+   CSE law. *)
+let lemma_both_cse (_: unit)
+  : Lemma (SEq.deq both both_cse)
+  =
+  SEq.lemma_ap_map_cse mkpair counter
+
+(* On the shared form the target property is trivially inductive: both outputs
+   are the *same* counter value, so [c <= K ==> c <= K] holds by construction.
+   [induct1_sys] discharges it via [norm_full] with no auxiliary invariant. *)
+let lemma_both_cse_triple (_: unit)
+  : Lemma (SL.triple both_pre both_cse post_bound)
+  =
+  assert (SL.base_case_sys both_pre both_cse post_bound) by (PT.norm_full []);
+  assert (SL.step_case_sys both_pre both_cse post_bound) by (PT.norm_full []);
+  SL.induct1_sys both_pre both_cse post_bound
+
+(* Same goal as [lemma_both_bound], but discharged by the semantic rewrite:
+   prove the property on [both_cse] (trivial), then transport it to [both]
+   along [deq]. No induction / no invariant on [both] itself. *)
+let lemma_both_bound_cse (_: unit)
+  : Lemma (SL.triple both_pre both post_bound)
+  =
+  lemma_both_cse_triple ();
+  lemma_both_cse ();
+  SL.lemma_spred2_causal2 post_bound;
+  deq_transport (SL.spred both_pre) both both_cse (SL.spred2 post_bound)
+
+
 
 
 
