@@ -10,9 +10,9 @@ module ES = Pipit.Extensional.Stream
 module S  = Pipit.Extensional.System
 module SB = Pipit.System.Base
 module L  = Pipit.Extensional.Logic
+module SL = Pipit.Extensional.System.Logic
 module PT = Pipit.Tactics
 module Classical = FStar.Classical
-
 (* The program  µx. 0 fby x  (unit input, int output). *)
 let t_x   : S.sys (int & unit) int = S.map fst S.id
 let body  : S.sys (int & unit) int = S.fby 0 t_x
@@ -229,3 +229,31 @@ let lemma_zero_rec_induct (_: unit)
   assert (L.base_case prog_mufby.raw pp qq) by (PT.norm_full []);
   assert (L.step_case prog_mufby.raw pp qq) by (PT.norm_full []);
   L.induct1_pw prog_mufby pp qq
+
+(*** Example 1, system-valued spec:  { const True } mufby 0 t_x { map (= 0) } ***)
+
+(* The same specification with pre/postconditions written as (prop-valued)
+   systems: [const True] and "the output equals 0". Because these are systems,
+   their decoded stream predicates are causal by construction, so
+   [System.Logic.triple] carries no causality side-condition. Here we discharge
+   it via the stream fallback: decode to [Logic.triple] and reuse the proof of
+   [lemma_zero_rec_mufby] through the rule of consequence. *)
+let sl_pre  : SL.dsys unit prop = SL.sconst True
+let sl_post : SL.dsys (unit & int) prop = SL.smap (fun (io: unit & int) -> snd io == 0) SL.svar
+
+#push-options "--z3rlimit 40"
+let lemma_zero_rec_sys (_: unit)
+  : Lemma (SL.triple sl_pre prog_mufby sl_post)
+  =
+  (* the decoded postcondition is exactly [x = 0] (map . id laws) *)
+  introduce forall (is: E.stream unit) (os: E.stream int) (n: nat).
+      SL.spred2 sl_post is os n == (os n == 0)
+  with begin
+    let jos = S.with_oracle sl_post (fun (m: nat) -> (is m, os m)) (fun (_: nat) -> ()) in
+    S.lemma_system_map_result (fun (io: unit & int) -> snd io == 0)
+      (S.id #(unit & int)).raw jos n;
+    S.lemma_system_project (fun (i: unit & int) -> i) jos n
+  end;
+  lemma_zero_rec_mufby ();
+  L.consequence prog_mufby (SL.spred sl_pre) p_true (SL.spred2 sl_post) q_zero
+#pop-options
