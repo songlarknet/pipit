@@ -373,8 +373,7 @@ let map_aux
   let ot    = S.stream_of_output t.raw ios_t in
   let os_m  = S.stream_of_output (S.map f t).raw ios in
   assert (forall (k: nat). ios k == ios_t k);
-  assert ((S.map f t).raw == SB.system_map_result f t.raw);
-  Classical.forall_intro (S.lemma_system_map_result f t.raw ios);
+  Classical.forall_intro (S.lemma_map f t ios);
   introduce forall (k: nat). S.stream_of_output t.raw ios k == ot k
     with S.lemma_stream_of_output_congruence t.raw ios ios_t k;
   introduce forall (k: nat).

@@ -118,6 +118,7 @@ let db1 : S.sys (int & unit) int = S.delayed_body 0 t_x
 
 (* Body triple for [delayed_body 0 t_x]: it runs [t_x] on the delayed feedback,
    so its output is [0 fby feedback], which is zero on the guarded prefix. *)
+#push-options "--split_queries always"
 let lemma_db1_aux
   (is_x: E.stream (int & unit))
   (orc_x: E.stream (SB.option_type_sem db1.oracle))
@@ -139,7 +140,7 @@ let lemma_db1_aux
   (* [delayed_body] unfold: [db1] runs [t_x] on the delayed-feedback io-stream. *)
   Classical.forall_intro (S.lemma_system_delayed_body 0 t_x.raw ios);
   (* [t_x = map fst id] outputs [fst] of its input; its checks are trivial. *)
-  Classical.forall_intro (S.lemma_system_map_result fst (S.id #(int & unit)).raw dios);
+  Classical.forall_intro (S.lemma_map fst (S.id #(int & unit)) dios);
   Classical.forall_intro (S.lemma_system_project (fun (i: int & unit) -> i) dios);
   assert (forall (k: nat). os k == ES.fby 0 (fun m -> fst (is_x m)) k);
   assert (forall (k: nat). S.stream_of_obligations db1.raw ios k == True);
@@ -150,6 +151,7 @@ let lemma_db1_aux
 
   (* [0 fby feedback] is zero on the prefix: base at 0, step from the guard. *)
   assert (forall (k: nat). k <= n ==> os k == 0)
+#pop-options
 
 let lemma_db1_triple (_: unit)
   : Lemma (L.triple p_pre db1 q_post)
@@ -250,8 +252,8 @@ let lemma_zero_rec_sys (_: unit)
       SL.spred2 sl_post is os n == (os n == 0)
   with begin
     let jos = S.with_oracle sl_post (SL.pair_streams is os) (fun (_: nat) -> ()) in
-    S.lemma_system_map_result (fun (io: unit & int) -> snd io == 0)
-      (S.id #(unit & int)).raw jos n;
+    S.lemma_map (fun (io: unit & int) -> snd io == 0)
+      (S.id #(unit & int)) jos n;
     S.lemma_system_project (fun (i: unit & int) -> i) jos n
   end;
   lemma_zero_rec_mufby ();

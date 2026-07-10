@@ -150,6 +150,30 @@ let system_const (#input #result: Type) (v: result): system input None None resu
     step = (fun i o s -> { s = (); v = v; chck = checks_none; });
   }
 
+(* Applicative apply: run [tf] and [ta] on the same input in lock-step and apply
+   the function output of [tf] to the argument output of [ta]. Oracles and states
+   are joined; checks are conjoined. *)
+let system_ap
+  (#input #a #b: Type)
+  (#oracle1 #oracle2 #state1 #state2: option Type)
+  (tf: system input oracle1 state1 (a -> b))
+  (ta: system input oracle2 state2 a):
+       system input (type_join oracle1 oracle2) (type_join state1 state2) b =
+  { init = type_join_tup #state1 #state2 tf.init ta.init;
+    step = (fun i o s ->
+      let o1 = type_join_fst #oracle1 #oracle2 o in
+      let o2 = type_join_snd #oracle1 #oracle2 o in
+      let s1 = type_join_fst #state1 #state2 s in
+      let s2 = type_join_snd #state1 #state2 s in
+      let stpf = tf.step i o1 s1 in
+      let stpa = ta.step i o2 s2 in
+      {
+        s    = type_join_tup #state1 #state2 stpf.s stpa.s;
+        v    = stpf.v stpa.v;
+        chck = checks_join stpf.chck stpa.chck;
+      });
+  }
+
 let system_check (#input: Type) (#oracle #state: option Type)
   (name: string)
   (status: PM.prop_status)

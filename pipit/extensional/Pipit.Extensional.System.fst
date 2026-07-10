@@ -17,6 +17,23 @@ module SB = Pipit.System.Base
 type io_stream (input: Type) (oracle: option Type) =
   E.stream (input & SB.option_type_sem oracle)
 
+(* Project a joined-oracle io-stream onto its two components (for [system_ap]). *)
+unfold
+let io_fst
+  (#input: Type) (#oracle1 #oracle2: option Type)
+  (ios: io_stream input (SB.type_join oracle1 oracle2))
+  : io_stream input oracle1
+  =
+  fun n -> (fst (ios n), SB.type_join_fst #oracle1 #oracle2 (snd (ios n)))
+
+unfold
+let io_snd
+  (#input: Type) (#oracle1 #oracle2: option Type)
+  (ios: io_stream input (SB.type_join oracle1 oracle2))
+  : io_stream input oracle2
+  =
+  fun n -> (fst (ios n), SB.type_join_snd #oracle1 #oracle2 (snd (ios n)))
+
 (* Execute exactly n+1 steps and return the final step result.
    n = 0 corresponds to one step from init using ios 0. *)
 let rec step_result_at
@@ -138,18 +155,38 @@ let mu
 let id (#input: Type) : sys input input =
   { oracle = None; state = None; raw = SB.system_project (fun i -> i) }
 
-(* Constant system: emits [v] at every step. *)
-let const (#input #output: Type) (v: output) : sys input output =
+(*** Applicative structure: pure / ap, with map (<$>) derived ***)
+
+(* [pure v] emits [v] at every step, ignoring the input — the applicative unit. *)
+let pure (#input #output: Type) (v: output) : sys input output =
   { oracle = None; state = None; raw = SB.system_const v }
 
-(* Map a pure function over a system's output. *)
+(* Constant system, an alias of [pure]. *)
+let const (#input #output: Type) (v: output) : sys input output = pure v
+
+(* Applicative apply (<*>): run [tf] and [ta] in lock-step on the same input and
+   apply [tf]'s function output to [ta]'s argument output. *)
+let ap
+  (#input #a #b: Type)
+  (tf: sys input (a -> b))
+  (ta: sys input a)
+  : sys input b
+  =
+  {
+    oracle = SB.type_join tf.oracle ta.oracle;
+    state  = SB.type_join tf.state ta.state;
+    raw    = SB.system_ap tf.raw ta.raw;
+  }
+
+(* Map a pure function over a system's output (<$>), derived from the applicative
+   primitives: [map f t = pure f <*> t]. *)
 let map
   (#input #output1 #output2: Type)
   (f: output1 -> output2)
   (t: sys input output1)
   : sys input output2
   =
-  { oracle = t.oracle; state = t.state; raw = SB.system_map_result f t.raw }
+  ap (pure f) t
 
 (* [v0 fby t]: emit [v0] at step 0, then the previous output of [t]. Only the
    output is delayed; the checks are [t]'s at the current step. *)
@@ -247,6 +284,101 @@ let lemma_type_join_snd_tup
     (SB.type_join_snd #t1 #t2 (SB.type_join_tup #t1 #t2 a b) == b)
   =
   match t1, t2 with | Some _, Some _ -> () | None, _ -> () | _, None -> ()
+
+(* [system_ap tf ta] runs both operands in lock-step; its step result is [tf]'s
+   function applied to [ta]'s argument, the joined states, and conjoined checks.
+   The operands see the oracle projections [io_fst]/[io_snd]. *)
+#push-options "--split_queries always"
+let rec lemma_step_result_at_system_ap
+  (#input #a #b: Type)
+  (#oracle1 #oracle2 #state1 #state2: option Type)
+  (tf: SB.system input oracle1 state1 (a -> b))
+  (ta: SB.system input oracle2 state2 a)
+  (ios: io_stream input (SB.type_join oracle1 oracle2))
+  (n: nat)
+  : Lemma
+    (ensures (
+      let apr = step_result_at (SB.system_ap tf ta) ios n in
+      let fr  = step_result_at tf (io_fst ios) n in
+      let ar  = step_result_at ta (io_snd ios) n in
+      apr.v == fr.v ar.v /\
+      apr.s == SB.type_join_tup #state1 #state2 fr.s ar.s /\
+      apr.chck == SB.checks_join fr.chck ar.chck))
+    (decreases n)
+  =
+  match n with
+  | 0 ->
+    lemma_type_join_fst_tup #state1 #state2 tf.init ta.init;
+    lemma_type_join_snd_tup #state1 #state2 tf.init ta.init;
+    (* Splitting the three-conjunct post per component keeps Z3 from timing out
+       on the joined step term. *)
+    assert ((step_result_at (SB.system_ap tf ta) ios 0).v ==
+            (step_result_at tf (io_fst ios) 0).v (step_result_at ta (io_snd ios) 0).v);
+    assert ((step_result_at (SB.system_ap tf ta) ios 0).s ==
+            SB.type_join_tup #state1 #state2 (step_result_at tf (io_fst ios) 0).s (step_result_at ta (io_snd ios) 0).s);
+    assert ((step_result_at (SB.system_ap tf ta) ios 0).chck ==
+            SB.checks_join (step_result_at tf (io_fst ios) 0).chck (step_result_at ta (io_snd ios) 0).chck)
+  | _ ->
+    lemma_step_result_at_system_ap tf ta ios (n - 1);
+    lemma_type_join_fst_tup #state1 #state2
+      (step_result_at tf (io_fst ios) (n - 1)).s (step_result_at ta (io_snd ios) (n - 1)).s;
+    lemma_type_join_snd_tup #state1 #state2
+      (step_result_at tf (io_fst ios) (n - 1)).s (step_result_at ta (io_snd ios) (n - 1)).s
+
+let lemma_system_ap
+  (#input #a #b: Type)
+  (#oracle1 #oracle2 #state1 #state2: option Type)
+  (tf: SB.system input oracle1 state1 (a -> b))
+  (ta: SB.system input oracle2 state2 a)
+  (ios: io_stream input (SB.type_join oracle1 oracle2))
+  (n: nat)
+  : Lemma
+    (ensures
+      stream_of_output (SB.system_ap tf ta) ios n ==
+        (stream_of_output tf (io_fst ios) n) (stream_of_output ta (io_snd ios) n) /\
+      (stream_of_assumptions (SB.system_ap tf ta) ios n <==>
+        (stream_of_assumptions tf (io_fst ios) n /\ stream_of_assumptions ta (io_snd ios) n)) /\
+      (stream_of_obligations (SB.system_ap tf ta) ios n <==>
+        (stream_of_obligations tf (io_fst ios) n /\ stream_of_obligations ta (io_snd ios) n)))
+  =
+  lemma_step_result_at_system_ap tf ta ios n
+#pop-options
+
+(* Derived law for [map f t = pure f <*> t]. Because [pure]'s oracle and state
+   are [None], the join projections reduce definitionally and [system_ap
+   (system_const f) t] behaves exactly like the old [system_map_result f t]:
+   the output is [f] of [t]'s, and the checks are unchanged. *)
+let rec lemma_step_result_at_map
+  (#input #result #result': Type)
+  (#oracle #state: option Type)
+  (f: result -> result')
+  (t: SB.system input oracle state result)
+  (ios: io_stream input oracle)
+  (n: nat)
+  : Lemma
+    (ensures (
+      let apr = step_result_at (SB.system_ap (SB.system_const f) t) ios n in
+      let tr  = step_result_at t ios n in
+      apr.s == tr.s /\ apr.v == f tr.v /\ apr.chck == tr.chck))
+    (decreases n)
+  =
+  match n with
+  | 0 -> ()
+  | _ -> lemma_step_result_at_map f t ios (n - 1)
+
+let lemma_map
+  (#input #result #result': Type)
+  (f: result -> result')
+  (t: sys input result)
+  (ios: io_stream input (map f t).oracle)
+  (n: nat)
+  : Lemma
+    (ensures
+      stream_of_output (map f t).raw ios n == f (stream_of_output t.raw ios n) /\
+      stream_of_assumptions (map f t).raw ios n == stream_of_assumptions t.raw ios n /\
+      stream_of_obligations (map f t).raw ios n == stream_of_obligations t.raw ios n)
+  =
+  lemma_step_result_at_map f t.raw ios n
 
 (* [system_pre v0 t] carries [t]'s current step in its state (first component the
    output, second the [t]-state), emitting the previous output; checks are [t]'s
