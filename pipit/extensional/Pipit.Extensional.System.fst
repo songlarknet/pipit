@@ -1115,3 +1115,54 @@ let lemma_system_contract
                       SB.checks_obligation qr.v `SB.checks_join`
                       pr.chck `SB.checks_join` tr.chck `SB.checks_join` qr.chck))
 #pop-options
+
+(* Shared-oracle contract congruence in the program. If [t] and [t'] share the
+   *same oracle type parameter* [ot] (differing only in state) and are
+   observationally equal (agree on every io-stream), then the two contract
+   systems have the same observable streams. Sharing [ot] as a type parameter —
+   rather than via a propositional [t'.oracle == t.oracle] — is what makes the
+   [contract_ios_t] projections coincide, so the proof goes through without any
+   [type_join] reduction over abstract oracles. *)
+#push-options "--split_queries always --z3rlimit 100"
+let lemma_system_contract_congruence
+  (#input #output: Type)
+  (#op #ot #oq #sp #st #st' #sq: option Type)
+  (pre: SB.system input op sp prop)
+  (t:  SB.system input ot st  output)
+  (t': SB.system input ot st' output)
+  (post: SB.system (input & output) oq sq prop)
+  (ios: io_stream input (SB.type_join op (SB.type_join ot oq)))
+  (n: nat)
+  : Lemma
+    (requires
+      (forall (jos: io_stream input ot) (k: nat).
+        stream_of_output t jos k == stream_of_output t' jos k /\
+        (stream_of_assumptions t jos k <==> stream_of_assumptions t' jos k) /\
+        (stream_of_obligations t jos k <==> stream_of_obligations t' jos k)))
+    (ensures
+      stream_of_output (system_contract pre t post) ios n ==
+        stream_of_output (system_contract pre t' post) ios n /\
+      (stream_of_assumptions (system_contract pre t post) ios n <==>
+        stream_of_assumptions (system_contract pre t' post) ios n) /\
+      (stream_of_obligations (system_contract pre t post) ios n <==>
+        stream_of_obligations (system_contract pre t' post) ios n))
+  =
+  lemma_system_contract pre t  post ios n;
+  lemma_system_contract pre t' post ios n;
+  let tios  = contract_ios_t #input #output #op #ot #oq ios in
+  let qios  = contract_ios_q #input #output #op #ot #oq #st  t  ios in
+  let qios' = contract_ios_q #input #output #op #ot #oq #st' t' ios in
+  (* [t] and [t'] give the same output on the shared [t]-projection, so [post]
+     is fed the same [(input, output)] pair. *)
+  introduce forall (k: nat). qios k == qios' k
+    with assert (stream_of_output t tios k == stream_of_output t' tios k);
+  introduce forall (k: nat).
+      stream_of_output post qios k == stream_of_output post qios' k /\
+      (stream_of_assumptions post qios k <==> stream_of_assumptions post qios' k) /\
+      (stream_of_obligations post qios k <==> stream_of_obligations post qios' k)
+    with begin
+      lemma_stream_of_output_congruence post qios qios' k;
+      lemma_stream_of_assumptions_congruence post qios qios' k;
+      lemma_stream_of_obligations_congruence post qios qios' k
+    end
+#pop-options
