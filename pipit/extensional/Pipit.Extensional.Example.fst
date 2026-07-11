@@ -202,15 +202,30 @@ let lemma_both_cse_triple (_: unit)
   assert (SL.step_case_sys both_pre both_cse post_bound) by (PT.norm_full []);
   SL.induct1_sys both_pre both_cse post_bound
 
-(* The contract systems for [both] and [both_cse] are observationally equivalent:
-   both are concrete and oracle-free (oracles reduce to [None]), [both] and
-   [both_cse] agree observationally by the CSE law, and [both_pre]/[post_bound]
-   are shared — so the whole contract streams coincide. *)
+(* Local helper: output/assumption/obligation congruence for one system on two
+   io-streams that agree pointwise. Collapses the three congruence lemmas. *)
+let cong3
+  (#i #o: Type) (#oc #st: option Type)
+  (sys: SB.system i oc st o) (j1 j2: S.io_stream i oc) (k: nat)
+  : Lemma (requires (forall (m: nat). j1 m == j2 m))
+          (ensures
+            S.stream_of_output sys j1 k == S.stream_of_output sys j2 k /\
+            (S.stream_of_assumptions sys j1 k <==> S.stream_of_assumptions sys j2 k) /\
+            (S.stream_of_obligations sys j1 k <==> S.stream_of_obligations sys j2 k))
+  =
+  S.lemma_stream_of_output_congruence      sys j1 j2 k;
+  S.lemma_stream_of_assumptions_congruence sys j1 j2 k;
+  S.lemma_stream_of_obligations_congruence sys j1 j2 k
+
+(* The contract systems for [both] and [both_cse] are observationally equivalent.
+   Both programs are concrete and oracle-free (oracles reduce to [None]), so:
+   [lemma_system_contract] decomposes each contract into its [pre]/[t]/[post]
+   projections; those projections coincide (or, for [t], reduce to the unit
+   io-streams); and [equiv both both_cse] (the CSE law) equates the [t]-parts. *)
 #push-options "--split_queries always --z3rlimit 300 --fuel 2 --ifuel 1"
 let lemma_both_contract_equiv (_: unit)
   : Lemma (SEq.equiv (S.contract both_pre both post_bound) (S.contract both_pre both_cse post_bound))
   =
-  lemma_both_cse ();
   let c  = S.contract both_pre both     post_bound in
   let c' = S.contract both_pre both_cse post_bound in
   let aux (is: E.stream unit) (orc: E.stream (SB.option_type_sem c.oracle)) (n: nat)
@@ -221,9 +236,9 @@ let lemma_both_contract_equiv (_: unit)
         (S.stream_of_assumptions c.raw ios n <==> S.stream_of_assumptions c'.raw ios' n) /\
         (S.stream_of_obligations c.raw ios n <==> S.stream_of_obligations c'.raw ios' n))
     =
+    lemma_both_cse ();
     let ios  = S.with_oracle c  is orc in
     let ios' = S.with_oracle c' is orc in
-    lemma_both_cse ();
     S.lemma_system_contract both_pre.raw both.raw     post_bound.raw ios  n;
     S.lemma_system_contract both_pre.raw both_cse.raw post_bound.raw ios' n;
     let tios  = S.contract_ios_t #unit #(int & int) #both_pre.oracle #both.oracle     #post_bound.oracle ios  in
@@ -233,52 +248,36 @@ let lemma_both_contract_equiv (_: unit)
     let qios  = S.contract_ios_q #unit #(int & int) #both_pre.oracle #both.oracle     #post_bound.oracle #both.state     both.raw     ios  in
     let qios' = S.contract_ios_q #unit #(int & int) #both_pre.oracle #both_cse.oracle #post_bound.oracle #both_cse.state both_cse.raw ios' in
     let u : E.stream unit = fun (_: nat) -> () in
-    let uio   = S.with_oracle both     is u in
-    let uio'  = S.with_oracle both_cse is u in
-    (* Concrete oracles reduce to [None], so the [t]-projections are the unit
-       io-streams; [equiv both both_cse] then equates their outputs. *)
-    assert (forall (k: nat). tios k == uio k);
-    assert (forall (k: nat). tios' k == uio' k);
+    let uio  = S.with_oracle both     is u in
+    let uio' = S.with_oracle both_cse is u in
+    (* Concrete oracles reduce to [None]: the [pre] projections coincide and the
+       [t]-projections are the unit io-streams. *)
+    assert (forall (k: nat).
+      tios k == uio k /\ tios' k == uio' k /\ pios k == pios' k);
+    (* [both]/[both_cse] agree on the unit io-streams (CSE law), lifted to the
+       [t]-projections; [pre]/[post] see identical projections. *)
     introduce forall (k: nat).
-        S.stream_of_output both.raw uio k == S.stream_of_output both_cse.raw uio' k /\
+        S.stream_of_output      both.raw uio k == S.stream_of_output      both_cse.raw uio' k /\
         (S.stream_of_assumptions both.raw uio k <==> S.stream_of_assumptions both_cse.raw uio' k) /\
         (S.stream_of_obligations both.raw uio k <==> S.stream_of_obligations both_cse.raw uio' k)
       with SEq.equiv_elim both both_cse is u k;
-    (* [both]/[both_cse] agree on the [t]-projection (all three streams). *)
     introduce forall (k: nat).
         (S.stream_of_output      both.raw tios k == S.stream_of_output      both_cse.raw tios' k) /\
         (S.stream_of_assumptions both.raw tios k <==> S.stream_of_assumptions both_cse.raw tios' k) /\
         (S.stream_of_obligations both.raw tios k <==> S.stream_of_obligations both_cse.raw tios' k)
-      with begin
-        S.lemma_stream_of_output_congruence      both.raw     tios  uio  k;
-        S.lemma_stream_of_output_congruence      both_cse.raw tios' uio' k;
-        S.lemma_stream_of_assumptions_congruence both.raw     tios  uio  k;
-        S.lemma_stream_of_assumptions_congruence both_cse.raw tios' uio' k;
-        S.lemma_stream_of_obligations_congruence both.raw     tios  uio  k;
-        S.lemma_stream_of_obligations_congruence both_cse.raw tios' uio' k
-      end;
-    (* Equal [t]-outputs mean [post] is fed the same pair; [pre] sees the same
-       input. Both projections coincide, so [pre]/[post] streams agree. *)
-    assert (forall (k: nat). pios k == pios' k);
+      with (cong3 both.raw tios uio k; cong3 both_cse.raw tios' uio' k);
+    (* Equal [t]-outputs mean [post] is fed the same pair. *)
     assert (forall (k: nat). qios k == qios' k);
     introduce forall (k: nat).
         (S.stream_of_output      post_bound.raw qios k == S.stream_of_output      post_bound.raw qios' k) /\
         (S.stream_of_assumptions post_bound.raw qios k <==> S.stream_of_assumptions post_bound.raw qios' k) /\
         (S.stream_of_obligations post_bound.raw qios k <==> S.stream_of_obligations post_bound.raw qios' k)
-      with begin
-        S.lemma_stream_of_output_congruence      post_bound.raw qios qios' k;
-        S.lemma_stream_of_assumptions_congruence post_bound.raw qios qios' k;
-        S.lemma_stream_of_obligations_congruence post_bound.raw qios qios' k
-      end;
+      with cong3 post_bound.raw qios qios' k;
     introduce forall (k: nat).
         (S.stream_of_output      both_pre.raw pios k == S.stream_of_output      both_pre.raw pios' k) /\
         (S.stream_of_assumptions both_pre.raw pios k <==> S.stream_of_assumptions both_pre.raw pios' k) /\
         (S.stream_of_obligations both_pre.raw pios k <==> S.stream_of_obligations both_pre.raw pios' k)
-      with begin
-        S.lemma_stream_of_output_congruence      both_pre.raw pios pios' k;
-        S.lemma_stream_of_assumptions_congruence both_pre.raw pios pios' k;
-        S.lemma_stream_of_obligations_congruence both_pre.raw pios pios' k
-      end
+      with cong3 both_pre.raw pios pios' k
   in
   Classical.forall_intro_3 aux
 #pop-options
