@@ -210,6 +210,108 @@ let equiv_transport
 
 (*** SL-level rewriting: transport a triple along an equivalence on the program ***)
 
+(* Output/assumption/obligation congruence for one system on two io-streams that
+   agree pointwise. *)
+let cong3
+  (#i #o: Type) (#oc #st: option Type)
+  (sys: SB.system i oc st o) (j1 j2: S.io_stream i oc) (k: nat)
+  : Lemma (requires (forall (m: nat). j1 m == j2 m))
+          (ensures
+            S.stream_of_output sys j1 k == S.stream_of_output sys j2 k /\
+            (S.stream_of_assumptions sys j1 k <==> S.stream_of_assumptions sys j2 k) /\
+            (S.stream_of_obligations sys j1 k <==> S.stream_of_obligations sys j2 k))
+  =
+  S.lemma_stream_of_output_congruence      sys j1 j2 k;
+  S.lemma_stream_of_assumptions_congruence sys j1 j2 k;
+  S.lemma_stream_of_obligations_congruence sys j1 j2 k
+
+(* Contract congruence in the program. Rewriting [t] by an observational
+   equivalence rewrites the whole contract. Using [t'' = { t' with oracle =
+   t.oracle }] (which equals [t'] and whose oracle reduces to [t.oracle]) makes
+   both contracts share the [t]-projection, so [equiv t t'] transfers directly. *)
+#push-options "--split_queries always --z3rlimit 300 --fuel 2 --ifuel 1"
+let lemma_equiv_contract_t
+  (#input #output: Type)
+  (pre: S.sys input prop)
+  (t: S.sys input output)
+  (t': S.sys input output { t'.oracle == t.oracle })
+  (post: S.sys (input & output) prop)
+  : Lemma
+    (requires SEq.equiv t t')
+    (ensures SEq.equiv (S.contract pre t post) (S.contract pre t' post))
+  =
+  let t'' : S.sys input output = { t' with oracle = t.oracle } in
+  let c   = S.contract pre t   post in
+  let c'' = S.contract pre t'' post in
+  let aux (is: E.stream input) (orc: E.stream (SB.option_type_sem c.oracle)) (n: nat)
+    : Lemma (
+        let ios  = S.with_oracle c   is orc in
+        let ios' = S.with_oracle c'' is orc in
+        S.stream_of_output c.raw ios n == S.stream_of_output c''.raw ios' n /\
+        (S.stream_of_assumptions c.raw ios n <==> S.stream_of_assumptions c''.raw ios' n) /\
+        (S.stream_of_obligations c.raw ios n <==> S.stream_of_obligations c''.raw ios' n))
+    =
+    assert (t'' == t');
+    let ios  = S.with_oracle c   is orc in
+    let ios' = S.with_oracle c'' is orc in
+    S.lemma_system_contract pre.raw t.raw   post.raw ios  n;
+    S.lemma_system_contract pre.raw t''.raw post.raw ios' n;
+    let tios  = S.contract_ios_t #input #output #pre.oracle #t.oracle #post.oracle ios  in
+    let tios' = S.contract_ios_t #input #output #pre.oracle #t.oracle #post.oracle ios' in
+    let pios  = S.contract_ios_p #input #output #pre.oracle #t.oracle #post.oracle ios  in
+    let pios' = S.contract_ios_p #input #output #pre.oracle #t.oracle #post.oracle ios' in
+    let qios  = S.contract_ios_q #input #output #pre.oracle #t.oracle #post.oracle #t.state   t.raw   ios  in
+    let qios' = S.contract_ios_q #input #output #pre.oracle #t.oracle #post.oracle #t''.state t''.raw ios' in
+    (* [ios == ios'] (the two contracts share oracle/state layout in the shared
+       [t.oracle]), so [pre]/[t] projections coincide. *)
+    assert (forall (k: nat). ios k == ios' k /\ tios k == tios' k /\ pios k == pios' k);
+    (* [t] and [t''] agree on the shared [t]-projection (from [equiv], via the
+       [with_oracle] form). *)
+    introduce forall (k: nat).
+        (S.stream_of_output      t.raw tios k == S.stream_of_output      t''.raw tios' k) /\
+        (S.stream_of_assumptions t.raw tios k <==> S.stream_of_assumptions t''.raw tios' k) /\
+        (S.stream_of_obligations t.raw tios k <==> S.stream_of_obligations t''.raw tios' k)
+      with begin
+        let js : E.stream input = fun m -> fst (tios m) in
+        let jo : E.stream (SB.option_type_sem t.oracle) = fun m -> snd (tios m) in
+        SEq.equiv_elim t t'' js jo k;
+        cong3 t.raw   (S.with_oracle t   js jo) tios  k;
+        cong3 t''.raw (S.with_oracle t'' js jo) tios' k
+      end;
+    (* Equal [t]-outputs mean [post] is fed the same pair. *)
+    assert (forall (k: nat). qios k == qios' k);
+    introduce forall (k: nat).
+        (S.stream_of_output      post.raw qios k == S.stream_of_output      post.raw qios' k) /\
+        (S.stream_of_assumptions post.raw qios k <==> S.stream_of_assumptions post.raw qios' k) /\
+        (S.stream_of_obligations post.raw qios k <==> S.stream_of_obligations post.raw qios' k)
+      with cong3 post.raw qios qios' k;
+    introduce forall (k: nat).
+        (S.stream_of_output      pre.raw pios k == S.stream_of_output      pre.raw pios' k) /\
+        (S.stream_of_assumptions pre.raw pios k <==> S.stream_of_assumptions pre.raw pios' k) /\
+        (S.stream_of_obligations pre.raw pios k <==> S.stream_of_obligations pre.raw pios' k)
+      with cong3 pre.raw pios pios' k
+  in
+  Classical.forall_intro_3 aux
+#pop-options
+
+(* Transport a triple along an observational equivalence on the program. *)
+let equiv_transport_sys
+  (#input #output: Type)
+  (pre: S.sys input prop)
+  (t: S.sys input output)
+  (t': S.sys input output { t'.oracle == t.oracle })
+  (post: S.sys (input & output) prop)
+  : Lemma
+    (requires SEq.equiv t t' /\ triple pre t' post)
+    (ensures triple pre t post)
+  =
+  lemma_equiv_contract_t pre t t' post;
+  equiv_transport
+    (L.pw_pre (ptrue_pre #input))
+    (S.contract pre t  post)
+    (S.contract pre t' post)
+    (L.pw_post (ptrue_post #input #output))
+
 (* TODO (follow-up): [equiv_transport_sys] — rewrite the program [t] by an
    observational equivalence and transport the triple. The proof is a contract
    congruence in [t] ([equiv t t' ==> equiv (contract pre t post) (contract pre t'

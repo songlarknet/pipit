@@ -202,100 +202,16 @@ let lemma_both_cse_triple (_: unit)
   assert (SL.step_case_sys both_pre both_cse post_bound) by (PT.norm_full []);
   SL.induct1_sys both_pre both_cse post_bound
 
-(* Local helper: output/assumption/obligation congruence for one system on two
-   io-streams that agree pointwise. Collapses the three congruence lemmas. *)
-let cong3
-  (#i #o: Type) (#oc #st: option Type)
-  (sys: SB.system i oc st o) (j1 j2: S.io_stream i oc) (k: nat)
-  : Lemma (requires (forall (m: nat). j1 m == j2 m))
-          (ensures
-            S.stream_of_output sys j1 k == S.stream_of_output sys j2 k /\
-            (S.stream_of_assumptions sys j1 k <==> S.stream_of_assumptions sys j2 k) /\
-            (S.stream_of_obligations sys j1 k <==> S.stream_of_obligations sys j2 k))
-  =
-  S.lemma_stream_of_output_congruence      sys j1 j2 k;
-  S.lemma_stream_of_assumptions_congruence sys j1 j2 k;
-  S.lemma_stream_of_obligations_congruence sys j1 j2 k
-
-(* The contract systems for [both] and [both_cse] are observationally equivalent.
-   Both programs are concrete and oracle-free (oracles reduce to [None]), so:
-   [lemma_system_contract] decomposes each contract into its [pre]/[t]/[post]
-   projections; those projections coincide (or, for [t], reduce to the unit
-   io-streams); and [equiv both both_cse] (the CSE law) equates the [t]-parts. *)
-#push-options "--split_queries always --z3rlimit 300 --fuel 2 --ifuel 1"
-let lemma_both_contract_equiv (_: unit)
-  : Lemma (SEq.equiv (S.contract both_pre both post_bound) (S.contract both_pre both_cse post_bound))
-  =
-  let c  = S.contract both_pre both     post_bound in
-  let c' = S.contract both_pre both_cse post_bound in
-  let aux (is: E.stream unit) (orc: E.stream (SB.option_type_sem c.oracle)) (n: nat)
-    : Lemma (
-        let ios  = S.with_oracle c  is orc in
-        let ios' = S.with_oracle c' is orc in
-        S.stream_of_output c.raw ios n == S.stream_of_output c'.raw ios' n /\
-        (S.stream_of_assumptions c.raw ios n <==> S.stream_of_assumptions c'.raw ios' n) /\
-        (S.stream_of_obligations c.raw ios n <==> S.stream_of_obligations c'.raw ios' n))
-    =
-    lemma_both_cse ();
-    let ios  = S.with_oracle c  is orc in
-    let ios' = S.with_oracle c' is orc in
-    S.lemma_system_contract both_pre.raw both.raw     post_bound.raw ios  n;
-    S.lemma_system_contract both_pre.raw both_cse.raw post_bound.raw ios' n;
-    let tios  = S.contract_ios_t #unit #(int & int) #both_pre.oracle #both.oracle     #post_bound.oracle ios  in
-    let tios' = S.contract_ios_t #unit #(int & int) #both_pre.oracle #both_cse.oracle #post_bound.oracle ios' in
-    let pios  = S.contract_ios_p #unit #(int & int) #both_pre.oracle #both.oracle     #post_bound.oracle ios  in
-    let pios' = S.contract_ios_p #unit #(int & int) #both_pre.oracle #both_cse.oracle #post_bound.oracle ios' in
-    let qios  = S.contract_ios_q #unit #(int & int) #both_pre.oracle #both.oracle     #post_bound.oracle #both.state     both.raw     ios  in
-    let qios' = S.contract_ios_q #unit #(int & int) #both_pre.oracle #both_cse.oracle #post_bound.oracle #both_cse.state both_cse.raw ios' in
-    let u : E.stream unit = fun (_: nat) -> () in
-    let uio  = S.with_oracle both     is u in
-    let uio' = S.with_oracle both_cse is u in
-    (* Concrete oracles reduce to [None]: the [pre] projections coincide and the
-       [t]-projections are the unit io-streams. *)
-    assert (forall (k: nat).
-      tios k == uio k /\ tios' k == uio' k /\ pios k == pios' k);
-    (* [both]/[both_cse] agree on the unit io-streams (CSE law), lifted to the
-       [t]-projections; [pre]/[post] see identical projections. *)
-    introduce forall (k: nat).
-        S.stream_of_output      both.raw uio k == S.stream_of_output      both_cse.raw uio' k /\
-        (S.stream_of_assumptions both.raw uio k <==> S.stream_of_assumptions both_cse.raw uio' k) /\
-        (S.stream_of_obligations both.raw uio k <==> S.stream_of_obligations both_cse.raw uio' k)
-      with SEq.equiv_elim both both_cse is u k;
-    introduce forall (k: nat).
-        (S.stream_of_output      both.raw tios k == S.stream_of_output      both_cse.raw tios' k) /\
-        (S.stream_of_assumptions both.raw tios k <==> S.stream_of_assumptions both_cse.raw tios' k) /\
-        (S.stream_of_obligations both.raw tios k <==> S.stream_of_obligations both_cse.raw tios' k)
-      with (cong3 both.raw tios uio k; cong3 both_cse.raw tios' uio' k);
-    (* Equal [t]-outputs mean [post] is fed the same pair. *)
-    assert (forall (k: nat). qios k == qios' k);
-    introduce forall (k: nat).
-        (S.stream_of_output      post_bound.raw qios k == S.stream_of_output      post_bound.raw qios' k) /\
-        (S.stream_of_assumptions post_bound.raw qios k <==> S.stream_of_assumptions post_bound.raw qios' k) /\
-        (S.stream_of_obligations post_bound.raw qios k <==> S.stream_of_obligations post_bound.raw qios' k)
-      with cong3 post_bound.raw qios qios' k;
-    introduce forall (k: nat).
-        (S.stream_of_output      both_pre.raw pios k == S.stream_of_output      both_pre.raw pios' k) /\
-        (S.stream_of_assumptions both_pre.raw pios k <==> S.stream_of_assumptions both_pre.raw pios' k) /\
-        (S.stream_of_obligations both_pre.raw pios k <==> S.stream_of_obligations both_pre.raw pios' k)
-      with cong3 both_pre.raw pios pios' k
-  in
-  Classical.forall_intro_3 aux
-#pop-options
-
 (* Same goal as [lemma_both_bound], but discharged by the semantic rewrite:
-   prove the property on [both_cse] (trivial), then transport it to [both]
-   along [equiv]. No induction / no invariant on [both] itself. *)
+   prove the property on the CSE'd [both_cse] (trivial), then transport it to
+   [both] along the CSE equivalence. No induction / no invariant on [both]
+   itself — [equiv_transport_sys] rewrites the program inside the contract. *)
 let lemma_both_bound_cse (_: unit)
   : Lemma (SL.triple both_pre both post_bound)
   =
   lemma_both_cse_triple ();
-  lemma_both_contract_equiv ();
-  assert (ES.causal2 (L.pw_post (SL.ptrue_post #unit #(int & int))));
-  SL.equiv_transport
-    (L.pw_pre (SL.ptrue_pre #unit))
-    (S.contract both_pre both     post_bound)
-    (S.contract both_pre both_cse post_bound)
-    (L.pw_post (SL.ptrue_post #unit #(int & int)))
+  lemma_both_cse ();
+  SL.equiv_transport_sys both_pre both both_cse post_bound
 
 
 
