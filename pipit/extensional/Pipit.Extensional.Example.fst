@@ -156,27 +156,17 @@ let g_bound (io: unit & (int & int)) : prop =
   fst (snd io) <= kbound ==> snd (snd io) <= kbound
 unfold let post_bound : S.sys (unit & (int & int)) prop = S.map g_bound S.id
 
-(* Part 2 (manual): weaken the invariant [c1 = c2] to the target property by the
-   rule of consequence. TODO (follow-up): re-express against the new contract-
-   validity [triple]. It needs an SL-level postcondition-consequence rule
-   (weaken [post]'s value inside [contract pre t post]); the old proof used the
-   [Logic]-level [consequence] on the value-only triple, which no longer matches
-   [SL.triple]. Deferred with [equiv_transport_sys]. *)
-// #push-options "--z3rlimit 40"
-// let lemma_both_bound (_: unit)
-//   : Lemma (SL.triple both_pre both post_bound)
-//   =
-//   introduce forall (is: E.stream unit) (os: E.stream (int & int)) (n: nat).
-//       SL.spred2 post_eq is os n ==> SL.spred2 post_bound is os n
-//   with begin
-//     SL.lemma_spred2_map_id g_eq is os n;
-//     SL.lemma_spred2_map_id g_bound is os n
-//   end;
-//   lemma_both_agree ();
-//   L.consequence both
-//     (SL.spred both_pre) (SL.spred both_pre)
-//     (SL.spred2 post_bound) (SL.spred2 post_eq)
-// #pop-options
+(* Part 2 (manual): weaken the applicative invariant [c1 = c2] to the target
+   property [c1 <= K ==> c2 <= K] by the rule of consequence. [post_eq] and
+   [post_bound] are both value-only ([map _ id]) postconditions, and [g_eq io ==>
+   g_bound io] pointwise (if the counters are equal, a bound on one bounds the
+   other), so [consequence_post_map] weakens the [both]-triple directly — no
+   re-induction on [both]. *)
+let lemma_both_bound (_: unit)
+  : Lemma (SL.triple both_pre both post_bound)
+  =
+  lemma_both_agree ();
+  SL.consequence_post_map both_pre both g_eq g_bound
 
 (*** Example 3', same property via a semantic CSE rewrite (equiv + transport) ***)
 

@@ -312,14 +312,81 @@ let equiv_transport_sys
     (S.contract pre t' post)
     (L.pw_post (ptrue_post #input #output))
 
-(* TODO (follow-up): [equiv_transport_sys] — rewrite the program [t] by an
-   observational equivalence and transport the triple. The proof is a contract
-   congruence in [t] ([equiv t t' ==> equiv (contract pre t post) (contract pre t'
-   post)]) composed with the [Logic]-level [equiv_transport] on the two contract
-   systems. The congruence needs the [contract_ios_t]/[with_oracle] projections to
-   line up with [equiv_elim]; deferred. *)
+(*** Rule of consequence: weaken a [map g id] postcondition ***)
 
-(*** Internalise: the contract-validity bridge rule ***)
-
-
+(* Postcondition consequence for value-only postconditions [map g id]. Since
+   [map g id] carries no oracle/state and no checks of its own, the two contract
+   systems [contract pre t (map g id)] and [contract pre t (map g' id)] share
+   oracle/state and every [pre]/[t]/[post] io-projection; they differ only in the
+   post *value* ([g] vs [g']) inside the obligation. So a pointwise implication
+   [g ==> g'] weakens the triple, matching the [Logic]-level rule of consequence
+   applied to the internalised contract. *)
+#push-options "--split_queries always --z3rlimit 300 --fuel 2 --ifuel 1"
+let consequence_post_map
+  (#input #output: Type)
+  (pre: S.sys input prop)
+  (t: S.sys input output)
+  (g g': (input & output) -> prop)
+  : Lemma
+    (requires
+      triple pre t (S.map g S.id) /\
+      (forall (io: input & output). g io ==> g' io))
+    (ensures triple pre t (S.map g' S.id))
+  =
+  let cg  = S.contract pre t (S.map g  S.id) in
+  let cg' = S.contract pre t (S.map g' S.id) in
+  (* [with_oracle] ignores the system, so the two contracts' io-streams coincide
+     (they share the same oracle). *)
+  let aux
+    (is: E.stream input)
+    (orc: E.stream (SB.option_type_sem cg'.oracle))
+    (n: nat)
+    : Lemma
+      (requires (
+        let ios' = S.with_oracle cg' is orc in
+        ES.sofar (L.pw_pre (ptrue_pre #input) is) n /\
+        ES.sofar (S.stream_of_assumptions cg'.raw ios') n))
+      (ensures (
+        let ios' = S.with_oracle cg' is orc in
+        let os   = S.stream_of_output cg'.raw ios' in
+        ES.sofar (L.pw_post (ptrue_post #input #output) is os) n /\
+        ES.sofar (S.stream_of_obligations cg'.raw ios') n))
+    =
+    let ios  : S.io_stream input cg.oracle  = S.with_oracle cg  is orc in
+    let ios' : S.io_stream input cg'.oracle = S.with_oracle cg' is orc in
+    (* [ios] and [ios'] are the same [fun m -> (is m, orc m)]. *)
+    assert (forall (m: nat). ios m == ios' m);
+    (* Per step: [cg']'s assumptions imply [cg]'s, and [cg]'s obligations imply
+       [cg']'s. Only the post *value* ([g] vs [g']) differs; [g ==> g'] weakens
+       the obligation, and the shared [map]-posts contribute equal (trivial)
+       checks. *)
+    introduce forall (k: nat).
+        (S.stream_of_assumptions cg'.raw ios' k ==> S.stream_of_assumptions cg.raw ios k) /\
+        (S.stream_of_obligations cg.raw ios k ==> S.stream_of_obligations cg'.raw ios' k)
+      with begin
+        S.lemma_system_contract pre.raw t.raw (S.map g  S.id).raw ios  k;
+        S.lemma_system_contract pre.raw t.raw (S.map g' S.id).raw ios' k;
+        let pios  = S.contract_ios_p #input #output #pre.oracle #t.oracle #(S.map g  S.id).oracle ios  in
+        let pios' = S.contract_ios_p #input #output #pre.oracle #t.oracle #(S.map g' S.id).oracle ios' in
+        let tios  = S.contract_ios_t #input #output #pre.oracle #t.oracle #(S.map g  S.id).oracle ios  in
+        let tios' = S.contract_ios_t #input #output #pre.oracle #t.oracle #(S.map g' S.id).oracle ios' in
+        let qios  = S.contract_ios_q #input #output #pre.oracle #t.oracle #(S.map g  S.id).oracle #t.state t.raw ios  in
+        let qios' = S.contract_ios_q #input #output #pre.oracle #t.oracle #(S.map g' S.id).oracle #t.state t.raw ios' in
+        cong3 pre.raw pios pios' k;
+        cong3 t.raw   tios tios' k;
+        (* [map g id] / [map g' id]: output is [g]/[g'] of [id]'s output (the
+           input pair), assumptions/obligations are [id]'s (trivial). *)
+        S.lemma_map g  (S.id #(input & output)) qios  k;
+        S.lemma_map g' (S.id #(input & output)) qios' k;
+        S.lemma_system_project (fun (i: input & output) -> i) qios  k;
+        S.lemma_system_project (fun (i: input & output) -> i) qios' k
+      end;
+    (* [cg]'s assumptions hold so far, so [triple pre t (map g id)] fires. *)
+    assert (ES.sofar (S.stream_of_assumptions cg.raw ios) n);
+    assert (L.triple (L.pw_pre (ptrue_pre #input)) cg (L.pw_post (ptrue_post #input #output)));
+    assert (ES.sofar (S.stream_of_obligations cg.raw ios) n);
+    assert (ES.sofar (S.stream_of_obligations cg'.raw ios') n)
+  in
+  Classical.forall_intro_3 (fun is orc n -> Classical.move_requires (aux is orc) n)
+#pop-options
 
