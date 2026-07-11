@@ -418,5 +418,125 @@ let equiv_transport
   Classical.forall_intro_3 (fun is orc n -> Classical.move_requires (aux is orc) n)
 #pop-options
 
+(*** Internalise a pre/post into a contract, then prove the triple by validity ***)
+
+(* [spred] of the trivial precondition [const True] holds at every horizon. *)
+let lemma_spred_const_true
+  (#input: Type) (is: E.stream input) (n: nat)
+  : Lemma (ES.sofar (spred (S.const True) is) n)
+  =
+  S.stream_of_output_system_const True
+    (S.with_oracle (S.const #input #prop True) is (fun (_: nat) -> ()))
+
+(* Instantiate a system-valued triple at a chosen input / oracle / step. *)
+let triple_elim
+  (#input #output: Type)
+  (pre: S.sys input prop { pre.oracle == None })
+  (t: S.sys input output)
+  (post: S.sys (input & output) prop { post.oracle == None })
+  (is: E.stream input)
+  (orc: E.stream (SB.option_type_sem t.oracle))
+  (n: nat)
+  : Lemma
+    (requires triple pre t post)
+    (ensures (
+      let ios = S.with_oracle t is orc in
+      let os  = S.stream_of_output t.raw ios in
+      ES.sofar (spred pre is) n ==>
+      ES.sofar (S.stream_of_assumptions t.raw ios) n ==>
+      (ES.sofar (spred2 post is os) n /\ ES.sofar (S.stream_of_obligations t.raw ios) n)))
+  = ()
+
+(* Bridge rule: a triple [{ p } t { q }] holds when the internalised contract
+   [contract p t q] is valid, i.e. [{ const True } contract p t q { const True }].
+   [p]/[q] are deterministic (oracle-free) and check-free specs; [t] may carry an
+   oracle. Internalising folds [p] into the assumptions and [q] into the
+   obligations, so the triple becomes validity of a single system — which can
+   then be rewritten via [equiv_transport]. *)
+#push-options "--split_queries always --z3rlimit 300 --fuel 2 --ifuel 1"
+let contract_valid_triple
+  (#input #output: Type)
+  (p: S.sys input prop { p.oracle == None })
+  (t: S.sys input output)
+  (q: S.sys (input & output) prop { q.oracle == None })
+  : Lemma
+    (requires
+      (forall (iop: S.io_stream input p.oracle) (k: nat). S.stream_of_assumptions p.raw iop k) /\
+      (forall (iop: S.io_stream input p.oracle) (k: nat). S.stream_of_obligations p.raw iop k) /\
+      (forall (ioq: S.io_stream (input & output) q.oracle) (k: nat). S.stream_of_assumptions q.raw ioq k) /\
+      (forall (ioq: S.io_stream (input & output) q.oracle) (k: nat). S.stream_of_obligations q.raw ioq k) /\
+      triple (S.const True) (S.contract p t q) (S.const True))
+    (ensures triple p t q)
+  =
+  let csys = S.contract p t q in
+  let aux
+    (is: E.stream input)
+    (orc_t: E.stream (SB.option_type_sem t.oracle))
+    (n: nat)
+    : Lemma
+      (requires (
+        let iot = S.with_oracle t is orc_t in
+        ES.sofar (spred p is) n /\ ES.sofar (S.stream_of_assumptions t.raw iot) n))
+      (ensures (
+        let iot = S.with_oracle t is orc_t in
+        let os  = S.stream_of_output t.raw iot in
+        ES.sofar (spred2 q is os) n /\ ES.sofar (S.stream_of_obligations t.raw iot) n))
+    =
+    (* The contract oracle: unit for [p]/[q], [orc_t] for [t]. *)
+    let orc_c : E.stream (SB.option_type_sem csys.oracle) =
+      fun k -> SB.type_join_tup #p.oracle #(SB.type_join t.oracle q.oracle) ()
+                 (SB.type_join_tup #t.oracle #q.oracle (orc_t k) ()) in
+    let cios = S.with_oracle csys is orc_c in
+    let pios = S.contract_ios_p #input #output #p.oracle #t.oracle #q.oracle cios in
+    let tios = S.contract_ios_t #input #output #p.oracle #t.oracle #q.oracle cios in
+    let qios = S.contract_ios_q #input #output #p.oracle #t.oracle #q.oracle #t.state t.raw cios in
+    let iot   = S.with_oracle t is orc_t in
+    let os    = S.stream_of_output t.raw iot in
+    let punit = S.with_oracle p is (fun (_: nat) -> ()) in
+    let qunit = S.with_oracle q (pair_streams is os) (fun (_: nat) -> ()) in
+    (* Oracle projections: [tios] recovers [iot], [pios]/[qios] the unit runs. *)
+    introduce forall (k: nat). tios k == iot k /\ pios k == punit k
+      with begin
+        S.lemma_type_join_snd_tup #p.oracle #(SB.type_join t.oracle q.oracle) ()
+          (SB.type_join_tup #t.oracle #q.oracle (orc_t k) ());
+        S.lemma_type_join_fst_tup #t.oracle #q.oracle (orc_t k) ();
+        S.lemma_type_join_fst_tup #p.oracle #(SB.type_join t.oracle q.oracle) ()
+          (SB.type_join_tup #t.oracle #q.oracle (orc_t k) ())
+      end;
+    (* [t]'s outputs coincide on [tios] and [iot], so [qios] pairs with [os]. *)
+    introduce forall (k: nat). S.stream_of_output t.raw tios k == os k
+      with S.lemma_stream_of_output_congruence t.raw tios iot k;
+    introduce forall (k: nat). qios k == qunit k
+      with begin
+        S.lemma_type_join_snd_tup #p.oracle #(SB.type_join t.oracle q.oracle) ()
+          (SB.type_join_tup #t.oracle #q.oracle (orc_t k) ());
+        S.lemma_type_join_snd_tup #t.oracle #q.oracle (orc_t k) ()
+      end;
+    (* Contract check decomposition + congruence of the sub-runs to the specs. *)
+    Classical.forall_intro (S.lemma_system_contract p.raw t.raw q.raw cios);
+    introduce forall (k: nat).
+        S.stream_of_output p.raw pios k == spred p is k /\
+        (S.stream_of_assumptions t.raw tios k <==> S.stream_of_assumptions t.raw iot k) /\
+        (S.stream_of_obligations t.raw tios k <==> S.stream_of_obligations t.raw iot k) /\
+        S.stream_of_output q.raw qios k == spred2 q is os k
+      with begin
+        S.lemma_stream_of_output_congruence p.raw pios punit k;
+        S.lemma_stream_of_assumptions_congruence t.raw tios iot k;
+        S.lemma_stream_of_obligations_congruence t.raw tios iot k;
+        S.lemma_stream_of_output_congruence q.raw qios qunit k
+      end;
+    (* [p]/[q] are check-free, so the contract's assumptions reduce to
+       [spred p /\ asm t] and its obligations to [spred2 q /\ obl t]. *)
+    ES.sofar_index (spred p is) n;
+    ES.sofar_index (S.stream_of_assumptions t.raw iot) n;
+    assert (ES.sofar (S.stream_of_assumptions csys.raw cios) n);
+    lemma_spred_const_true is n;
+    triple_elim (S.const True) csys (S.const True) is orc_c n;
+    assert (ES.sofar (S.stream_of_obligations csys.raw cios) n);
+    ES.sofar_index (S.stream_of_obligations csys.raw cios) n
+  in
+  Classical.forall_intro_3 (fun is orc n -> Classical.move_requires (aux is orc) n)
+#pop-options
+
 
 

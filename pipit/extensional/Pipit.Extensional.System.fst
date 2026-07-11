@@ -919,3 +919,199 @@ let stream_of_output_system_const
   with (
     lemma_step_result_at_system_const v ios n
   )
+
+(*** Contract: internalise a pre/post into a system's checks ***)
+
+(* [system_contract p t q] runs the program [t], the precondition [p] on the
+   input, and the postcondition [q] on the paired input & [t]-output. It emits
+   [t]'s output and threads all three systems' own checks, plus assumes [p]'s
+   value ([checks_assumption]) and asserts [q]'s value ([checks_obligation]).
+
+   This is the internalisation used by the [contract]-bridge rule: a triple
+   [{ p } t { q }] becomes validity of [system_contract p t q] (its assumptions
+   entail its obligations), which can then be rewritten via [equiv]. *)
+let system_contract
+  (#input #output: Type)
+  (#op #ot #oq #sp #st #sq: option Type)
+  (p: SB.system input op sp prop)
+  (t: SB.system input ot st output)
+  (q: SB.system (input & output) oq sq prop)
+  : SB.system input
+      (SB.type_join op (SB.type_join ot oq))
+      (SB.type_join sp (SB.type_join st sq))
+      output
+  =
+  {
+    init = SB.type_join_tup #sp #(SB.type_join st sq) p.init
+             (SB.type_join_tup #st #sq t.init q.init);
+    step = (fun i o s ->
+      let o_p = SB.type_join_fst #op #(SB.type_join ot oq) o in
+      let o'  = SB.type_join_snd #op #(SB.type_join ot oq) o in
+      let o_t = SB.type_join_fst #ot #oq o' in
+      let o_q = SB.type_join_snd #ot #oq o' in
+      let s_p = SB.type_join_fst #sp #(SB.type_join st sq) s in
+      let s'  = SB.type_join_snd #sp #(SB.type_join st sq) s in
+      let s_t = SB.type_join_fst #st #sq s' in
+      let s_q = SB.type_join_snd #st #sq s' in
+      let rt = t.step i o_t s_t in
+      let rp = p.step i o_p s_p in
+      let rq = q.step (i, rt.v) o_q s_q in
+      {
+        s = SB.type_join_tup #sp #(SB.type_join st sq) rp.s
+              (SB.type_join_tup #st #sq rt.s rq.s);
+        v = rt.v;
+        chck = SB.checks_assumption rp.v `SB.checks_join`
+               SB.checks_obligation rq.v `SB.checks_join`
+               rp.chck `SB.checks_join` rt.chck `SB.checks_join` rq.chck;
+      });
+  }
+
+(* The io-stream [system_contract p t q] feeds to the precondition [p]: the
+   source input and the [p]-oracle projection. *)
+let contract_ios_p
+  (#input #output: Type)
+  (#op #ot #oq: option Type)
+  (ios: io_stream input (SB.type_join op (SB.type_join ot oq)))
+  : io_stream input op
+  =
+  fun n -> (fst (ios n), SB.type_join_fst #op #(SB.type_join ot oq) (snd (ios n)))
+
+(* The io-stream [system_contract p t q] feeds to the program [t]. *)
+let contract_ios_t
+  (#input #output: Type)
+  (#op #ot #oq: option Type)
+  (ios: io_stream input (SB.type_join op (SB.type_join ot oq)))
+  : io_stream input ot
+  =
+  fun n ->
+    (fst (ios n),
+     SB.type_join_fst #ot #oq (SB.type_join_snd #op #(SB.type_join ot oq) (snd (ios n))))
+
+(* The io-stream [system_contract p t q] feeds to the postcondition [q]: the
+   source input paired with [t]'s output, and the [q]-oracle projection. *)
+let contract_ios_q
+  (#input #output: Type)
+  (#op #ot #oq #st: option Type)
+  (t: SB.system input ot st output)
+  (ios: io_stream input (SB.type_join op (SB.type_join ot oq)))
+  : io_stream (input & output) oq
+  =
+  fun n ->
+    ((fst (ios n), stream_of_output t (contract_ios_t #input #output #op #ot #oq ios) n),
+     SB.type_join_snd #ot #oq (SB.type_join_snd #op #(SB.type_join ot oq) (snd (ios n))))
+
+(* Contract as a [sys] package: internalises [p]/[q] into [t]'s checks. *)
+let contract
+  (#input #output: Type)
+  (p: sys input prop)
+  (t: sys input output)
+  (q: sys (input & output) prop)
+  : sys input output
+  =
+  {
+    oracle = SB.type_join p.oracle (SB.type_join t.oracle q.oracle);
+    state  = SB.type_join p.state (SB.type_join t.state q.state);
+    raw    = system_contract p.raw t.raw q.raw;
+  }
+
+(* Step-indexed alignment for [system_contract]: it runs [p]/[t]/[q] on their
+   projected io-streams, emits [t]'s output, joins their states, and its checks
+   are [t]'s output-assumption on [p], output-obligation on [q], and all three
+   subsystems' own checks. *)
+#push-options "--split_queries always --z3rlimit 60"
+let rec lemma_step_result_at_system_contract
+  (#input #output: Type)
+  (#op #ot #oq #sp #st #sq: option Type)
+  (p: SB.system input op sp prop)
+  (t: SB.system input ot st output)
+  (q: SB.system (input & output) oq sq prop)
+  (ios: io_stream input (SB.type_join op (SB.type_join ot oq)))
+  (n: nat)
+  : Lemma
+    (ensures (
+      let cr = step_result_at (system_contract p t q) ios n in
+      let pr = step_result_at p (contract_ios_p #input #output #op #ot #oq ios) n in
+      let tr = step_result_at t (contract_ios_t #input #output #op #ot #oq ios) n in
+      let qr = step_result_at q (contract_ios_q #input #output #op #ot #oq #st t ios) n in
+      cr.v == tr.v /\
+      cr.s == SB.type_join_tup #sp #(SB.type_join st sq) pr.s
+                (SB.type_join_tup #st #sq tr.s qr.s) /\
+      cr.chck == (SB.checks_assumption pr.v `SB.checks_join`
+                  SB.checks_obligation qr.v `SB.checks_join`
+                  pr.chck `SB.checks_join` tr.chck `SB.checks_join` qr.chck)))
+    (decreases n)
+  =
+  let pios = contract_ios_p #input #output #op #ot #oq ios in
+  let tios = contract_ios_t #input #output #op #ot #oq ios in
+  let qios = contract_ios_q #input #output #op #ot #oq #st t ios in
+  (* Prev states: init at n=0, else the previous step's decomposed state. *)
+  let pprev = (if n = 0 then p.init else (step_result_at p pios (n - 1)).s) in
+  let tprev = (if n = 0 then t.init else (step_result_at t tios (n - 1)).s) in
+  let qprev = (if n = 0 then q.init else (step_result_at q qios (n - 1)).s) in
+  (if n > 0 then lemma_step_result_at_system_contract p t q ios (n - 1));
+  (* Invert the nested state tuple so the contract's [s_p]/[s_t]/[s_q] reduce to
+     the previous sub-run states. *)
+  lemma_type_join_fst_tup #sp #(SB.type_join st sq) pprev
+    (SB.type_join_tup #st #sq tprev qprev);
+  lemma_type_join_snd_tup #sp #(SB.type_join st sq) pprev
+    (SB.type_join_tup #st #sq tprev qprev);
+  lemma_type_join_fst_tup #st #sq tprev qprev;
+  lemma_type_join_snd_tup #st #sq tprev qprev;
+  let cr = step_result_at (system_contract p t q) ios n in
+  let pr = step_result_at p pios n in
+  let tr = step_result_at t tios n in
+  let qr = step_result_at q qios n in
+  (* [t]'s output at [n] is [tr.v], so [q] is fed [(input, tr.v)] — exactly the
+     first component of [qios n]. *)
+  assert (stream_of_output t tios n == tr.v);
+  assert (cr.v == tr.v);
+  assert (cr.s == SB.type_join_tup #sp #(SB.type_join st sq) pr.s
+                    (SB.type_join_tup #st #sq tr.s qr.s));
+  assert (cr.chck == (SB.checks_assumption pr.v `SB.checks_join`
+                      SB.checks_obligation qr.v `SB.checks_join`
+                      pr.chck `SB.checks_join` tr.chck `SB.checks_join` qr.chck))
+#pop-options
+
+(* Observable [system_contract] unfold: output is [t]'s; assumptions are [p]'s
+   value together with all three subsystems' assumptions; obligations are [q]'s
+   value together with all three subsystems' obligations. *)
+#push-options "--split_queries always --z3rlimit 80"
+let lemma_system_contract
+  (#input #output: Type)
+  (#op #ot #oq #sp #st #sq: option Type)
+  (p: SB.system input op sp prop)
+  (t: SB.system input ot st output)
+  (q: SB.system (input & output) oq sq prop)
+  (ios: io_stream input (SB.type_join op (SB.type_join ot oq)))
+  (n: nat)
+  : Lemma
+    (ensures (
+      let pios = contract_ios_p #input #output #op #ot #oq ios in
+      let tios = contract_ios_t #input #output #op #ot #oq ios in
+      let qios = contract_ios_q #input #output #op #ot #oq #st t ios in
+      stream_of_output (system_contract p t q) ios n == stream_of_output t tios n /\
+      (stream_of_assumptions (system_contract p t q) ios n <==>
+        (stream_of_output p pios n /\
+         stream_of_assumptions p pios n /\
+         stream_of_assumptions t tios n /\
+         stream_of_assumptions q qios n)) /\
+      (stream_of_obligations (system_contract p t q) ios n <==>
+        (stream_of_output q qios n /\
+         stream_of_obligations p pios n /\
+         stream_of_obligations t tios n /\
+         stream_of_obligations q qios n))))
+  =
+  let pios = contract_ios_p #input #output #op #ot #oq ios in
+  let tios = contract_ios_t #input #output #op #ot #oq ios in
+  let qios = contract_ios_q #input #output #op #ot #oq #st t ios in
+  lemma_step_result_at_system_contract p t q ios n;
+  let cr = step_result_at (system_contract p t q) ios n in
+  let pr = step_result_at p pios n in
+  let tr = step_result_at t tios n in
+  let qr = step_result_at q qios n in
+  (* Expose the joined checks so [option_prop_sem]/[prop_join] chain the
+     assumption/obligation conjunctions. *)
+  assert (cr.chck == (SB.checks_assumption pr.v `SB.checks_join`
+                      SB.checks_obligation qr.v `SB.checks_join`
+                      pr.chck `SB.checks_join` tr.chck `SB.checks_join` qr.chck))
+#pop-options
