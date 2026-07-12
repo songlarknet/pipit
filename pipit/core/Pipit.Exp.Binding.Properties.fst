@@ -455,3 +455,49 @@ let lemma_subst_mufby_desugar_commute
   lemma_lift_subst_distribute_le f (i + 1) 1 res (lift1 e acc);
   lemma_lift_lift_commute e 0 0 res acc
 #pop-options
+
+(* A structural size measure on expressions. `XMufby` is deliberately weighted
+   heavier than its desugaring `mu res. let acc = seed fby g(res) in f(acc)`
+   (which has size `3 + exp_size f + exp_size g` once lift is accounted for), so
+   that a termination metric based on `exp_size` lets a recursion on `XMufby`
+   step to its desugar. Lifting preserves the size (it only shifts indices). *)
+let rec exp_size (#t: table) (#c: context t) (#a: t.ty) (e: exp t c a): Tot nat (decreases e) =
+  match e with
+  | XBase _ -> 1
+  | XApps ea -> 1 + exp_apps_size ea
+  | XFby _ e1 -> 1 + exp_size e1
+  | XMu e1 -> 1 + exp_size e1
+  | XMufby _ _ f g -> 4 + exp_size f + exp_size g
+  | XLet _ e1 e2 -> 1 + exp_size e1 + exp_size e2
+  | XCheck _ e1 -> 1 + exp_size e1
+  | XContract _ r g i -> 1 + exp_size r + exp_size g + exp_size i
+and exp_apps_size (#t: table) (#c: context t) (#a: funty t.ty) (e: exp_apps t c a): Tot nat (decreases e) =
+  match e with
+  | XPrim _ -> 1
+  | XApp f e -> 1 + exp_apps_size f + exp_size e
+
+let rec lemma_exp_size_lift (#t: table) (#c: context t) (#a: t.ty) (e: exp t c a) (n: C.index_insert c) (ty: t.ty):
+  Lemma (ensures exp_size (lift1' e n ty) == exp_size e) (decreases e) =
+  match e with
+  | XBase _ -> ()
+  | XApps ea -> lemma_exp_size_lift_apps ea n ty
+  | XFby _ e1 -> lemma_exp_size_lift e1 n ty
+  | XMu e1 -> lemma_exp_size_lift e1 (n + 1) ty
+  | XMufby _ _ f g ->
+    lemma_exp_size_lift f (n + 1) ty;
+    lemma_exp_size_lift g (n + 1) ty
+  | XLet _ e1 e2 ->
+    lemma_exp_size_lift e1 n ty;
+    lemma_exp_size_lift e2 (n + 1) ty
+  | XCheck _ e1 -> lemma_exp_size_lift e1 n ty
+  | XContract _ r g i ->
+    lemma_exp_size_lift r n ty;
+    lemma_exp_size_lift g (n + 1) ty;
+    lemma_exp_size_lift i n ty
+and lemma_exp_size_lift_apps (#t: table) (#c: context t) (#a: funty t.ty) (e: exp_apps t c a) (n: C.index_insert c) (ty: t.ty):
+  Lemma (ensures exp_apps_size (lift1_apps' e n ty) == exp_apps_size e) (decreases e) =
+  match e with
+  | XPrim _ -> ()
+  | XApp f e ->
+    lemma_exp_size_lift_apps f n ty;
+    lemma_exp_size_lift e n ty

@@ -134,6 +134,98 @@ let lemma_direct_dependency_mufby
 // let rec lemma_direct_dependency_lift_lt (e: exp 'c 'a) (i: C.index { C.has_index 'c i }) (i': C.index { i < i' /\ i' <= List.Tot.length 'c }) (t: Type):
 //     Lemma (ensures direct_dependency e i == direct_dependency (lift1' e i' t) i) (decreases e) =
 
+(* Lifting at a position strictly above `i` does not change the direct
+   dependency on `i`. *)
+let rec lemma_direct_dependency_lift_lt (#tbl: table) (#c: context tbl) (#a: tbl.ty) (e: exp tbl c a) (i: C.index) (i': C.index_insert c { i < i' }) (t: tbl.ty):
+  Lemma (ensures direct_dependency e i == direct_dependency (lift1' e i' t) i) (decreases e) =
+  match e with
+  | XBase _ -> ()
+  | XApps e1 -> lemma_direct_dependency_lift_lt_apps e1 i i' t
+  | XFby _ e1 -> ()
+  | XMu e1 -> lemma_direct_dependency_lift_lt e1 (i + 1) (i' + 1) t
+  | XMufby _ _ f g -> lemma_direct_dependency_lift_lt f (i + 1) (i' + 1) t
+  | XLet _ e1 e2 ->
+    lemma_direct_dependency_lift_lt e1 i i' t;
+    lemma_direct_dependency_lift_lt e2 (i + 1) (i' + 1) t
+  | XCheck _ e1 -> lemma_direct_dependency_lift_lt e1 i i' t
+  | XContract _ r g i0 ->
+    lemma_direct_dependency_lift_lt r i i' t;
+    lemma_direct_dependency_lift_lt g (i + 1) (i' + 1) t;
+    lemma_direct_dependency_lift_lt i0 i i' t
+and lemma_direct_dependency_lift_lt_apps (#tbl: table) (#c: context tbl) (#a: funty tbl.ty) (e: exp_apps tbl c a) (i: C.index) (i': C.index_insert c { i < i' }) (t: tbl.ty):
+  Lemma (ensures direct_dependency_apps e i == direct_dependency_apps (lift1_apps' e i' t) i) (decreases e) =
+  match e with
+  | XPrim _ -> ()
+  | XApp f e ->
+    lemma_direct_dependency_lift_lt_apps f i i' t;
+    lemma_direct_dependency_lift_lt e i i' t
+
+(* The freshly-inserted slot has no direct dependency. *)
+let rec lemma_direct_dependency_lift_at (#tbl: table) (#c: context tbl) (#a: tbl.ty) (e: exp tbl c a) (i': C.index_insert c) (t: tbl.ty):
+  Lemma (ensures direct_dependency (lift1' e i' t) i' == false) (decreases e) =
+  match e with
+  | XBase _ -> ()
+  | XApps e1 -> lemma_direct_dependency_lift_at_apps e1 i' t
+  | XFby _ e1 -> ()
+  | XMu e1 -> lemma_direct_dependency_lift_at e1 (i' + 1) t
+  | XMufby _ _ f g -> lemma_direct_dependency_lift_at f (i' + 1) t
+  | XLet _ e1 e2 ->
+    lemma_direct_dependency_lift_at e1 i' t;
+    lemma_direct_dependency_lift_at e2 (i' + 1) t
+  | XCheck _ e1 -> lemma_direct_dependency_lift_at e1 i' t
+  | XContract _ r g i0 ->
+    lemma_direct_dependency_lift_at r i' t;
+    lemma_direct_dependency_lift_at g (i' + 1) t;
+    lemma_direct_dependency_lift_at i0 i' t
+and lemma_direct_dependency_lift_at_apps (#tbl: table) (#c: context tbl) (#a: funty tbl.ty) (e: exp_apps tbl c a) (i': C.index_insert c) (t: tbl.ty):
+  Lemma (ensures direct_dependency_apps (lift1_apps' e i' t) i' == false) (decreases e) =
+  match e with
+  | XPrim _ -> ()
+  | XApp f e ->
+    lemma_direct_dependency_lift_at_apps f i' t;
+    lemma_direct_dependency_lift_at e i' t
+
+(* Lifting preserves causality (it only shifts variable indices). *)
+let rec lemma_causal_lift (#tbl: table) (#c: context tbl) (#a: tbl.ty) (e: exp tbl c a) (n: C.index_insert c) (t: tbl.ty):
+  Lemma (ensures causal (lift1' e n t) == causal e) (decreases e) =
+  match e with
+  | XBase _ -> ()
+  | XApps e1 -> lemma_causal_lift_apps e1 n t
+  | XFby _ e1 -> lemma_causal_lift e1 n t
+  | XMu e1 ->
+    lemma_causal_lift e1 (n + 1) t;
+    lemma_direct_dependency_lift_lt e1 0 (n + 1) t
+  | XMufby _ _ f g ->
+    lemma_causal_lift f (n + 1) t;
+    lemma_causal_lift g (n + 1) t
+  | XLet _ e1 e2 ->
+    lemma_causal_lift e1 n t;
+    lemma_causal_lift e2 (n + 1) t
+  | XCheck _ e1 -> lemma_causal_lift e1 n t
+  | XContract _ r g i0 ->
+    lemma_causal_lift r n t;
+    lemma_causal_lift g (n + 1) t;
+    lemma_causal_lift i0 n t
+and lemma_causal_lift_apps (#tbl: table) (#c: context tbl) (#a: funty tbl.ty) (e: exp_apps tbl c a) (n: C.index_insert c) (t: tbl.ty):
+  Lemma (ensures causal_apps (lift1_apps' e n t) == causal_apps e) (decreases e) =
+  match e with
+  | XPrim _ -> ()
+  | XApp f e ->
+    lemma_causal_lift_apps f n t;
+    lemma_causal_lift e n t
+
+(* The mufby desugaring is causal whenever `f` and `g` are. *)
+#push-options "--fuel 4 --ifuel 2 --z3rlimit 40"
+let lemma_causal_mufby_desugar (#t: table) (#c: context t) (#acc #res: t.ty)
+  (seed: t.ty_sem acc) (f: exp t (acc :: c) res { causal f }) (g: exp t (res :: c) acc { causal g }):
+  Lemma (ensures causal (mufby_desugar seed f g)) =
+  lemma_causal_lift f 1 res;
+  lemma_direct_dependency_lift_at f 1 res
+#pop-options
+
+// let rec lemma_direct_dependency_lift_lt (e: exp 'c 'a) (i: C.index { C.has_index 'c i }) (i': C.index { i < i' /\ i' <= List.Tot.length 'c }) (t: Type):
+//     Lemma (ensures direct_dependency e i == direct_dependency (lift1' e i' t) i) (decreases e) =
+
 (* used by lemma_bigstep_substitute_intros_no_dep *)
 let rec lemma_direct_dependency_not_subst
   (#tbl: table) (#c: context tbl) (#a: tbl.ty)
@@ -642,7 +734,7 @@ let rec lemma_bigstep_total
   (#a: t.ty)
   (rows: list (row c) { Cons? rows })
   (e: exp t c a { causal e }):
-    Tot (v: t.ty_sem a & bigstep rows e v) (decreases %[e; rows; 0]) =
+    Tot (v: t.ty_sem a & bigstep rows e v) (decreases %[exp_size e; rows; 0]) =
   let hd = List.Tot.hd rows in
   let tl = List.Tot.tl rows in
   match e with
@@ -668,14 +760,14 @@ let rec lemma_bigstep_total
     (| v, hBS' |)
 
   | XMufby acc seed f g ->
-    // TODO:ADMIT progress for the fused mufby loop.
-    // The loop `mu res. let acc = seed fby g(res) in f(acc)` is total by
-    // construction (it is causal: the recursion is guarded by the `fby`).
-    // But lemma_bigstep_total recurses on *expression size*, and the desugar
-    // (an XMu whose body is built from `f` and `g` via lift/XFby/XLet) is not a
-    // subterm of XMufby, so its totality must be assembled by hand from `f` and
-    // `g`'s totality. Admitted for now to unblock the abstract + extract layers.
-    admit ()
+    // Totality of the fused loop, reusing the desugar's totality. The termination
+    // metric is exp_size, and exp_size (mufby_desugar seed f g) < exp_size (XMufby ...)
+    // (the constructor is weighted heavier than its desugaring, using that lifting
+    // preserves size). The desugar is causal since f and g are.
+    lemma_causal_mufby_desugar seed f g;
+    lemma_exp_size_lift f 1 a;
+    let (| v, hBS |) = lemma_bigstep_total rows (mufby_desugar seed f g) in
+    (| v, BSMufby rows seed f g v hBS |)
 
   | XLet b e1 e2 ->
     let (| vs, hBSs |) = lemma_bigsteps_total rows e1 in
@@ -697,7 +789,7 @@ and lemma_bigstep_apps_total
   (#a: funty t.ty)
   (rows: list (row c) { Cons? rows })
   (e: exp_apps t c a { causal_apps e }):
-    Tot (v: funty_sem t.ty_sem a & bigstep_apps rows e v) (decreases %[e; rows; 0]) =
+    Tot (v: funty_sem t.ty_sem a & bigstep_apps rows e v) (decreases %[exp_apps_size e; rows; 0]) =
   let hd = List.Tot.hd rows in
   let tl = List.Tot.tl rows in
   match e with
@@ -713,7 +805,7 @@ and lemma_bigsteps_total
   (#c: context t)
   (#a: t.ty)
   (rows: list (row c)) (e: exp t c a { causal e }):
-    Tot (vs: list (t.ty_sem a) { List.Tot.length vs == List.Tot.length rows } & bigsteps rows e vs) (decreases %[e; rows; 1]) =
+    Tot (vs: list (t.ty_sem a) { List.Tot.length vs == List.Tot.length rows } & bigsteps rows e vs) (decreases %[exp_size e; rows; 1]) =
   match rows with
   | [] -> (| [], BSs0 e |)
   | r :: rows' ->
