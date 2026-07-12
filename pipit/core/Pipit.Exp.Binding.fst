@@ -158,3 +158,13 @@ unfold
 let mufby_desugar (#t: table) (#c: context t) (#acc #res: t.ty)
   (seed: t.ty_sem acc) (f: exp t (acc :: c) res) (g: exp t (res :: c) acc): exp t c res =
   XMu (XLet acc (XFby seed g) (lift1' f 1 res))
+
+(* The accumulator stream of the fused loop, `mu acc. seed fby g(f(acc))`, as a
+   plain guarded XMu (recursion over the accumulator). Its bigsteps are the
+   accumulator values `acc = seed fby g(res)`; used by the executable
+   translation's correctness invariant. Unlike `mufby_desugar` this is NOT the
+   single-eval program form -- it is only a value-stream reference in proofs. *)
+unfold
+let mufby_acc_sys (#t: table) (#c: context t) (#acc #res: t.ty)
+  (seed: t.ty_sem acc) (f: exp t (acc :: c) res) (g: exp t (res :: c) acc): exp t c acc =
+  XMu (XFby seed (XLet res f (lift1' g 1 acc)))

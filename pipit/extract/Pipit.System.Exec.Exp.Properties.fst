@@ -18,6 +18,7 @@ module EX = Pipit.System.Exec.Exp
 module X  = Pipit.Exp
 module XB = Pipit.Exp.Bigstep
 module XC = Pipit.Exp.Causality
+module XBind = Pipit.Exp.Binding
 
 module List = FStar.List.Tot
 
@@ -48,9 +49,23 @@ let rec system_of_exp_invariant
     system_of_exp_invariant (CR.extend1 (XC.lemma_bigsteps_total_vs rows e) rows) e1 s
 
   | XMufby acc seed f g ->
-    // The single-evaluation bisimulation for the fused loop is deferred; its
-    // invariant is stubbed to True for now (semantics validated by norm tests).
-    True
+    // esystem_mufby state = (register acc, (f-state, g-state)).
+    // The register holds the accumulator used next; f runs on the accumulator
+    // stream `mufby_acc_sys` and g runs on the output stream `mufby_desugar`.
+    let s: SB.option_type_sem (SB.type_join (Some (t.ty_sem acc)) (SB.type_join (EX.estate_of_exp f) (EX.estate_of_exp g))) = s in
+    let reg_acc = SB.type_join_fst s in
+    let inner = SB.type_join_snd s in
+    let sf = SB.type_join_fst inner in
+    let sg = SB.type_join_snd inner in
+    let mres = XBind.mufby_desugar seed f g in
+    let macc = XBind.mufby_acc_sys seed f g in
+    XC.lemma_causal_mufby_acc seed f g;
+    XC.lemma_causal_mufby_desugar seed f g;
+    system_of_exp_invariant (CR.extend1 (XC.lemma_bigsteps_total_vs rows macc) rows) f sf /\
+    system_of_exp_invariant (CR.extend1 (XC.lemma_bigsteps_total_vs rows mres) rows) g sg /\
+    (match rows with
+     | [] -> reg_acc == seed
+     | _ :: _ -> XB.bigstep_prop rows (XBind.subst1 g mres) reg_acc)
 
   | XLet b e1 e2 ->
     let s: SB.option_type_sem (SB.type_join (EX.estate_of_exp e1) (EX.estate_of_exp e2)) = s in
@@ -105,7 +120,28 @@ let rec step_invariant_init
       step_invariant_init e1;
       ()
 
-    | XMufby acc seed f g -> ()
+    | XMufby acc seed f g ->
+      assert_norm (XC.causal (XMufby acc seed f g) == (XC.causal f && XC.causal g));
+      step_invariant_init f;
+      step_invariant_init g;
+      XC.lemma_causal_mufby_acc seed f g;
+      XC.lemma_causal_mufby_desugar seed f g;
+      // Reduce the fused-loop initial state to its `type_join_tup` structure so
+      // SMT can discharge the register/sub-state projections in the invariant.
+      assert ((EX.esystem_of_exp (XMufby acc seed f g)).init ==
+        SB.type_join_tup #(Some (t.ty_sem acc)) #(SB.type_join (EX.estate_of_exp f) (EX.estate_of_exp g)) seed
+          (SB.type_join_tup #(EX.estate_of_exp f) #(EX.estate_of_exp g) (EX.esystem_of_exp f).init (EX.esystem_of_exp g).init))
+        by (T.norm [delta_only [`%EX.esystem_of_exp; `%E.esystem_mufby]; zeta; primops; iota; nbe]; T.trefl ());
+      let inner0 : SB.option_type_sem (SB.type_join (EX.estate_of_exp f) (EX.estate_of_exp g)) =
+        SB.type_join_tup #(EX.estate_of_exp f) #(EX.estate_of_exp g) (EX.esystem_of_exp f).init (EX.esystem_of_exp g).init in
+      let s0 : SB.option_type_sem (EX.estate_of_exp (XMufby acc seed f g)) =
+        SB.type_join_tup #(Some (t.ty_sem acc)) #(SB.type_join (EX.estate_of_exp f) (EX.estate_of_exp g)) seed inner0 in
+      // Each projection needs only a single Some/None case split.
+      assert (SB.type_join_fst #(Some (t.ty_sem acc)) #(SB.type_join (EX.estate_of_exp f) (EX.estate_of_exp g)) s0 == seed);
+      assert (SB.type_join_snd #(Some (t.ty_sem acc)) #(SB.type_join (EX.estate_of_exp f) (EX.estate_of_exp g)) s0 == inner0);
+      assert (SB.type_join_fst #(EX.estate_of_exp f) #(EX.estate_of_exp g) inner0 == (EX.esystem_of_exp f).init);
+      assert (SB.type_join_snd #(EX.estate_of_exp f) #(EX.estate_of_exp g) inner0 == (EX.esystem_of_exp g).init);
+      ()
 
     | XLet b e1 e2 ->
       step_invariant_init e1;
@@ -199,9 +235,52 @@ let rec step_invariant_step
       ()
 
     | XMufby acc seed f g ->
-      // TODO:ADMIT single-evaluation bisimulation for the fused loop: the
-      // esystem_mufby step output equals the desugar's bigstep value. Deferred;
-      // the semantics is validated concretely by norm tests.
+      // TODO:ADMIT single-evaluation bisimulation for the fused loop.
+      //
+      // The `step_invariant_init` (above) is now fully discharged; only this
+      // step case remains admitted. The semantics is validated concretely by
+      // the norm tests in pipit/test/Pipit.System.Exec.Mufby.Test.fst.
+      //
+      // What is needed: `esystem_mufby.step` computes reg_acc = type_join_fst s,
+      // (sf',res) = tf.step (CR.cons reg_acc row1) sf, (sg',acc') =
+      // tg.step (CR.cons res row1) sg, returning s' = (acc',(sf',sg')), v' = res.
+      // We must show res == v and that the invariant is preserved.
+      //
+      //  * The g-side and register fact are reachable with existing lemmas:
+      //    recurse `step_invariant_step` on g at history `extend1 resvs rows`
+      //    (resvs = total_vs rows mres) to advance sg -> sg' with acc' == g(res),
+      //    then `lemma_bigstep_substitute_intros 0 (row1::rows) mres (v::resvs) g`
+      //    gives `bigstep_prop (row1::rows) (subst1 g mres) acc'`.
+      //
+      //  * The f-side (res == v, and f-substate advancement) is the crux and
+      //    is NOT closable with the current core lemmas.  The invariant tracks
+      //    f's history against the accumulator stream `mufby_acc_sys` (a
+      //    self-standing guarded XMu, `mu acc. seed fby g(f(acc))`), while the
+      //    operational step evaluates f on the accumulator produced by the
+      //    desugar's `XFby seed g` over the output-extended history (equivalently
+      //    A = `seed fby g(mres)`).  These two accumulator representations agree
+      //    only by GUARDED FIXPOINT UNIQUENESS: writing macc = mufby_acc_sys and
+      //    unfolding one BSMu step, macc_n = g(f(macc))_{n-1} and A_n = g(f(A))_{n-1}
+      //    (using mres == subst1 f A), so both satisfy `X = seed fby g(f(X))`.
+      //    Equality follows by strong induction on history length (macc_n == A_n
+      //    once macc == A on all shorter prefixes, via f/g determinism), but the
+      //    proof cannot use `lemma_bigsteps_total_vs` on the operational side
+      //    because `causal (subst1 g mres)` / `causal A` is not available (there
+      //    is no causal-under-substitution lemma), so every bigstep on the A side
+      //    must be constructed by hand from f, g and mres via the substitute
+      //    elim/intros lemmas.  This is a new ~100-line core lemma (fixpoint
+      //    uniqueness + manual bigstep construction) in Pipit.Exp.Causality.
+      //
+      //    The alternative — decomposing mres via elim_XMu/elim_XLet to get f's
+      //    bigstep directly — leaves `lift1' f 1 res` in the history and requires
+      //    a structural "bigstep respects lift1'" core lemma, which in turn needs
+      //    a `lemma_lift_subst_distribute_ge` (only the `_le` variant exists) and
+      //    `lemma_lift_drop_commute_ge` (only `_le` exists).  Comparable effort in
+      //    the delicate De Bruijn machinery.
+      //
+      //    Either route is genuine multi-hour/multi-day expert metatheory and is
+      //    left for a dedicated pass; the concrete norm test guarantees the
+      //    executable translation is semantically correct in the meantime.
       admit ()
 
     | XLet b e1 e2 ->

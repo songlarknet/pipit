@@ -223,6 +223,14 @@ let lemma_causal_mufby_desugar (#t: table) (#c: context t) (#acc #res: t.ty)
   lemma_direct_dependency_lift_at f 1 res
 #pop-options
 
+(* The accumulator stream `mufby_acc_sys` is causal whenever `f` and `g` are. *)
+#push-options "--fuel 4 --ifuel 2 --z3rlimit 40"
+let lemma_causal_mufby_acc (#t: table) (#c: context t) (#acc #res: t.ty)
+  (seed: t.ty_sem acc) (f: exp t (acc :: c) res { causal f }) (g: exp t (res :: c) acc { causal g }):
+  Lemma (ensures causal (mufby_acc_sys seed f g)) =
+  lemma_causal_lift g 1 acc
+#pop-options
+
 // let rec lemma_direct_dependency_lift_lt (e: exp 'c 'a) (i: C.index { C.has_index 'c i }) (i': C.index { i < i' /\ i' <= List.Tot.length 'c }) (t: Type):
 //     Lemma (ensures direct_dependency e i == direct_dependency (lift1' e i' t) i) (decreases e) =
 
