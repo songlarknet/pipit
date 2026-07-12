@@ -251,6 +251,16 @@ let mu_body_post
      { fun ixs os n -> Q (source ixs) os n }
      -------------------------------------------------------------------------
      { P } System.mu body { Q }
+
+   NAMING TODO (design decision, 2026-07-12): this is the *weak* rule --- it
+   forgets the body, remembering only [Q]. It should be renamed [mu_weak], and
+   the *strong* rule (Logic.MuStrong.mu_strong, which additionally retains the
+   fixpoint equation [x = body]) should become the default [mu]. Likewise
+   [mufby] -> [mufby_weak], with a new default strong [mufby] (= mu_strong on
+   [delayed_body] + the mufby transfer). Rationale: the weak/strong gap is a
+   compositional rule forgetting the recursion's internal fby-structure (the
+   connection between shared fby references), independent of the oracle; the
+   strong rule is the safe default (it subsumes weak --- see mu_from_strong).
 *)
 val mu
   (#input #output: Type)

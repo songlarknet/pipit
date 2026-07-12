@@ -11,7 +11,18 @@
      - [mu (assume_fix body)] is observationally equivalent to [mu body]
        (the extra assumption merely duplicates the knot's own, which is idempotent);
      - so [mu] on [assume_fix body] + [equiv_transport] back to [mu body]
-       gives the strong rule with NO cloning of [mu_aux]. *)
+       gives the strong rule with NO cloning of [mu_aux].
+
+   NAMING TODO (design decision, 2026-07-12): [mu_strong] here should become the
+   DEFAULT [mu] rule; the current weak [Logic.mu] should be renamed [mu_weak].
+   The strong rule is the safe default --- [mu_from_strong] proves it subsumes
+   the weak one. TODO also: a [mufby_strong] (= [mu_strong] on [delayed_body v0
+   body] + the existing mufby transfer, exactly parallel to how weak [mufby] is
+   built from weak [mu]), to become the default [mufby], with the current
+   [Logic.mufby]/[mufby_step] renamed [mufby_weak]. The weak/strong gap is a
+   compositional rule forgetting the recursion's fby-structure; it is the same
+   for [mu] and [mufby] and independent of the oracle (oracle vs oracle-free is
+   about *executability*, not this proof distinction). *)
 module Pipit.Extensional.Logic.MuStrong
 
 module E   = Pipit.Extensional.Base
