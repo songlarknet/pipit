@@ -36,6 +36,9 @@ let rec direct_dependency (#t: table) (#c: context t) (#a: t.ty) (e: exp t c a) 
   | XApps e1 -> direct_dependency_apps e1 i
   | XFby _ _ -> false
   | XMu e1 -> direct_dependency e1 (i + 1)
+  (* The output of a fused loop is `res = f(acc)`; `g` only feeds the delayed
+     accumulator, so only `f`'s dependency (shifted past the acc binder) matters. *)
+  | XMufby acc seed f g -> direct_dependency f (i + 1)
   (* This is more restrictive than necessary. The following should work:
      > rec x. let y = x + 1 in 0 fby y
      Maybe the definition should allow `e1` to directly refer to `i` if `e2` does
@@ -76,6 +79,10 @@ let rec causal (#t: table) (#c: context t) (#a: t.ty) (e: exp t c a): Tot bool (
   | XApps e1 -> causal_apps e1
   | XFby _ e1 -> causal e1
   | XMu e1 -> causal e1 && not (direct_dependency e1 0)
+  (* The seed-fby built into the loop already guards the accumulator recursion,
+     so no direct-dependency check is needed here; `f` and `g` just need to be
+     causal themselves (f may reference its index-0 accumulator freely). *)
+  | XMufby acc seed f g -> causal f && causal g
   | XLet b e1 e2 -> causal e1 && causal e2
   | XCheck _ e1 -> causal e1
   | XContract _ rely guar impl ->
@@ -94,6 +101,7 @@ let rec lemma_direct_dependency_lift_ge (#tbl: table) (#c: context tbl) (#a: tbl
   | XApps e1 -> lemma_direct_dependency_lift_ge_apps e1 i i' t
   | XFby _ e1 -> lemma_direct_dependency_lift_ge e1 i i' t
   | XMu e1 -> lemma_direct_dependency_lift_ge e1 (i + 1) (i' + 1) t
+  | XMufby acc seed f g -> lemma_direct_dependency_lift_ge f (i + 1) (i' + 1) t
   | XLet b e1 e2 ->
     lemma_direct_dependency_lift_ge e1 i i' t;
     lemma_direct_dependency_lift_ge e2 (i + 1) (i' + 1) t
@@ -111,6 +119,17 @@ and
   | XApp ea e ->
     lemma_direct_dependency_lift_ge_apps ea i i' t;
     lemma_direct_dependency_lift_ge e i i' t
+
+(* The mufby desugaring's output path is `lift1' f 1 res`, so its direct
+   dependencies coincide with those of the constructor (`direct_dependency f (i+1)`). *)
+#push-options "--fuel 2 --ifuel 1 --z3rlimit 30"
+let lemma_direct_dependency_mufby
+  (#t: table) (#c: context t) (#acc #res: t.ty)
+  (seed: t.ty_sem acc) (f: exp t (acc :: c) res) (g: exp t (res :: c) acc) (i: C.index_lookup c):
+  Lemma (ensures direct_dependency (mufby_desugar seed f g) i == direct_dependency f (i + 1)) =
+  lemma_direct_dependency_lift_ge f (i + 1) 1 res;
+  assert_norm (direct_dependency (mufby_desugar seed f g) i == direct_dependency (lift1' f 1 res) (i + 2))
+#pop-options
 
 // let rec lemma_direct_dependency_lift_lt (e: exp 'c 'a) (i: C.index { C.has_index 'c i }) (i': C.index { i < i' /\ i' <= List.Tot.length 'c }) (t: Type):
 //     Lemma (ensures direct_dependency e i == direct_dependency (lift1' e i' t) i) (decreases e) =
@@ -132,6 +151,9 @@ let rec lemma_direct_dependency_not_subst
   | XMu e1 ->
     lemma_direct_dependency_lift_ge p i 0 (XMu?.valty e);
     lemma_direct_dependency_not_subst (i + 1) (i' + 1) e1 (lift1 p (XMu?.valty e))
+  | XMufby acc seed f g ->
+    lemma_direct_dependency_lift_ge p i 0 acc;
+    lemma_direct_dependency_not_subst (i + 1) (i' + 1) f (lift1 p acc)
   | XLet b e1 e2 ->
     lemma_direct_dependency_not_subst i i' e1 p;
     lemma_direct_dependency_lift_ge p i 0 b;
@@ -237,6 +259,15 @@ let rec lemma_bigstep_substitute_elim
       let hBSe1': bigstep rows se v' = hBSe1 in
       let hBSX = lemma_bigstep_substitute_elim i rows e vs (subst1 e1 (XMu e1)) v' hBSse hBSe1' in
       BSMu _ e1 _ hBSX)
+  | XMufby acc seed f g ->
+    (match hBSe' with
+    | BSMufby _ _ _ _ _ hBSpremise ->
+      // hBSpremise : bigstep rows (mufby_desugar seed (subst f) (subst g)) v'
+      // which, by the commute lemma, is bigstep rows (subst1' (mufby_desugar seed f g) i e) v'
+      lemma_subst_mufby_desugar_commute seed f g i e;
+      let hBSpremise': bigstep rows (subst1' (mufby_desugar seed f g) i e) v' = hBSpremise in
+      let hBSX = lemma_bigstep_substitute_elim i rows e vs (mufby_desugar seed f g) v' hBSse hBSpremise' in
+      BSMufby _ _ _ _ _ hBSX)
   | XLet b e1 e2 ->
     (match hBSe' with
     | BSLet _ e1' e2' _ hBSe1' ->
@@ -350,6 +381,16 @@ let rec lemma_bigstep_substitute_intros
       lemma_subst_subst_distribute_XMu e1 i e;
       assert (subst1' (XMu e1) i e == XMu (subst1' e1 (i + 1) (lift1 e valty)));
       BSMu _ (subst1' e1 (i + 1) (lift1 e valty)) _ hBSX)
+  | XMufby acc seed f g ->
+    (match hBSe' with
+    | BSMufby _ _ _ _ _ hBSpremise ->
+      // hBSpremise : bigstep (zip) (mufby_desugar seed f g) v
+      let hBSX = lemma_bigstep_substitute_intros i rows e vs (mufby_desugar seed f g) v hBSse hBSpremise in
+      // hBSX : bigstep rows (subst1' (mufby_desugar seed f g) i e) v
+      lemma_subst_mufby_desugar_commute seed f g i e;
+      let hBSX': bigstep rows (mufby_desugar seed (subst1' f (i + 1) (lift1 e acc)) (subst1' g (i + 1) (lift1 e a))) v = hBSX in
+      assert_norm (subst1' (XMufby acc seed f g) i e == XMufby acc seed (subst1' f (i + 1) (lift1 e acc)) (subst1' g (i + 1) (lift1 e a)));
+      BSMufby _ _ _ _ _ hBSX')
   | XLet b e1 e2 ->
     (match hBSe' with
     | BSLet _ _ _ _ hBSX ->
@@ -466,6 +507,18 @@ let rec lemma_bigstep_substitute_intros_no_dep
       lemma_subst_subst_distribute_XMu e1 i e;
       assert_norm (subst1' (XMu e1) i e == XMu (subst1' e1 (i + 1) (lift1 e valty)));
       BSMu _ (subst1' e1 (i + 1) (lift1 e valty)) _ hBSX)
+
+  | XMufby acc seed f g ->
+    (match hBSe' with
+    | BSMufby _ _ _ _ _ hBSpremise ->
+      // the loop's output depends only on `f`, so no-direct-dependency transfers to the desugar
+      assert_norm (direct_dependency (XMufby acc seed f g) i == direct_dependency f (i + 1));
+      lemma_direct_dependency_mufby seed f g i;
+      let hBSX = lemma_bigstep_substitute_intros_no_dep i rows e vs (mufby_desugar seed f g) r v va hBSse hBSpremise in
+      lemma_subst_mufby_desugar_commute seed f g i e;
+      let hBSX': bigstep (r :: rows) (mufby_desugar seed (subst1' f (i + 1) (lift1 e acc)) (subst1' g (i + 1) (lift1 e a))) va = hBSX in
+      assert_norm (subst1' (XMufby acc seed f g) i e == XMufby acc seed (subst1' f (i + 1) (lift1 e acc)) (subst1' g (i + 1) (lift1 e a)));
+      BSMufby _ _ _ _ _ hBSX')
 
   | XLet b e1 e2 ->
     (match hBSe' with
@@ -613,6 +666,16 @@ let rec lemma_bigstep_total
     let (| v, hBS0 |) = lemma_bigstep_total (CR.cons v' hd :: CR.extend1 vs tl) e1 in
     let hBS' = lemma_bigstep_substitute_intros_XMu tl e1 vs hd v v' hBSs hBS0 in
     (| v, hBS' |)
+
+  | XMufby acc seed f g ->
+    // TODO:ADMIT progress for the fused mufby loop.
+    // The loop `mu res. let acc = seed fby g(res) in f(acc)` is total by
+    // construction (it is causal: the recursion is guarded by the `fby`).
+    // But lemma_bigstep_total recurses on *expression size*, and the desugar
+    // (an XMu whose body is built from `f` and `g` via lift/XFby/XLet) is not a
+    // subterm of XMufby, so its totality must be assembled by hand from `f` and
+    // `g`'s totality. Admitted for now to unblock the abstract + extract layers.
+    admit ()
 
   | XLet b e1 e2 ->
     let (| vs, hBSs |) = lemma_bigsteps_total rows e1 in

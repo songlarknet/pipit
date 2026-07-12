@@ -31,6 +31,9 @@ let rec lemma_bless_distributes_lift (#t: table) (#c: context t) (#t1: t.ty)
   | XFby v e1' -> lemma_bless_distributes_lift e1' ix t2
   | XMu e1' ->
     lemma_bless_distributes_lift e1' (ix + 1) t2
+  | XMufby acc seed f g ->
+    lemma_bless_distributes_lift f (ix + 1) t2;
+    lemma_bless_distributes_lift g (ix + 1) t2
   | XLet b e1' e2' ->
     lemma_bless_distributes_lift e1'  ix      t2;
     lemma_bless_distributes_lift e2' (ix + 1) t2
@@ -71,6 +74,11 @@ let rec lemma_bless_distributes_subst (#t: table) (#c: context t) (#t1: t.ty)
   | XMu e1' ->
     lemma_bless_distributes_lift  e2 0 t1;
     lemma_bless_distributes_subst e1' (ix + 1) (lift1 e2 t1)
+  | XMufby acc seed f g ->
+    lemma_bless_distributes_lift  e2 0 acc;
+    lemma_bless_distributes_lift  e2 0 t1;
+    lemma_bless_distributes_subst f (ix + 1) (lift1 e2 acc);
+    lemma_bless_distributes_subst g (ix + 1) (lift1 e2 t1)
   | XLet b e1' e2' ->
     lemma_bless_distributes_lift  e2 0 b;
     lemma_bless_distributes_subst e1'  ix      e2;
@@ -97,6 +105,16 @@ and lemma_bless_distributes_subst_apps (#t: table) (#c: context t) (#t1: funty t
     lemma_bless_distributes_subst e ix e2
 
 (*** Bigstep properties ***)
+
+(* `bless` commutes with the mufby desugaring (it only touches `f` through the
+   `lift1' f 1 res` weakening, handled by lemma_bless_distributes_lift). *)
+#push-options "--fuel 6 --ifuel 2 --z3rlimit 60"
+let lemma_bless_mufby_desugar (#t: table) (#c: context t) (#acc #res: t.ty)
+  (seed: t.ty_sem acc) (f: exp t (acc :: c) res) (g: exp t (res :: c) acc):
+  Lemma (ensures bless (mufby_desugar seed f g) == mufby_desugar seed (bless f) (bless g)) =
+  lemma_bless_distributes_lift f 1 res
+#pop-options
+
 let rec lemma_bless_of_bigstep (#t: table) (#c: context t) (#a: t.ty) (#streams: list (row c)) (#e: exp t c a) (#v: t.ty_sem a) (hBS: bigstep streams e v):
   Tot (bigstep streams (bless e) v)
     (decreases hBS) =
@@ -109,6 +127,10 @@ let rec lemma_bless_of_bigstep (#t: table) (#c: context t) (#a: t.ty) (#streams:
   | BSMu s e1 v hB ->
     lemma_bless_distributes_subst e1 0 (XMu e1);
     BSMu s (bless e1) v (lemma_bless_of_bigstep hB)
+  | BSMufby s seed f g v hB ->
+    let hB' = lemma_bless_of_bigstep hB in
+    lemma_bless_mufby_desugar seed f g;
+    BSMufby s seed (bless f) (bless g) v hB'
   | BSLet s e1 e2 v hB ->
     lemma_bless_distributes_subst e2 0 e1;
     BSLet s (bless e1) (bless e2) v (lemma_bless_of_bigstep hB)
@@ -148,6 +170,11 @@ let rec lemma_bigstep_of_bless (#t: table) (#c: context t) (#a: t.ty) (#streams:
     let BSMu s _ v hB = hBS in
     lemma_bless_distributes_subst e1 0 (XMu e1);
     BSMu s e1 v (lemma_bigstep_of_bless hB)
+  | XMufby acc seed f g ->
+    let BSMufby s _ _ _ v hB = hBS in
+    lemma_bless_mufby_desugar seed f g;
+    let hB' : bigstep s (bless (mufby_desugar seed f g)) v = hB in
+    BSMufby s seed f g v (lemma_bigstep_of_bless hB')
   | XLet b e1 e2 ->
     let BSLet s _ _ v hB = hBS in
     lemma_bless_distributes_subst e2 0 e1;
@@ -354,6 +381,9 @@ let rec lemma_sealed_of_bless (#t: table) (#c: context t) (#a: t.ty)
   | XFby v e1' -> lemma_sealed_of_bless opts e1'
   | XMu e1' ->
     lemma_sealed_of_bless opts e1'
+  | XMufby acc seed f g ->
+    lemma_sealed_of_bless opts f;
+    lemma_sealed_of_bless opts g
   | XLet b e1' e2' ->
     lemma_sealed_of_bless opts e1';
     lemma_sealed_of_bless opts e2'

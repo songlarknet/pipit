@@ -38,6 +38,9 @@ let rec lemma_lift_lift_commute (#a: ('t).ty) (#c: context 't) (e: exp 't c a) (
     lemma_lift_lift_commute e1 i1 i2 t1 t2
   | XMu e1 ->
     lemma_lift_lift_commute_bind e1
+  | XMufby _ _ f g ->
+    lemma_lift_lift_commute_bind f;
+    lemma_lift_lift_commute_bind g
   | XLet _ e1 e2 ->
     lemma_lift_lift_commute e1 i1 i2 t1 t2;
     lemma_lift_lift_commute_bind e2
@@ -77,6 +80,9 @@ let rec lemma_subst_lift_id (#a: ('t).ty) (#c: context 't) (e: exp 't c a) (i: C
     lemma_subst_lift_id e1 i t p
   | XMu e1 ->
     lemma_subst_lift_id_bind e1
+  | XMufby _ _ f g ->
+    lemma_subst_lift_id_bind f;
+    lemma_subst_lift_id_bind g
   | XLet b e1 e2 ->
     lemma_subst_lift_id e1 i t p;
     lemma_subst_lift_id_bind e2
@@ -152,6 +158,11 @@ let rec lemma_lift_subst_distribute_le (#a: ('t).ty) (#c: context 't) (e: exp 't
   | XMu e1 ->
     lemma_lift_lift_commute p i2 0 t2 a;
     bind e1
+  | XMufby acc seed f g ->
+    lemma_lift_lift_commute p i2 0 t2 acc;
+    bind f;
+    lemma_lift_lift_commute p i2 0 t2 a;
+    bind g
   | XLet b e1 e2 ->
     lemma_lift_lift_commute p i2 0 t2 b;
     lemma_lift_subst_distribute_le e1 i1 i2 t2 p;
@@ -335,6 +346,26 @@ let lemma_subst_subst_distribute_le_XContract
     subst1' (subst1' (XContract status er eg ei) (i2 + 1) (lift1' p2 i1 (C.get_index c i1))) i1 (subst1' p1 i2 p2)
   ) by (tac_unfold_env ())
 
+private
+let lemma_subst_subst_distribute_le_XMufby
+  (#c: context 't)
+  (#tres #tacc: ('t).ty)
+  (seed: ('t).ty_sem tacc)
+  (f: exp 't (tacc :: c) tres) (g: exp 't (tres :: c) tacc)
+  (i1: C.index_lookup c) (i2: C.index { i1 <= i2 /\ i2 < List.Tot.length c - 1 }) (p1: exp 't (C.drop1 c i1) (C.get_index c i1)) (p2: exp 't (C.drop1 (C.drop1 c i1) i2) (C.get_index (C.drop1 c i1) i2)):
+  Lemma
+    (requires (
+      lemma_subst_subst_distribute_le_def f (i1 + 1) (i2 + 1) (_lift_of_drop i1 p1 tacc) (_lift_of_drop2 i1 i2 p2 tacc) /\
+      lemma_subst_subst_distribute_le_def g (i1 + 1) (i2 + 1) (_lift_of_drop i1 p1 tres) (_lift_of_drop2 i1 i2 p2 tres)))
+    (ensures (lemma_subst_subst_distribute_le_def (XMufby tacc seed f g) i1 i2 p1 p2)) =
+  lemma_subst_subst_distribute_le_bind f i1 i2 p1 p2;
+  lemma_subst_subst_distribute_le_bind g i1 i2 p1 p2;
+  CP.lemma_lift_drop_commute_le (C.drop1 c i1) i2 i1 (C.get_index c i1);
+  assert (
+    subst1' (subst1' (XMufby tacc seed f g) i1 p1) i2 p2 ==
+    subst1' (subst1' (XMufby tacc seed f g) (i2 + 1) (lift1' p2 i1 (C.get_index c i1))) i1 (subst1' p1 i2 p2)
+  ) by (tac_unfold_env ())
+
 #pop-options
 
 // (Error 19) Subtyping check failed; expected type exp ’t
@@ -368,6 +399,11 @@ let rec lemma_subst_subst_distribute_le (#a: ('t).ty) (#c: context 't) (e: exp '
   | XMu e1 ->
     bind e1;
     lemma_subst_subst_distribute_le_XMu e1 i1 i2 p1 p2
+
+  | XMufby acc seed f g ->
+    bind f;
+    bind g;
+    lemma_subst_subst_distribute_le_XMufby seed f g i1 i2 p1 p2
 
   | XLet b e1 e2 ->
     lemma_subst_subst_distribute_le e1 i1 i2 p1 p2;
@@ -403,3 +439,19 @@ let lemma_subst_subst_distribute_XMu (#c: context 't) (#te: ('t).ty) (e: exp 't 
     subst1 (subst1' e (i + 1) (lift1 p te)) (XMu (subst1' e (i + 1) (lift1 p te))))
     =
   lemma_subst_subst_distribute_le e 0 i (XMu e) p
+
+(* Substitution commutes with the mufby desugaring `mu res. let acc = seed fby g(res) in f(acc)`.
+   The only non-structural step is the interaction of the substitution with the
+   `lift1' f 1 res` weakening in `f`'s position, discharged by lift/subst
+   distribution and lift/lift commute. *)
+#push-options "--fuel 4 --ifuel 1 --z3rlimit 60"
+let lemma_subst_mufby_desugar_commute
+  (#t: table) (#c: context t) (#acc #res: t.ty)
+  (seed: t.ty_sem acc) (f: exp t (acc :: c) res) (g: exp t (res :: c) acc)
+  (i: C.index_lookup c) (e: exp t (C.drop1 c i) (C.get_index c i)):
+  Lemma (ensures
+    subst1' (mufby_desugar seed f g) i e ==
+    mufby_desugar seed (subst1' f (i + 1) (lift1 e acc)) (subst1' g (i + 1) (lift1 e res))) =
+  lemma_lift_subst_distribute_le f (i + 1) 1 res (lift1 e acc);
+  lemma_lift_lift_commute e 0 0 res acc
+#pop-options

@@ -30,6 +30,14 @@ let rec check (#t: table u#i u#j) (#c: context t) (#a: t.ty)
     // Extend environment to include recursive value of e1; check subexpression
     forall (vs: list (t.ty_sem a) { bigsteps_same_length rows (XMu e1) vs }).
       check mode (CR.extend1 vs rows) e1
+  | XMufby acc seed f g ->
+    // Conservative check for the fused loop: require `f` and `g` to check under
+    // every environment of the appropriate arity (this is sound, since it
+    // includes the loop's actual accumulator/output streams).
+    (forall (accvs: list (t.ty_sem acc) { List.Tot.length accvs == List.Tot.length rows }).
+      check mode (CR.extend1 accvs rows) f) /\
+    (forall (resvs: list (t.ty_sem a) { List.Tot.length resvs == List.Tot.length rows }).
+      check mode (CR.extend1 resvs rows) g)
   | XLet b e1 e2 ->
     // Check e1, then use e1's values to check e2
     check mode rows e1 /\
@@ -112,6 +120,7 @@ let rec sealed (#t: table u#i u#j) (#c: context t) (#a: t.ty)
     sealed_apps allow_unknowns ea
   | XFby v e1 -> sealed allow_unknowns e1
   | XMu e1 -> sealed allow_unknowns e1
+  | XMufby acc seed f g -> sealed allow_unknowns f /\ sealed allow_unknowns g
   | XLet b e1 e2 -> sealed allow_unknowns e1 /\ sealed allow_unknowns e2
   | XCheck ps e1 -> (ps == PM.PSUnknown ==> allow_unknowns) /\ sealed allow_unknowns e1
   | XContract ps rely guar body ->
@@ -133,6 +142,7 @@ let rec bless (#t: table) (#c: context t) (#a: t.ty) (e: exp t c a): Tot (exp t 
   | XApps e1 -> XApps (bless_apps e1)
   | XFby v e1 -> XFby v (bless e1)
   | XMu e1 -> XMu (bless e1)
+  | XMufby acc seed f g -> XMufby acc seed (bless f) (bless g)
   | XLet b e1 e2 -> XLet b (bless e1) (bless e2)
   | XCheck s e1 -> XCheck PM.PSValid (bless e1)
   | XContract s r g i ->

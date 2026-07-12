@@ -96,6 +96,12 @@ let table: table = {
    ty_sem      = (fun t -> t.ty_sem);
    var_eq      = var_eq;
 
+   ty_prod     = (fun a b -> {
+     ty_id       = "tuple2:" :: FStar.List.Tot.append a.ty_id b.ty_id;
+     ty_sem      = a.ty_sem & b.ty_sem;
+     val_default = (a.val_default, b.val_default);
+   });
+
    prim        = prim;
    prim_ty     = (fun (p: prim) -> p.prim_ty);
    prim_sem    = (fun p -> PR.p'delay p.prim_sem);

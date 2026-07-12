@@ -101,6 +101,18 @@ type bigstep (#t: table u#i u#j) (#c: context t): (#a: t.ty) -> list (row c) -> 
          bigstep streams (subst1 e (XMu e)) v ->
          bigstep streams (XMu e) v
 
+ (* A fused delayed loop evaluates as its desugaring into XMu/XFby/XLet.
+    This is the reference semantics; the executable translation shares the
+    result `f(acc)` across the loop instead of recomputing it. *)
+ | BSMufby: #acc: t.ty -> #res: t.ty              ->
+         streams: list (row c)                    ->
+         seed: t.ty_sem acc                       ->
+         f: exp t (acc :: c) res                  ->
+         g: exp t (res :: c) acc                  ->
+         v: t.ty_sem res                          ->
+         bigstep streams (mufby_desugar seed f g) v ->
+         bigstep streams (XMufby acc seed f g) v
+
  (* Let expressions are performed by substituting into the expression.
     We could also evaluate the definition e1 to a stream of values, and add each
     of these to the stream contexts - but this is a bit easier, and later we can
@@ -259,6 +271,10 @@ let rec bigstep_proof_equivalence
 
   | BSMu _ _ _ bs1 ->
     let BSMu _ _ _ bs2 = hBS2 in
+    bigstep_proof_equivalence bs1 bs2
+
+  | BSMufby _ _ _ _ _ bs1 ->
+    let BSMufby _ _ _ _ _ bs2 = hBS2 in
     bigstep_proof_equivalence bs1 bs2
 
   | BSLet _ _ _ _ bs1 ->
