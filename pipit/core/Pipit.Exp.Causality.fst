@@ -231,6 +231,102 @@ let lemma_causal_mufby_acc (#t: table) (#c: context t) (#acc #res: t.ty)
   lemma_causal_lift g 1 acc
 #pop-options
 
+(* Substituting at index `j` does not affect the direct dependency on a strictly
+   lower index `k`, provided the payload `p` itself has no direct dependency on
+   `k` (so it introduces none where the index-`j` occurrences were). *)
+#push-options "--fuel 2 --ifuel 2 --z3rlimit 40"
+let rec lemma_direct_dependency_subst_lt
+  (#tbl: table) (#c: context tbl) (#a: tbl.ty)
+  (e: exp tbl c a)
+  (j: C.index_lookup c)
+  (k: C.index { k < j })
+  (p: exp tbl (C.drop1 c j) (C.get_index c j)):
+    Lemma (requires ~ (direct_dependency p k))
+      (ensures direct_dependency (subst1' e j p) k == direct_dependency e k) (decreases e) =
+  match e with
+  | XBase _ -> ()
+  | XApps ea -> lemma_direct_dependency_subst_lt_apps ea j k p
+  | XFby _ e1 -> ()
+  | XMu e1 ->
+    lemma_direct_dependency_lift_ge p k 0 a;
+    lemma_direct_dependency_subst_lt e1 (j + 1) (k + 1) (lift1 p a)
+  | XMufby acc seed f g ->
+    lemma_direct_dependency_lift_ge p k 0 acc;
+    lemma_direct_dependency_subst_lt f (j + 1) (k + 1) (lift1 p acc)
+  | XLet b e1 e2 ->
+    lemma_direct_dependency_subst_lt e1 j k p;
+    lemma_direct_dependency_lift_ge p k 0 b;
+    lemma_direct_dependency_subst_lt e2 (j + 1) (k + 1) (lift1 p b)
+  | XCheck _ e1 ->
+    lemma_direct_dependency_subst_lt e1 j k p
+  | XContract _ rely guar impl ->
+    lemma_direct_dependency_subst_lt rely j k p;
+    lemma_direct_dependency_lift_ge p k 0 a;
+    lemma_direct_dependency_subst_lt guar (j + 1) (k + 1) (lift1 p a);
+    lemma_direct_dependency_subst_lt impl j k p
+and lemma_direct_dependency_subst_lt_apps
+  (#tbl: table) (#c: context tbl) (#a: funty tbl.ty)
+  (e: exp_apps tbl c a)
+  (j: C.index_lookup c)
+  (k: C.index { k < j })
+  (p: exp tbl (C.drop1 c j) (C.get_index c j)):
+    Lemma (requires ~ (direct_dependency p k))
+      (ensures direct_dependency_apps (subst1_apps' e j p) k == direct_dependency_apps e k) (decreases e) =
+  match e with
+  | XPrim _ -> ()
+  | XApp e1 e2 ->
+    lemma_direct_dependency_subst_lt_apps e1 j k p;
+    lemma_direct_dependency_subst_lt e2 j k p
+#pop-options
+
+(* Substitution preserves causality when the payload is causal. *)
+#push-options "--fuel 2 --ifuel 2 --z3rlimit 40"
+let rec lemma_causal_subst
+  (#tbl: table) (#c: context tbl) (#a: tbl.ty)
+  (e: exp tbl c a)
+  (i: C.index_lookup c)
+  (p: exp tbl (C.drop1 c i) (C.get_index c i)):
+    Lemma (requires causal e /\ causal p)
+      (ensures causal (subst1' e i p)) (decreases e) =
+  match e with
+  | XBase _ -> ()
+  | XApps ea -> lemma_causal_subst_apps ea i p
+  | XFby _ e1 -> lemma_causal_subst e1 i p
+  | XMu e1 ->
+    lemma_causal_lift p 0 a;
+    lemma_direct_dependency_lift_at p 0 a;
+    lemma_causal_subst e1 (i + 1) (lift1 p a);
+    lemma_direct_dependency_subst_lt e1 (i + 1) 0 (lift1 p a)
+  | XMufby acc seed f g ->
+    lemma_causal_lift p 0 acc;
+    lemma_causal_lift p 0 a;
+    lemma_causal_subst f (i + 1) (lift1 p acc);
+    lemma_causal_subst g (i + 1) (lift1 p a)
+  | XLet b e1 e2 ->
+    lemma_causal_lift p 0 b;
+    lemma_causal_subst e1 i p;
+    lemma_causal_subst e2 (i + 1) (lift1 p b)
+  | XCheck _ e1 ->
+    lemma_causal_subst e1 i p
+  | XContract _ rely guar impl ->
+    lemma_causal_lift p 0 a;
+    lemma_causal_subst rely i p;
+    lemma_causal_subst guar (i + 1) (lift1 p a);
+    lemma_causal_subst impl i p
+and lemma_causal_subst_apps
+  (#tbl: table) (#c: context tbl) (#a: funty tbl.ty)
+  (e: exp_apps tbl c a)
+  (i: C.index_lookup c)
+  (p: exp tbl (C.drop1 c i) (C.get_index c i)):
+    Lemma (requires causal_apps e /\ causal p)
+      (ensures causal_apps (subst1_apps' e i p)) (decreases e) =
+  match e with
+  | XPrim _ -> ()
+  | XApp e1 e2 ->
+    lemma_causal_subst_apps e1 i p;
+    lemma_causal_subst e2 i p
+#pop-options
+
 // let rec lemma_direct_dependency_lift_lt (e: exp 'c 'a) (i: C.index { C.has_index 'c i }) (i': C.index { i < i' /\ i' <= List.Tot.length 'c }) (t: Type):
 //     Lemma (ensures direct_dependency e i == direct_dependency (lift1' e i' t) i) (decreases e) =
 

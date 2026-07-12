@@ -50,18 +50,20 @@ let rec system_of_exp_invariant
 
   | XMufby acc seed f g ->
     // esystem_mufby state = (register acc, (f-state, g-state)).
-    // The register holds the accumulator used next; f runs on the accumulator
-    // stream `mufby_acc_sys` and g runs on the output stream `mufby_desugar`.
+    // The register holds the accumulator used next; f runs on the *operational*
+    // accumulator stream `accsys = seed fby g(mres)` (exactly what the executable
+    // step feeds f), and g runs on the output stream `mufby_desugar`.
     let s: SB.option_type_sem (SB.type_join (Some (t.ty_sem acc)) (SB.type_join (EX.estate_of_exp f) (EX.estate_of_exp g))) = s in
     let reg_acc = SB.type_join_fst s in
     let inner = SB.type_join_snd s in
     let sf = SB.type_join_fst inner in
     let sg = SB.type_join_snd inner in
     let mres = XBind.mufby_desugar seed f g in
-    let macc = XBind.mufby_acc_sys seed f g in
-    XC.lemma_causal_mufby_acc seed f g;
+    let accsys : exp t c acc = XFby seed (XBind.subst1 g mres) in
     XC.lemma_causal_mufby_desugar seed f g;
-    system_of_exp_invariant (CR.extend1 (XC.lemma_bigsteps_total_vs rows macc) rows) f sf /\
+    assert_norm (XC.causal (XMufby acc seed f g) == (XC.causal f && XC.causal g));
+    XC.lemma_causal_subst g 0 mres;
+    system_of_exp_invariant (CR.extend1 (XC.lemma_bigsteps_total_vs rows accsys) rows) f sf /\
     system_of_exp_invariant (CR.extend1 (XC.lemma_bigsteps_total_vs rows mres) rows) g sg /\
     (match rows with
      | [] -> reg_acc == seed
@@ -124,8 +126,8 @@ let rec step_invariant_init
       assert_norm (XC.causal (XMufby acc seed f g) == (XC.causal f && XC.causal g));
       step_invariant_init f;
       step_invariant_init g;
-      XC.lemma_causal_mufby_acc seed f g;
       XC.lemma_causal_mufby_desugar seed f g;
+      XC.lemma_causal_subst g 0 (XBind.mufby_desugar seed f g);
       // Reduce the fused-loop initial state to its `type_join_tup` structure so
       // SMT can discharge the register/sub-state projections in the invariant.
       assert ((EX.esystem_of_exp (XMufby acc seed f g)).init ==
