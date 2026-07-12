@@ -55,5 +55,10 @@ clean-deps:
 	$(Q)$(FSTAR_EXE) $(FSTAR_OPT) $<
 	@touch -c $@
 
+%.fsti.checked:
+	@echo "[$(COMPONENT)] Checking: $< $@"
+	$(Q)$(FSTAR_EXE) $(FSTAR_OPT) $<
+	@touch -c $@
+
 .PHONY: verify
 verify: $(ALL_CHECKED_FILES)
