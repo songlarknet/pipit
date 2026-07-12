@@ -99,6 +99,10 @@ let rec check_step_asm
     XB.bigstep_deterministic_squash (row1' :: rows') e1 v (XC.lemma_bigstep_total_v (row1' :: rows') e1);
     ()
 
+  | XMufby acc seed f g ->
+    // Assumptions of the admitted abstract XMufby system (future work).
+    admit ()
+
   | XLet b e1 e2 ->
     let (| vleft :: vlefts, hBS1s |) = XC.lemma_bigsteps_total (row1 :: rows) e1 in
     let rows' = CR.extend1 vlefts rows in

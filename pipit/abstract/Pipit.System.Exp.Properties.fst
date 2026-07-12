@@ -47,6 +47,11 @@ let rec system_of_exp_invariant
   | XMu e1 ->
     system_of_exp_invariant (CR.extend1 (XC.lemma_bigsteps_total_vs rows e) rows) e1 s
 
+  | XMufby acc seed f g ->
+    // The abstract system for XMufby is admitted (future rewriting surface);
+    // its invariant is trivial for now.
+    True
+
   | XLet b e1 e2 ->
     let s: SB.option_type_sem (SB.type_join (SX.state_of_exp e1) (SX.state_of_exp e2)) = s in
     system_of_exp_invariant rows e1 (SB.type_join_fst s) /\
@@ -138,6 +143,8 @@ let rec invariant_init
     invariant_init e1;
     ()
 
+  | XMufby acc seed f g -> ()
+
   | XLet b e1 e2 ->
     invariant_init e1;
     invariant_init e2;
@@ -188,6 +195,10 @@ let rec step_oracle
 
     let orcl1 = step_oracle rows' e1 in
     SB.type_join_tup #(Some (t.ty_sem a)) #(SX.oracle_of_exp e1) (List.hd vs) orcl1
+
+  | XMufby acc seed f g ->
+    // Oracle for the admitted abstract XMufby system (future rewriting surface).
+    admit ()
 
   | XLet b e1 e2 ->
     let vlefts = XC.lemma_bigsteps_total_vs rows e1 in
@@ -252,6 +263,11 @@ let rec invariant_step
     let row1' = CR.cons v row1 in
     invariant_step rows' row1' e1 s;
     ()
+
+  | XMufby acc seed f g ->
+    // The abstract XMufby system is admitted, so its step/value correspondence
+    // is admitted too (future rewriting-surface work).
+    admit ()
 
   | XLet b e1 e2 ->
     let vleft :: vlefts = XC.lemma_bigsteps_total_vs (row1 :: rows) e1 in

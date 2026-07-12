@@ -93,6 +93,10 @@ let rec check_step_obl
     XB.bigstep_deterministic_squash (row1' :: rows') e1 v (XC.lemma_bigstep_total_v (row1' :: rows') e1);
     ()
 
+  | XMufby acc seed f g ->
+    // check_invariant for XMufby is stubbed to True, so the obligation holds trivially.
+    ()
+
   | XLet b e1 e2 ->
     let (| vleft :: vlefts, hBS1s |) = XC.lemma_bigsteps_total (row1 :: rows) e1 in
     let rows' = CR.extend1 vlefts rows in

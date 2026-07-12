@@ -47,6 +47,11 @@ let rec system_of_exp_invariant
   | XMu e1 ->
     system_of_exp_invariant (CR.extend1 (XC.lemma_bigsteps_total_vs rows e) rows) e1 s
 
+  | XMufby acc seed f g ->
+    // The single-evaluation bisimulation for the fused loop is deferred; its
+    // invariant is stubbed to True for now (semantics validated by norm tests).
+    True
+
   | XLet b e1 e2 ->
     let s: SB.option_type_sem (SB.type_join (EX.estate_of_exp e1) (EX.estate_of_exp e2)) = s in
     system_of_exp_invariant rows e1 (SB.type_join_fst s) /\
@@ -99,6 +104,8 @@ let rec step_invariant_init
     | XMu e1 ->
       step_invariant_init e1;
       ()
+
+    | XMufby acc seed f g -> ()
 
     | XLet b e1 e2 ->
       step_invariant_init e1;
@@ -190,6 +197,12 @@ let rec step_invariant_step
       let stp = (EX.esystem_of_exp (XMu e1)).step row1 s in
       assert (system_of_exp_invariant (row1 :: rows) (XMu e1) (fst stp));
       ()
+
+    | XMufby acc seed f g ->
+      // TODO:ADMIT single-evaluation bisimulation for the fused loop: the
+      // esystem_mufby step output equals the desugar's bigstep value. Deferred;
+      // the semantics is validated concretely by norm tests.
+      admit ()
 
     | XLet b e1 e2 ->
       let (| vlefts', hBS1s' |) = XC.lemma_bigsteps_total (row1 :: rows) e1 in

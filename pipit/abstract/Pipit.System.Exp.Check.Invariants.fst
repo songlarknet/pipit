@@ -43,6 +43,9 @@ let rec check_base_nil
     check_base_nil mode e1
   | XMu e1 ->
     check_base_nil mode e1
+  | XMufby acc seed f g ->
+    check_base_nil mode f;
+    check_base_nil mode g
   | XLet b e1 e2 ->
     check_base_nil mode e1;
     check_base_nil mode e2
@@ -93,6 +96,9 @@ let rec check_invariant_of_check_base
   | XMu e1 ->
     let rows' = CR.extend1 (XC.lemma_bigsteps_total_vs rows (XMu e1)) rows in
     check_invariant_of_check_base mode rows' e1
+  | XMufby acc seed f g ->
+    // check_invariant for XMufby is stubbed to True.
+    ()
   | XLet b e1 e2 ->
     check_invariant_of_check_base  mode rows e1;
     let rows' = CR.extend1 (XC.lemma_bigsteps_total_vs rows e1) rows in
@@ -154,6 +160,10 @@ let rec check_of_sealed
     with
       XB.bigsteps_deterministic_squash rows (XMu e1) vs (XC.lemma_bigsteps_total_vs rows (XMu e1));
     ()
+  | XMufby acc seed f g ->
+    // TODO:ADMIT sealed->unknown check for XMufby (all-environments reasoning
+    // over the stubbed abstract system); future rewriting-surface work.
+    admit ()
   | XLet b e1 e2 ->
     check_of_sealed rows e1;
     let rows' = CR.extend1 (XC.lemma_bigsteps_total_vs rows e1) rows in
@@ -233,6 +243,10 @@ let rec check_base_unknown_of_check_invariant
       XB.bigsteps_deterministic_squash rows (XMu e1) vs (XC.lemma_bigsteps_total_vs rows (XMu e1));
 
     ()
+
+  | XMufby acc seed f g ->
+    // TODO:ADMIT unknown-check-from-invariant for XMufby (stubbed abstract system).
+    admit ()
 
   | XLet b e1 e2 ->
     check_base_unknown_of_check_invariant rows e1;

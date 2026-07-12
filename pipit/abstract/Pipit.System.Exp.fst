@@ -17,6 +17,7 @@ let rec state_of_exp (#t: table) (#c: context t) (#a: t.ty) (e: exp t c a): Tot 
   | XApps e1 -> state_of_exp_apps e1
   | XFby v e1 -> Some (t.ty_sem a) `type_join` state_of_exp e1
   | XMu e1 -> state_of_exp e1
+  | XMufby acc seed f g -> Some (t.ty_sem acc) `type_join` (state_of_exp f `type_join` state_of_exp g)
   | XLet b e1 e2 -> state_of_exp e1 `type_join` state_of_exp e2
   | XCheck name e1 -> state_of_exp e1
   // Contracts do not expose their body in abstract mode, so we only need state of rely and guar
@@ -39,6 +40,7 @@ let rec oracle_of_exp (#t: table) (#c: context t) (#a: t.ty) (e: exp t c a): Tot
   | XApps e1 -> oracle_of_exp_apps e1
   | XFby v e1 -> oracle_of_exp e1
   | XMu e1 -> Some (t.ty_sem a) `type_join` oracle_of_exp e1
+  | XMufby acc seed f g -> Some (t.ty_sem a) `type_join` (oracle_of_exp f `type_join` oracle_of_exp g)
   | XLet b e1 e2 -> oracle_of_exp e1 `type_join` oracle_of_exp e2
   | XCheck name e1 -> oracle_of_exp e1
   // Contracts do not expose their body in abstract mode, so we only need state of rely and guar
@@ -100,6 +102,11 @@ let rec system_of_exp
     | XMu e1 ->
       let t' = system_of_exp e1 in
       system_mu t'
+    | XMufby acc seed f g ->
+      // TODO:ADMIT abstract (oracle-based) system for the fused loop -- this is
+      // the clean `system_mufby` rewriting surface, still to be built. It is not
+      // used by the executable extract, so it is admitted for now.
+      admit ()
     | XLet b e1 e2 ->
       system_let (fun i v -> (v, i)) (system_of_exp e1) (system_of_exp e2)
     | XCheck status e1 ->

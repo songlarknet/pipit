@@ -44,6 +44,11 @@ let rec check_invariant
   | XMu e1 ->
     check_invariant mode (CR.extend1 (XC.lemma_bigsteps_total_vs rows e) rows) e1
 
+  | XMufby acc seed f g ->
+    // Abstract property-check invariant for the fused loop is stubbed (the
+    // abstract XMufby system is admitted; this is future rewriting-surface work).
+    True
+
   | XLet b e1 e2 ->
     check_invariant mode rows e1 /\
     check_invariant mode (CR.extend1 (XC.lemma_bigsteps_total_vs rows e1) rows) e2
@@ -93,6 +98,8 @@ let rec check_init
     | XMu e1 ->
       check_init mode e1;
       ()
+
+    | XMufby acc seed f g -> ()
 
     | XLet b e1 e2 ->
       check_init mode e1;
