@@ -103,10 +103,12 @@ let rec system_of_exp
       let t' = system_of_exp e1 in
       system_mu t'
     | XMufby acc seed f g ->
-      // TODO:ADMIT abstract (oracle-based) system for the fused loop -- this is
-      // the clean `system_mufby` rewriting surface, still to be built. It is not
-      // used by the executable extract, so it is admitted for now.
-      admit ()
+      // Oracle-augmented fused loop: f and g are each translated once; the
+      // immediate `res`-knot is resolved by an oracle (see `system_mufby`).
+      let tf = system_of_exp f in
+      let tg = system_of_exp g in
+      system_mufby #(row c) #(t.ty_sem acc & row c) #(t.ty_sem a & row c) #(t.ty_sem acc) #(t.ty_sem a)
+        seed (fun i v -> (v, i)) (fun i v -> (v, i)) tf tg
     | XLet b e1 e2 ->
       system_let (fun i v -> (v, i)) (system_of_exp e1) (system_of_exp e2)
     | XCheck status e1 ->

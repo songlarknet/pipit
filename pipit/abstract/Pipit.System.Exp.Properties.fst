@@ -15,6 +15,7 @@ module SX = Pipit.System.Exp
 module X  = Pipit.Exp
 module XB = Pipit.Exp.Bigstep
 module XC = Pipit.Exp.Causality
+module XBind = Pipit.Exp.Binding
 
 module List = FStar.List.Tot
 
@@ -48,9 +49,25 @@ let rec system_of_exp_invariant
     system_of_exp_invariant (CR.extend1 (XC.lemma_bigsteps_total_vs rows e) rows) e1 s
 
   | XMufby acc seed f g ->
-    // The abstract system for XMufby is admitted (future rewriting surface);
-    // its invariant is trivial for now.
-    True
+    // system_mufby state = (register acc, (f-state, g-state)).  The register
+    // holds the accumulator fed next; f runs on the *operational* accumulator
+    // stream `accsys = seed fby g(mres)` (exactly the register value), and g
+    // runs on the output stream `mres = mufby_desugar seed f g`.
+    let s: SB.option_type_sem (SB.type_join (Some (t.ty_sem acc)) (SB.type_join (SX.state_of_exp f) (SX.state_of_exp g))) = s in
+    let reg_acc = SB.type_join_fst s in
+    let inner = SB.type_join_snd s in
+    let sf = SB.type_join_fst inner in
+    let sg = SB.type_join_snd inner in
+    let mres = XBind.mufby_desugar seed f g in
+    let accsys : exp t c acc = XFby seed (XBind.subst1 g mres) in
+    XC.lemma_causal_mufby_desugar seed f g;
+    assert_norm (XC.causal (XMufby acc seed f g) == (XC.causal f && XC.causal g));
+    XC.lemma_causal_subst g 0 mres;
+    system_of_exp_invariant (CR.extend1 (XC.lemma_bigsteps_total_vs rows accsys) rows) f sf /\
+    system_of_exp_invariant (CR.extend1 (XC.lemma_bigsteps_total_vs rows mres) rows) g sg /\
+    (match rows with
+     | [] -> reg_acc == seed
+     | _ :: _ -> XB.bigstep_prop rows (XBind.subst1 g mres) reg_acc)
 
   | XLet b e1 e2 ->
     let s: SB.option_type_sem (SB.type_join (SX.state_of_exp e1) (SX.state_of_exp e2)) = s in
@@ -143,7 +160,27 @@ let rec invariant_init
     invariant_init e1;
     ()
 
-  | XMufby acc seed f g -> ()
+  | XMufby acc seed f g ->
+    assert_norm (XC.causal (XMufby acc seed f g) == (XC.causal f && XC.causal g));
+    invariant_init f;
+    invariant_init g;
+    XC.lemma_causal_mufby_desugar seed f g;
+    XC.lemma_causal_subst g 0 (XBind.mufby_desugar seed f g);
+    // Reduce the fused-loop initial state to its `type_join_tup` structure so
+    // SMT can discharge the register/sub-state projections in the invariant.
+    assert ((SX.system_of_exp (XMufby acc seed f g)).init ==
+      SB.type_join_tup #(Some (t.ty_sem acc)) #(SB.type_join (SX.state_of_exp f) (SX.state_of_exp g)) seed
+        (SB.type_join_tup #(SX.state_of_exp f) #(SX.state_of_exp g) (SX.system_of_exp f).init (SX.system_of_exp g).init))
+      by (T.norm [delta_only [`%SX.system_of_exp; `%SB.system_mufby]; zeta; primops; iota; nbe]; T.trefl ());
+    let inner0 : SB.option_type_sem (SB.type_join (SX.state_of_exp f) (SX.state_of_exp g)) =
+      SB.type_join_tup #(SX.state_of_exp f) #(SX.state_of_exp g) (SX.system_of_exp f).init (SX.system_of_exp g).init in
+    let s0 : SB.option_type_sem (SX.state_of_exp (XMufby acc seed f g)) =
+      SB.type_join_tup #(Some (t.ty_sem acc)) #(SB.type_join (SX.state_of_exp f) (SX.state_of_exp g)) seed inner0 in
+    assert (SB.type_join_fst #(Some (t.ty_sem acc)) #(SB.type_join (SX.state_of_exp f) (SX.state_of_exp g)) s0 == seed);
+    assert (SB.type_join_snd #(Some (t.ty_sem acc)) #(SB.type_join (SX.state_of_exp f) (SX.state_of_exp g)) s0 == inner0);
+    assert (SB.type_join_fst #(SX.state_of_exp f) #(SX.state_of_exp g) inner0 == (SX.system_of_exp f).init);
+    assert (SB.type_join_snd #(SX.state_of_exp f) #(SX.state_of_exp g) inner0 == (SX.system_of_exp g).init);
+    ()
 
   | XLet b e1 e2 ->
     invariant_init e1;
@@ -197,8 +234,23 @@ let rec step_oracle
     SB.type_join_tup #(Some (t.ty_sem a)) #(SX.oracle_of_exp e1) (List.hd vs) orcl1
 
   | XMufby acc seed f g ->
-    // Oracle for the admitted abstract XMufby system (future rewriting surface).
-    admit ()
+    // Oracle for the fused loop: the `res`-knot oracle is the head output value
+    // (the XMufby / mres bigstep), and the f/g oracles come from recursion on
+    // the operational accumulator stream `accsys` and the output stream `mres`.
+    let mres = XBind.mufby_desugar seed f g in
+    let accsys : exp t c acc = XFby seed (XBind.subst1 g mres) in
+    XC.lemma_causal_mufby_desugar seed f g;
+    assert_norm (XC.causal (XMufby acc seed f g) == (XC.causal f && XC.causal g));
+    XC.lemma_causal_subst g 0 mres;
+    let mvs = XC.lemma_bigsteps_total_vs rows mres in
+    let rows_g = CR.extend1 mvs rows in
+    let og = step_oracle rows_g g in
+    let avs = XC.lemma_bigsteps_total_vs rows accsys in
+    let rows_f = CR.extend1 avs rows in
+    let orf = step_oracle rows_f f in
+    SB.type_join_tup #(Some (t.ty_sem a)) #(SB.type_join (SX.oracle_of_exp f) (SX.oracle_of_exp g))
+      (List.hd mvs)
+      (SB.type_join_tup #(SX.oracle_of_exp f) #(SX.oracle_of_exp g) orf og)
 
   | XLet b e1 e2 ->
     let vlefts = XC.lemma_bigsteps_total_vs rows e1 in
@@ -231,7 +283,19 @@ and step_apps_oracle
     let orcl1 = step_apps_oracle rows e1 in
     SB.type_join_tup #(SX.oracle_of_exp e2) #(SX.oracle_of_exp_apps e1) orcl2 orcl1
 
-#push-options "--z3rlimit_factor 5"
+(* Congruence for the invariant under state equality.  Used to transfer the
+   invariant, established on an explicitly-reconstructed state `s'`, to the
+   operational step output `stp.s` (== s') without re-unfolding the invariant on
+   the opaque step result. *)
+let lemma_system_of_exp_invariant_cong
+    (#t: table) (#c: context t) (#a: t.ty)
+    (rows: list (row c))
+    (e: exp t c a { XC.causal e })
+    (s1 s2: SB.option_type_sem (SX.state_of_exp e))
+    : Lemma (requires s1 == s2 /\ system_of_exp_invariant rows e s1)
+        (ensures system_of_exp_invariant rows e s2) = ()
+
+#push-options "--fuel 4 --ifuel 2 --z3rlimit_factor 5 --z3rlimit 100"
 
 let rec invariant_step
   (#t: table) (#c: context t) (#a: t.ty)
@@ -265,9 +329,110 @@ let rec invariant_step
     ()
 
   | XMufby acc seed f g ->
-    // The abstract XMufby system is admitted, so its step/value correspondence
-    // is admitted too (future rewriting-surface work).
-    admit ()
+    // Oracle-based single-evaluation bisimulation for the fused loop.
+    //
+    // system_mufby.step reads reg_acc = type_join_fst s, runs f ONCE on
+    // (reg_acc, row1) with f's oracle to get the (asserted) output, then g ONCE
+    // on (res_oracle, row1) with g's oracle to get the next accumulator acc';
+    // it OUTPUTS the res-oracle (= the true desugar output) and stores
+    // (acc', (sf', sg')).  The f-side tracks the *operational* accumulator
+    // stream accsys = seed fby g(mres) (the register value), the g-side tracks
+    // the output stream mres.
+    let mres = XBind.mufby_desugar seed f g in
+    let accsys : exp t c acc = XFby seed (XBind.subst1 g mres) in
+    assert_norm (XC.causal (XMufby acc seed f g) == (XC.causal f && XC.causal g));
+    XC.lemma_causal_mufby_desugar seed f g;
+    XC.lemma_causal_subst g 0 mres;
+    let s: SB.option_type_sem (SB.type_join (Some (t.ty_sem acc)) (SB.type_join (SX.state_of_exp f) (SX.state_of_exp g))) = s in
+    let reg_acc = SB.type_join_fst s in
+    let inner = SB.type_join_snd s in
+    let sf = SB.type_join_fst inner in
+    let sg = SB.type_join_snd inner in
+    // Expose the current-state invariant conjuncts while the refinement is fresh.
+    assert (system_of_exp_invariant (CR.extend1 (XC.lemma_bigsteps_total_vs rows accsys) rows) f sf);
+    assert (system_of_exp_invariant (CR.extend1 (XC.lemma_bigsteps_total_vs rows mres) rows) g sg);
+    assert (match rows with
+            | [] -> reg_acc == seed
+            | _ :: _ -> XB.bigstep_prop rows (XBind.subst1 g mres) reg_acc);
+
+    // (A) The output value is the desugar's output.
+    let (| v, hBS |) = XC.lemma_bigstep_total (row1 :: rows) (XMufby acc seed f g) in
+    let hBS_mres : XB.bigstep (row1 :: rows) mres v =
+      (match hBS with | XB.BSMufby _ _ _ _ _ h -> h) in
+
+    // (B) The accumulator value stream; its head equals the register value.
+    let (| avs, hBSaccsys' |) = XC.lemma_bigsteps_total (row1 :: rows) accsys in
+    let XB.BSsS _ _ avs_tl _ av_hd hBSaccsys_tl hBSaccsys_head = hBSaccsys' in
+    (match rows with
+     | [] ->
+       assert (reg_acc == seed);
+       (match hBSaccsys_head with | XB.BSFby1 _ _ _ -> ())
+     | _ :: _ ->
+       assert (XB.bigstep_prop rows (XBind.subst1 g mres) reg_acc);
+       (match hBSaccsys_head with
+        | XB.BSFbyS _ _ _ _ _ hprev ->
+          introduce exists (h: XB.bigstep rows (XBind.subst1 g mres) av_hd). True
+            with hprev and ();
+          XB.bigstep_deterministic_squash rows (XBind.subst1 g mres) av_hd reg_acc));
+    assert (av_hd == reg_acc);
+
+    // (C) g's next accumulator on the mres-extended history.
+    let (| mvs, hBSmres' |) = XC.lemma_bigsteps_total (row1 :: rows) mres in
+    let XB.BSsS _ _ mvs_tl _ mv_hd hBSmres_tl hBSmres_head = hBSmres' in
+    XB.bigstep_deterministic hBS_mres hBSmres_head;
+    assert (mv_hd == v);
+    let rows_g = CR.extend1 (XC.lemma_bigsteps_total_vs rows mres) rows in
+    assert (CR.extend1 mvs (row1 :: rows) == CR.cons v row1 :: rows_g);
+    let (| v_g, hBS_g0 |) = XC.lemma_bigstep_total (CR.extend1 mvs (row1 :: rows)) g in
+    let hBSreg : XB.bigstep (row1 :: rows) (XBind.subst1 g mres) v_g =
+      XC.lemma_bigstep_substitute_intros 0 (row1 :: rows) mres mvs g v_g hBSmres' hBS_g0 in
+
+    let rows_f = CR.extend1 (XC.lemma_bigsteps_total_vs rows accsys) rows in
+    // Bridge the extended-history value lists (needed so step_oracle's f/g
+    // oracle components line up with the recursion's oracles).
+    assert (CR.extend1 avs (row1 :: rows) == CR.cons reg_acc row1 :: rows_f);
+    assert (CR.extend1 mvs (row1 :: rows) == CR.cons v row1 :: rows_g);
+
+    // (D) Recurse on f and g (with the histories/oracles step_oracle uses).
+    invariant_step rows_f (CR.cons reg_acc row1) f sf;
+    invariant_step rows_g (CR.cons v      row1) g sg;
+
+    // (E) Reconstruct the operational sub-steps.  step_oracle's f/g components
+    //     are exactly these (via the history bridge + av_hd == reg_acc).
+    let stpf = (SX.system_of_exp f).step (CR.cons reg_acc row1) (step_oracle (CR.cons reg_acc row1 :: rows_f) f) sf in
+    let stpg = (SX.system_of_exp g).step (CR.cons v      row1) (step_oracle (CR.cons v      row1 :: rows_g) g) sg in
+    // acc' == v_g (g output on CR.cons v row1 :: rows_g == CR.extend1 mvs (row1::rows)).
+    assert (stpg.v == v_g);
+
+    let s' : SB.option_type_sem (SX.state_of_exp (XMufby acc seed f g)) =
+      SB.type_join_tup #(Some (t.ty_sem acc)) #(SB.type_join (SX.state_of_exp f) (SX.state_of_exp g))
+        stpg.v (SB.type_join_tup #(SX.state_of_exp f) #(SX.state_of_exp g) stpf.s stpg.s) in
+    // single-level type_join projections of the new state
+    assert (SB.type_join_fst #(Some (t.ty_sem acc)) #(SB.type_join (SX.state_of_exp f) (SX.state_of_exp g)) s' == stpg.v);
+    assert (SB.type_join_snd #(Some (t.ty_sem acc)) #(SB.type_join (SX.state_of_exp f) (SX.state_of_exp g)) s' == SB.type_join_tup stpf.s stpg.s);
+    assert (SB.type_join_fst #(SX.state_of_exp f) #(SX.state_of_exp g) (SB.type_join_tup stpf.s stpg.s) == stpf.s);
+    assert (SB.type_join_snd #(SX.state_of_exp f) #(SX.state_of_exp g) (SB.type_join_tup stpf.s stpg.s) == stpg.s);
+    // bridge the recursion output histories to the new-state invariant histories
+    assert (CR.extend1 (XC.lemma_bigsteps_total_vs (row1 :: rows) accsys) (row1 :: rows) == CR.cons reg_acc row1 :: rows_f);
+    assert (CR.extend1 (XC.lemma_bigsteps_total_vs (row1 :: rows) mres) (row1 :: rows) == CR.cons v row1 :: rows_g);
+    // register bigstep for the new accumulator acc' == v_g == stpg.v
+    introduce exists (h: XB.bigstep (row1 :: rows) (XBind.subst1 g mres) stpg.v). True
+      with hBSreg and ();
+    assert (system_of_exp_invariant (row1 :: rows) (XMufby acc seed f g) s');
+
+    // (F) Output correspondence + invariant transfer to the opaque step output.
+    let stp = (SX.system_of_exp e).step row1 (step_oracle (row1 :: rows) e) s in
+    assert (stp.v == v);
+    // Align step_oracle's f/g oracle components with the recursion oracles.
+    let o_all = step_oracle (row1 :: rows) (XMufby acc seed f g) in
+    let o_inner = SB.type_join_snd #(Some (t.ty_sem a)) #(SB.type_join (SX.oracle_of_exp f) (SX.oracle_of_exp g)) o_all in
+    assert (SB.type_join_fst #(SX.oracle_of_exp f) #(SX.oracle_of_exp g) o_inner
+              == step_oracle (CR.cons reg_acc row1 :: rows_f) f);
+    assert (SB.type_join_snd #(SX.oracle_of_exp f) #(SX.oracle_of_exp g) o_inner
+              == step_oracle (CR.cons v row1 :: rows_g) g);
+    assert (stp.s == s');
+    lemma_system_of_exp_invariant_cong (row1 :: rows) e s' stp.s;
+    ()
 
   | XLet b e1 e2 ->
     let vleft :: vlefts = XC.lemma_bigsteps_total_vs (row1 :: rows) e1 in
