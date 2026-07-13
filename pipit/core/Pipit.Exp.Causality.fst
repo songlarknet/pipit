@@ -327,6 +327,39 @@ and lemma_causal_subst_apps
     lemma_causal_subst e2 i p
 #pop-options
 
+(* From a bigstep of the fused loop's desugar `mres = mufby_desugar seed f g`,
+   extract a bigstep of `f` applied to the *operational* accumulator stream
+   `accsys = seed fby g(mres)`.  This captures the single-evaluation step
+   `res = f(acc)`: unfolding the guarded recursion one step (BSMu) rewrites
+   `subst1 body mres` (body = `let acc = seed fby g in lift1' f 1 res`) into
+   `XLet acc accsys f` -- the extra `res` column that `lift1' f 1 res` inserts is
+   exactly cancelled by the substitution (via `lemma_subst_lift_id`), and the
+   XFby's `g` picks up the `mres` payload.  The BSLet premise of that is precisely
+   `bigstep rows (subst1 f accsys) v`.  No fixpoint-uniqueness reasoning needed. *)
+#push-options "--fuel 4 --ifuel 2 --z3rlimit 60"
+let lemma_bigstep_mufby_desugar_output
+  (#t: table) (#c: context t) (#acc #res: t.ty)
+  (rows: list (row c) { Cons? rows })
+  (seed: t.ty_sem acc)
+  (f: exp t (acc :: c) res)
+  (g: exp t (res :: c) acc)
+  (v: t.ty_sem res)
+  (hBS: bigstep rows (mufby_desugar seed f g) v):
+    (bigstep rows (subst1 f (XFby seed (subst1 g (mufby_desugar seed f g)))) v) =
+  let mres = mufby_desugar seed f g in
+  // one recursion-unfolding step: mres == XMu body, BSMu gives subst1 body mres
+  let hBS' : bigstep rows (subst1' (XLet acc (XFby seed g) (lift1' f 1 res)) 0 mres) v =
+    (match hBS with | BSMu _ _ _ h -> h) in
+  // the `res` column inserted by `lift1' f 1 res` is cancelled by substituting at
+  // the same index, leaving `f`; the XFby carries `subst1 g mres`.
+  lemma_subst_lift_id f 1 res (lift1 mres acc);
+  assert_norm (subst1' (XLet acc (XFby seed g) (lift1' f 1 res)) 0 mres ==
+    XLet acc (XFby seed (subst1' g 0 mres)) (subst1' (lift1' f 1 res) 1 (lift1 mres acc)));
+  let accsys : exp t c acc = XFby seed (subst1 g mres) in
+  let hBSlet : bigstep rows (XLet acc accsys f) v = hBS' in
+  (match hBSlet with | BSLet _ _ _ _ h -> h)
+#pop-options
+
 // let rec lemma_direct_dependency_lift_lt (e: exp 'c 'a) (i: C.index { C.has_index 'c i }) (i': C.index { i < i' /\ i' <= List.Tot.length 'c }) (t: Type):
 //     Lemma (ensures direct_dependency e i == direct_dependency (lift1' e i' t) i) (decreases e) =
 

@@ -172,6 +172,19 @@ and step_apps_invariant_init
     ()
 
 
+(* Congruence for the invariant under state equality.  Used to transfer the
+   invariant, established on an explicitly-reconstructed state `s'`, to the
+   operational step output `fst stp` (== s') without re-unfolding the invariant
+   on the opaque step result. *)
+let lemma_system_of_exp_invariant_cong
+    (#t: table) (#c: context t) (#a: t.ty)
+    (rows: list (row c))
+    (e: exp t c a { XC.causal e })
+    (s1 s2: SB.option_type_sem (EX.estate_of_exp e))
+    : Lemma (requires s1 == s2 /\ system_of_exp_invariant rows e s1)
+        (ensures system_of_exp_invariant rows e s2) = ()
+
+#push-options "--fuel 4 --ifuel 2 --z3rlimit 300"
 let rec step_invariant_step
     (#t: table) (#c: context t) (#a: t.ty)
     (rows: list (row c))
@@ -237,53 +250,112 @@ let rec step_invariant_step
       ()
 
     | XMufby acc seed f g ->
-      // TODO:ADMIT single-evaluation bisimulation for the fused loop.
+      // Single-evaluation bisimulation for the fused loop.
       //
-      // The `step_invariant_init` (above) is now fully discharged; only this
-      // step case remains admitted. The semantics is validated concretely by
-      // the norm tests in pipit/test/Pipit.System.Exec.Mufby.Test.fst.
+      // esystem_mufby.step reads reg_acc = type_join_fst s, runs f ONCE on
+      // (reg_acc, row1) to get res, then g ONCE on (res, row1) to get the next
+      // accumulator acc'; it outputs res and stores (acc', (sf', sg')).
       //
-      // What is needed: `esystem_mufby.step` computes reg_acc = type_join_fst s,
-      // (sf',res) = tf.step (CR.cons reg_acc row1) sf, (sg',acc') =
-      // tg.step (CR.cons res row1) sg, returning s' = (acc',(sf',sg')), v' = res.
-      // We must show res == v and that the invariant is preserved.
-      //
-      //  * The g-side and register fact are reachable with existing lemmas:
-      //    recurse `step_invariant_step` on g at history `extend1 resvs rows`
-      //    (resvs = total_vs rows mres) to advance sg -> sg' with acc' == g(res),
-      //    then `lemma_bigstep_substitute_intros 0 (row1::rows) mres (v::resvs) g`
-      //    gives `bigstep_prop (row1::rows) (subst1 g mres) acc'`.
-      //
-      //  * The f-side (res == v, and f-substate advancement) is the crux and
-      //    is NOT closable with the current core lemmas.  The invariant tracks
-      //    f's history against the accumulator stream `mufby_acc_sys` (a
-      //    self-standing guarded XMu, `mu acc. seed fby g(f(acc))`), while the
-      //    operational step evaluates f on the accumulator produced by the
-      //    desugar's `XFby seed g` over the output-extended history (equivalently
-      //    A = `seed fby g(mres)`).  These two accumulator representations agree
-      //    only by GUARDED FIXPOINT UNIQUENESS: writing macc = mufby_acc_sys and
-      //    unfolding one BSMu step, macc_n = g(f(macc))_{n-1} and A_n = g(f(A))_{n-1}
-      //    (using mres == subst1 f A), so both satisfy `X = seed fby g(f(X))`.
-      //    Equality follows by strong induction on history length (macc_n == A_n
-      //    once macc == A on all shorter prefixes, via f/g determinism), but the
-      //    proof cannot use `lemma_bigsteps_total_vs` on the operational side
-      //    because `causal (subst1 g mres)` / `causal A` is not available (there
-      //    is no causal-under-substitution lemma), so every bigstep on the A side
-      //    must be constructed by hand from f, g and mres via the substitute
-      //    elim/intros lemmas.  This is a new ~100-line core lemma (fixpoint
-      //    uniqueness + manual bigstep construction) in Pipit.Exp.Causality.
-      //
-      //    The alternative — decomposing mres via elim_XMu/elim_XLet to get f's
-      //    bigstep directly — leaves `lift1' f 1 res` in the history and requires
-      //    a structural "bigstep respects lift1'" core lemma, which in turn needs
-      //    a `lemma_lift_subst_distribute_ge` (only the `_le` variant exists) and
-      //    `lemma_lift_drop_commute_ge` (only `_le` exists).  Comparable effort in
-      //    the delicate De Bruijn machinery.
-      //
-      //    Either route is genuine multi-hour/multi-day expert metatheory and is
-      //    left for a dedicated pass; the concrete norm test guarantees the
-      //    executable translation is semantically correct in the meantime.
-      admit ()
+      // The f-side is now symmetric to the g-side because the invariant tracks
+      // f's history against the *operational* accumulator stream
+      // `accsys = seed fby g(mres)` -- exactly the register value fed to f.
+      let mres = XBind.mufby_desugar seed f g in
+      let accsys : exp t c acc = XFby seed (XBind.subst1 g mres) in
+      assert_norm (XC.causal (XMufby acc seed f g) == (XC.causal f && XC.causal g));
+      XC.lemma_causal_mufby_desugar seed f g;
+      XC.lemma_causal_subst g 0 mres;
+      let s: SB.option_type_sem (SB.type_join (Some (t.ty_sem acc)) (SB.type_join (EX.estate_of_exp f) (EX.estate_of_exp g))) = s in
+      let reg_acc = SB.type_join_fst s in
+      let inner = SB.type_join_snd s in
+      let sf = SB.type_join_fst inner in
+      let sg = SB.type_join_snd inner in
+      // Expose the current-state invariant's conjuncts (sub-invariants for f/g
+      // and the register fact) while the parameter refinement is fresh.
+      assert (system_of_exp_invariant (CR.extend1 (XC.lemma_bigsteps_total_vs rows accsys) rows) f sf);
+      assert (system_of_exp_invariant (CR.extend1 (XC.lemma_bigsteps_total_vs rows mres) rows) g sg);
+      assert (match rows with
+              | [] -> reg_acc == seed
+              | _ :: _ -> XB.bigstep_prop rows (XBind.subst1 g mres) reg_acc);
+
+      // (A) The fused-loop output is the desugar's output; unfolding one loop
+      //     step exposes `f` applied to the operational accumulator `accsys`.
+      let hBS_mres : XB.bigstep (row1 :: rows) mres v =
+        (match hBS with | XB.BSMufby _ _ _ _ _ h -> h) in
+      let hBS_subst : XB.bigstep (row1 :: rows) (XBind.subst1 f accsys) v =
+        XC.lemma_bigstep_mufby_desugar_output (row1 :: rows) seed f g v hBS_mres in
+
+      // (B) The accumulator value stream; its head equals the register value.
+      let (| avs, hBSaccsys' |) = XC.lemma_bigsteps_total (row1 :: rows) accsys in
+      let XB.BSsS _ _ avs_tl _ av_hd hBSaccsys_tl hBSaccsys_head = hBSaccsys' in
+      // The register fact from the current-state invariant identifies av_hd (the
+      // accumulator value of accsys = seed fby g(mres)) with reg_acc.
+      (match rows with
+       | [] ->
+         // register invariant: reg_acc == seed; accsys value at [row1] is seed.
+         assert (reg_acc == seed);
+         (match hBSaccsys_head with | XB.BSFby1 _ _ _ -> ())
+       | _ :: _ ->
+         // register invariant: bigstep_prop rows (subst1 g mres) reg_acc.
+         assert (XB.bigstep_prop rows (XBind.subst1 g mres) reg_acc);
+         (match hBSaccsys_head with
+          | XB.BSFbyS _ _ _ _ _ hprev ->
+            introduce exists (h: XB.bigstep rows (XBind.subst1 g mres) av_hd). True
+              with hprev and ();
+            XB.bigstep_deterministic_squash rows (XBind.subst1 g mres) av_hd reg_acc));
+      assert (av_hd == reg_acc);
+
+      // (C) f's bigstep on the accsys-extended history, producing v; recurse.
+      let hBS_f0 : XB.bigstep (CR.extend1 avs (row1 :: rows)) f v =
+        XC.lemma_bigstep_substitute_elim 0 (row1 :: rows) accsys avs f v hBSaccsys' hBS_subst in
+      let rows_f = CR.extend1 (XC.lemma_bigsteps_total_vs rows accsys) rows in
+      assert (CR.extend1 avs (row1 :: rows) == CR.cons reg_acc row1 :: rows_f);
+      let hBS_f : XB.bigstep (CR.cons reg_acc row1 :: rows_f) f v = hBS_f0 in
+      step_invariant_step rows_f (CR.cons reg_acc row1) f v hBS_f sf;
+
+      // (D) g's next accumulator on the mres-extended history; recurse.
+      let (| mvs, hBSmres' |) = XC.lemma_bigsteps_total (row1 :: rows) mres in
+      let XB.BSsS _ _ mvs_tl _ mv_hd hBSmres_tl hBSmres_head = hBSmres' in
+      XB.bigstep_deterministic hBS_mres hBSmres_head;
+      assert (mv_hd == v);
+      let rows_g = CR.extend1 (XC.lemma_bigsteps_total_vs rows mres) rows in
+      assert (CR.extend1 mvs (row1 :: rows) == CR.cons v row1 :: rows_g);
+      let (| v_g, hBS_g0 |) = XC.lemma_bigstep_total (CR.extend1 mvs (row1 :: rows)) g in
+      let hBS_g : XB.bigstep (CR.cons v row1 :: rows_g) g v_g = hBS_g0 in
+      step_invariant_step rows_g (CR.cons v row1) g v_g hBS_g sg;
+
+      // register fact for the new accumulator: bigstep_prop (subst1 g mres) v_g.
+      let hBSreg : XB.bigstep (row1 :: rows) (XBind.subst1 g mres) v_g =
+        XC.lemma_bigstep_substitute_intros 0 (row1 :: rows) mres mvs g v_g hBSmres' hBS_g0 in
+
+      // (E) Reconstruct the new state `s' = (acc', (sf', sg'))` from the f/g
+      //     sub-steps (each evaluated once) and prove the invariant on it.
+      let (sf', res) = (EX.esystem_of_exp f).step (CR.cons reg_acc row1) sf in
+      // res == v from the f recursion (input (reg_acc, row1) == CR.cons reg_acc row1).
+      let (sg', acc') = (EX.esystem_of_exp g).step (CR.cons res row1) sg in
+      // acc' == v_g from the g recursion (res == v).
+      assert (acc' == v_g);
+      let s' : SB.option_type_sem (EX.estate_of_exp (XMufby acc seed f g)) =
+        SB.type_join_tup #(Some (t.ty_sem acc)) #(SB.type_join (EX.estate_of_exp f) (EX.estate_of_exp g))
+          acc' (SB.type_join_tup #(EX.estate_of_exp f) #(EX.estate_of_exp g) sf' sg') in
+      // single-level type_join projections of the new state
+      assert (SB.type_join_fst #(Some (t.ty_sem acc)) #(SB.type_join (EX.estate_of_exp f) (EX.estate_of_exp g)) s' == acc');
+      assert (SB.type_join_snd #(Some (t.ty_sem acc)) #(SB.type_join (EX.estate_of_exp f) (EX.estate_of_exp g)) s' == SB.type_join_tup sf' sg');
+      assert (SB.type_join_fst #(EX.estate_of_exp f) #(EX.estate_of_exp g) (SB.type_join_tup sf' sg') == sf');
+      assert (SB.type_join_snd #(EX.estate_of_exp f) #(EX.estate_of_exp g) (SB.type_join_tup sf' sg') == sg');
+      // Bridge the recursion output histories to the new-state invariant's histories.
+      assert (CR.extend1 (XC.lemma_bigsteps_total_vs (row1 :: rows) accsys) (row1 :: rows) == CR.cons reg_acc row1 :: rows_f);
+      assert (CR.extend1 (XC.lemma_bigsteps_total_vs (row1 :: rows) mres) (row1 :: rows) == CR.cons v row1 :: rows_g);
+      // register bigstep for the new accumulator acc' == v_g
+      introduce exists (h: XB.bigstep (row1 :: rows) (XBind.subst1 g mres) acc'). True
+        with hBSreg and ();
+      assert (system_of_exp_invariant (row1 :: rows) (XMufby acc seed f g) s');
+      // The operational step outputs (s', res): fst stp == s', snd stp == v.
+      let stp = (EX.esystem_of_exp e).step row1 s in
+      assert (fst stp == s');
+      assert (snd stp == v);
+      // Transfer the invariant to the step output by congruence (fst stp == s').
+      lemma_system_of_exp_invariant_cong (row1 :: rows) e s' (fst stp);
+      ()
 
     | XLet b e1 e2 ->
       let (| vlefts', hBS1s' |) = XC.lemma_bigsteps_total (row1 :: rows) e1 in
@@ -332,6 +404,8 @@ and step_apps_invariant_step
     assert (system_of_exp_apps_invariant rows e1 (SB.type_join_snd s));
     step_invariant_step      rows row1 e2 v2 hBS2 (SB.type_join_fst s);
     step_apps_invariant_step rows row1 e1 v1 hBS1 f' (v2, inp0) (SB.type_join_snd s)
+
+#pop-options
 
 let rec system_invariant_many
     (#t: table) (#c: context t) (#a: t.ty)
