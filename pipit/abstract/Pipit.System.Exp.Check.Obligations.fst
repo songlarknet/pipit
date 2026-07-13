@@ -101,9 +101,7 @@ let rec check_step_obl
     // check_invariant (XMufby ..) at (row1 :: rows) is the f/g unknown checks on
     // their operational histories.
     let mres = XBind.mufby_desugar seed f g in
-    assert_norm (XC.causal (XMufby acc seed f g) == (XC.causal f && XC.causal g));
-    XC.lemma_causal_mufby_desugar seed f g;
-    XC.lemma_causal_subst g 0 mres;
+    XC.lemma_causal_XMufby seed f g;
     let accsys : exp t c acc = XFby seed (XBind.subst1 g mres) in
     lemma_eval_step_XMufby seed f g rows row1 s;
     let s: SB.option_type_sem (SB.type_join (Some (t.ty_sem acc)) (SB.type_join (SX.state_of_exp f) (SX.state_of_exp g))) = s in

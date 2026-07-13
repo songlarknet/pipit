@@ -52,9 +52,7 @@ let rec check_invariant
     // invariant Pipit.System.Exp.Properties.system_of_exp_invariant).
     let mres = XBind.mufby_desugar seed f g in
     let accsys : exp t c acc = XFby seed (XBind.subst1 g mres) in
-    XC.lemma_causal_mufby_desugar seed f g;
-    assert_norm (XC.causal (XMufby acc seed f g) == (XC.causal f && XC.causal g));
-    XC.lemma_causal_subst g 0 mres;
+    XC.lemma_causal_XMufby seed f g;
     check_invariant mode (CR.extend1 (XC.lemma_bigsteps_total_vs rows accsys) rows) f /\
     check_invariant mode (CR.extend1 (XC.lemma_bigsteps_total_vs rows mres) rows) g
 
@@ -111,9 +109,7 @@ let rec check_init
     | XMufby acc seed f g ->
       let mres = XBind.mufby_desugar seed f g in
       let accsys : exp t c acc = XFby seed (XBind.subst1 g mres) in
-      XC.lemma_causal_mufby_desugar seed f g;
-      assert_norm (XC.causal (XMufby acc seed f g) == (XC.causal f && XC.causal g));
-      XC.lemma_causal_subst g 0 mres;
+      XC.lemma_causal_XMufby seed f g;
       check_init mode f;
       check_init mode g;
       ()
@@ -180,10 +176,12 @@ let eval_step_apps
 
 (* Decomposition of the fused-loop step into its f- and g- sub-steps.  The
    XMufby system runs f ONCE on the (delayed) accumulator history `accsys` and g
-   ONCE on the output history `mres`; the per-step assumption ties the output
-   oracle to f's output.  This helper exposes the f/g sub-invariants and history
-   bridges (so `eval_step`/`check_invariant` on f/g line up), the fixpoint
-   `stpf.v == v`, and the chck decomposition of the composite step. *)
+   ONCE on the output history `mres`; the loop is causal-by-construction, so the
+   output is f's computed value (no res-oracle, no per-step fixpoint assumption).
+   This helper exposes the f/g sub-invariants and history bridges (so
+   `eval_step`/`check_invariant` on f/g line up), the output equality
+   `stpf.v == v`, and the chck decomposition of the composite step (= f's checks
+   joined with g's checks, nothing extra). *)
 #push-options "--fuel 4 --ifuel 2 --z3rlimit 300"
 let lemma_eval_step_XMufby
     (#t: table) (#c: context t) (#acc #a: t.ty)
@@ -217,8 +215,7 @@ let lemma_eval_step_XMufby
        let stpg = (SX.system_of_exp g).step (CR.cons v row1) (SXP.step_oracle (CR.cons v row1 :: rows_g) g) sg in
        let stp  = (SX.system_of_exp e).step row1 (SXP.step_oracle (row1 :: rows) e) s in
        stpf.v == v /\
-       stp.chck == SB.checks_assumption (v == stpf.v) `SB.checks_join`
-                   (stpf.chck `SB.checks_join` stpg.chck))))
+       stp.chck == stpf.chck `SB.checks_join` stpg.chck)))
     =
     let e = XMufby acc seed f g in
     let mres = XBind.mufby_desugar seed f g in
@@ -286,14 +283,12 @@ let lemma_eval_step_XMufby
     assert (stpf.v == v);
 
     let o_all = SXP.step_oracle (row1 :: rows) e in
-    let o_inner = SB.type_join_snd #(Some (t.ty_sem a)) #(SB.type_join (SX.oracle_of_exp f) (SX.oracle_of_exp g)) o_all in
-    assert (SB.type_join_fst #(SX.oracle_of_exp f) #(SX.oracle_of_exp g) o_inner
+    assert (SB.type_join_fst #(SX.oracle_of_exp f) #(SX.oracle_of_exp g) o_all
               == SXP.step_oracle (CR.cons reg_acc row1 :: rows_f) f);
-    assert (SB.type_join_snd #(SX.oracle_of_exp f) #(SX.oracle_of_exp g) o_inner
+    assert (SB.type_join_snd #(SX.oracle_of_exp f) #(SX.oracle_of_exp g) o_all
               == SXP.step_oracle (CR.cons v row1 :: rows_g) g);
     let stp = eval_step rows row1 e s in
-    assert (stp.chck == SB.checks_assumption (v == stpf.v) `SB.checks_join`
-                        (stpf.chck `SB.checks_join` stpg.chck));
+    assert (stp.chck == stpf.chck `SB.checks_join` stpg.chck);
     ()
 #pop-options
 

@@ -103,9 +103,7 @@ let rec check_invariant_of_check_base
     // histories.  Instantiate the universal core check at those histories.
     let mres = XBind.mufby_desugar seed f g in
     let accsys : exp t c acc = XFby seed (XBind.subst1 g mres) in
-    XC.lemma_causal_mufby_desugar seed f g;
-    assert_norm (XC.causal (XMufby acc seed f g) == (XC.causal f && XC.causal g));
-    XC.lemma_causal_subst g 0 mres;
+    XC.lemma_causal_XMufby seed f g;
     let accvs = XC.lemma_bigsteps_total_vs rows accsys in
     let resvs = XC.lemma_bigsteps_total_vs rows mres in
     check_invariant_of_check_base mode (CR.extend1 accvs rows) f;
@@ -175,7 +173,7 @@ let rec check_of_sealed
   | XMufby acc seed f g ->
     // check and sealed for XMufby both quantify over the loop's actual
     // accumulator (`accs`) and output (`mres`) histories; recurse under each.
-    assert_norm (XC.causal (XMufby acc seed f g) == (XC.causal f && XC.causal g));
+    XC.lemma_causal_XMufby seed f g;
     let mres: exp t c a   = XBind.mufby_desugar seed f g in
     let accs: exp t c acc = XFby seed (XBind.subst1 g mres) in
     introduce forall (accvs: list (t.ty_sem acc) { XB.bigsteps_same_length rows accs accvs }).
@@ -271,11 +269,9 @@ let rec check_base_unknown_of_check_invariant
     // case on each side: discharge the unknown check at the canonical (total)
     // history via the invariant, then transfer to any equal-length history by
     // bigstep determinism.
-    assert_norm (XC.causal (XMufby acc seed f g) == (XC.causal f && XC.causal g));
+    XC.lemma_causal_XMufby seed f g;
     let mres: exp t c a   = XBind.mufby_desugar seed f g in
     let accs: exp t c acc = XFby seed (XBind.subst1 g mres) in
-    XC.lemma_causal_mufby_desugar seed f g;
-    XC.lemma_causal_subst g 0 mres;
     // f side, against the accumulator history `accs`
     let arows' = CR.extend1 (XC.lemma_bigsteps_total_vs rows accs) rows in
     assert (XK.check PM.check_mode_valid arows' f);

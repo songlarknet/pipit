@@ -223,14 +223,6 @@ let lemma_causal_mufby_desugar (#t: table) (#c: context t) (#acc #res: t.ty)
   lemma_direct_dependency_lift_at f 1 res
 #pop-options
 
-(* The accumulator stream `mufby_acc_sys` is causal whenever `f` and `g` are. *)
-#push-options "--fuel 4 --ifuel 2 --z3rlimit 40"
-let lemma_causal_mufby_acc (#t: table) (#c: context t) (#acc #res: t.ty)
-  (seed: t.ty_sem acc) (f: exp t (acc :: c) res { causal f }) (g: exp t (res :: c) acc { causal g }):
-  Lemma (ensures causal (mufby_acc_sys seed f g)) =
-  lemma_causal_lift g 1 acc
-#pop-options
-
 (* Substituting at index `j` does not affect the direct dependency on a strictly
    lower index `k`, provided the payload `p` itself has no direct dependency on
    `k` (so it introduces none where the index-`j` occurrences were). *)
@@ -325,6 +317,28 @@ and lemma_causal_subst_apps
   | XApp e1 e2 ->
     lemma_causal_subst_apps e1 i p;
     lemma_causal_subst e2 i p
+#pop-options
+
+(* Bundled causality facts for the fused loop and its desugaring.  From the
+   single hypothesis `causal (XMufby acc seed f g)` this discharges, in one
+   call, every causality obligation that the XMufby proof sites repeatedly need:
+   `causal f`, `causal g`, `causal (mufby_desugar seed f g)`,
+   `causal (subst1 g (mufby_desugar seed f g))`, and the operational accumulator
+   `causal (XFby seed (subst1 g (mufby_desugar seed f g)))`.  Factoring this out
+   replaces the fragile repeated `assert_norm`/`lemma_causal_*` boilerplate with
+   a uniform, already-discharged context at each caller. *)
+#push-options "--fuel 4 --ifuel 2 --z3rlimit 40"
+let lemma_causal_XMufby (#t: table) (#c: context t) (#acc #res: t.ty)
+  (seed: t.ty_sem acc) (f: exp t (acc :: c) res) (g: exp t (res :: c) acc):
+  Lemma (requires causal (XMufby acc seed f g))
+    (ensures
+      causal f /\ causal g /\
+      causal (mufby_desugar seed f g) /\
+      causal (subst1 g (mufby_desugar seed f g)) /\
+      causal (XFby seed (subst1 g (mufby_desugar seed f g)))) =
+  assert_norm (causal (XMufby acc seed f g) == (causal f && causal g));
+  lemma_causal_mufby_desugar seed f g;
+  lemma_causal_subst g 0 (mufby_desugar seed f g)
 #pop-options
 
 (* From a bigstep of the fused loop's desugar `mres = mufby_desugar seed f g`,
@@ -977,3 +991,56 @@ let lemma_bigstep_total_always
     [SMTPat (bigstep_always (row1 :: rows) e)] =
   let v = lemma_bigstep_total_v (row1 :: rows) e in
   bigstep_deterministic_squash (row1 :: rows) e v true
+
+(* The canonical value stream over `row1 :: rows` decomposes structurally into
+   its current-step head value and the value stream over `rows`, so extending
+   the rows by these values (CR.extend1) peels exactly one `CR.cons` off the
+   front.  This is the history-bridge equation the fused-loop (XMufby) system and
+   check proofs rely on; isolating it as a small structural lemma keeps those
+   proofs' Z3 queries local and deterministic. *)
+#push-options "--fuel 2 --ifuel 1 --z3rlimit 20"
+let lemma_extend1_value_stream_cons
+  (#t: table) (#c: context t) (#a: t.ty)
+  (rows: list (row c)) (row1: row c) (e: exp t c a { causal e }):
+  Lemma (ensures
+    CR.extend1 (lemma_bigsteps_total_vs (row1 :: rows) e) (row1 :: rows)
+      == CR.cons (lemma_bigstep_total_v (row1 :: rows) e) row1
+         :: CR.extend1 (lemma_bigsteps_total_vs rows e) rows) =
+  ()
+#pop-options
+
+(* The head of the operational-accumulator value stream `accsys = seed fby
+   g(mres)` equals the fused loop's register value `reg_acc`.  `reg_acc` holds
+   the accumulator to feed at the current step: `seed` initially, else the
+   previous value of `subst1 g mres` (the register fact carried by the system /
+   check invariant).  The `seed fby _` delay means the accumulator stream's head
+   is exactly that value, so the two agree by fby unfolding + determinism.  Used
+   by both the system-step and check-step XMufby proofs to align f's input. *)
+#push-options "--fuel 4 --ifuel 2 --z3rlimit 40"
+let lemma_bigstep_mufby_accsys_head
+  (#t: table) (#c: context t) (#acc #res: t.ty)
+  (seed: t.ty_sem acc)
+  (f: exp t (acc :: c) res)
+  (g: exp t (res :: c) acc)
+  (rows: list (row c)) (row1: row c)
+  (reg_acc: t.ty_sem acc):
+  Lemma (requires
+      causal (XFby seed (subst1 g (mufby_desugar seed f g))) /\
+      (match rows with
+       | [] -> reg_acc == seed
+       | _ :: _ -> bigstep_prop rows (subst1 g (mufby_desugar seed f g)) reg_acc))
+    (ensures
+      lemma_bigstep_total_v (row1 :: rows) (XFby seed (subst1 g (mufby_desugar seed f g))) == reg_acc) =
+  let mres = mufby_desugar seed f g in
+  let accsys : exp t c acc = XFby seed (subst1 g mres) in
+  let (| av_hd, hBS |) = lemma_bigstep_total (row1 :: rows) accsys in
+  (match rows with
+   | [] ->
+     (match hBS with | BSFby1 _ _ _ -> ())
+   | _ :: _ ->
+     (match hBS with
+      | BSFbyS _ _ _ _ _ hprev ->
+        introduce exists (h: bigstep rows (subst1 g mres) av_hd). True
+          with hprev and ();
+        bigstep_deterministic_squash rows (subst1 g mres) av_hd reg_acc))
+#pop-options

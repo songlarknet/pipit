@@ -102,13 +102,13 @@ let rec check_step_asm
     ()
 
   | XMufby acc seed f g ->
-    // Fused-loop assumptions decompose into the per-step assumption
-    // `res_oracle == f(acc)` (the fixpoint, discharged by the desugar-output
-    // lemma) plus the assumptions of the f- and g- sub-steps (by recursion).
+    // Fused-loop assumptions decompose structurally: the composite step's
+    // assumptions are exactly the f- and g- sub-step assumptions (the loop is
+    // causal-by-construction, so there is no extra per-step fixpoint
+    // assumption), and check_invariant (XMufby ..) at (row1 :: rows) is the f/g
+    // unknown checks on their operational histories.
     let mres = XBind.mufby_desugar seed f g in
-    assert_norm (XC.causal (XMufby acc seed f g) == (XC.causal f && XC.causal g));
-    XC.lemma_causal_mufby_desugar seed f g;
-    XC.lemma_causal_subst g 0 mres;
+    XC.lemma_causal_XMufby seed f g;
     let accsys : exp t c acc = XFby seed (XBind.subst1 g mres) in
     lemma_eval_step_XMufby seed f g rows row1 s;
     let s: SB.option_type_sem (SB.type_join (Some (t.ty_sem acc)) (SB.type_join (SX.state_of_exp f) (SX.state_of_exp g))) = s in

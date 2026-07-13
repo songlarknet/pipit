@@ -261,6 +261,9 @@ let rec step_invariant_step
       // `accsys = seed fby g(mres)` -- exactly the register value fed to f.
       let mres = XBind.mufby_desugar seed f g in
       let accsys : exp t c acc = XFby seed (XBind.subst1 g mres) in
+      // NOTE: this fragile step-bisimulation proof depends on the exact SMT
+      // context; keep the explicit causal facts rather than the factored
+      // `lemma_causal_XMufby` (which perturbs the query and breaks it here).
       assert_norm (XC.causal (XMufby acc seed f g) == (XC.causal f && XC.causal g));
       XC.lemma_causal_mufby_desugar seed f g;
       XC.lemma_causal_subst g 0 mres;

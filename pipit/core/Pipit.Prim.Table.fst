@@ -44,13 +44,6 @@ type table: Type = {
   ty_sem:      ty -> eqtype;
   var_eq:      var_eq_dec ty;
 
-  (* Product value type former: lets us name a value type whose semantics is
-    the pair `ty_sem a & ty_sem b`. Needed to give the fused mufby' recursion
-    combinator (`XMufby`) a body that returns both the next register value and
-    the output in a single expression. The semantics equation is definitional
-    for the shallow table (extraction), and propositional for generic proofs. *)
-  ty_prod:     (a: ty) -> (b: ty) -> (ab: ty { ty_sem ab == (ty_sem a & ty_sem b) });
-
   prim:        Type;
   prim_ty:     prim -> funty ty;
   prim_sem:    p: prim -> funty_sem ty_sem (prim_ty p);

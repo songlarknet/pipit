@@ -330,15 +330,19 @@ let system_let (#input #input' #v1 #v2: Type)
       });
   }
 
-(* Oracle-augmented abstract system for the fused mufby loop
+(* Abstract system for the fused mufby loop
      res = f(acc);   acc = seed fby g(res)
-   This mirrors the executable `esystem_mufby` (single evaluation of f and g),
-   but resolves the immediate `res`-knot with an oracle rather than by
-   double-evaluating.  The register holds the delayed accumulator `acc`; `f`
-   runs ONCE on the register value to produce `res`, and `g` runs ONCE on the
-   oracle guess for `res` to produce the next accumulator.  The per-step
-   assumption `res_oracle == stpf.v` ties the oracle guess to `f`'s output,
-   exactly as `system_mu` ties its recursion oracle to the body output. *)
+   Unlike `system_mu`, this loop is CAUSAL BY CONSTRUCTION: the recursion
+   resolves through the `fby` delay on the accumulator, so there is no
+   immediate knot to guess.  The system therefore computes its output
+   DIRECTLY -- structurally identical to the executable `esystem_mufby`
+   (single evaluation of `f` and `g`) -- and merely additionally threads
+   `f`'s and `g`'s own oracles and accumulates their `chck`s.  The register
+   holds the delayed accumulator `acc`; each step reads it, runs `f` ONCE on
+   the register value to produce the output `res = stpf.v`, then runs `g`
+   ONCE on that computed `res` to produce the next accumulator.  There is NO
+   `res`-oracle and NO fixpoint assumption -- the output is the true value,
+   not a guess. *)
 let system_mufby (#input #input_f #input_g #v_acc #v_res: Type)
   (#oracle_f #oracle_g #state_f #state_g: option Type)
   (seed: v_acc)
@@ -346,24 +350,22 @@ let system_mufby (#input #input_f #input_g #v_acc #v_res: Type)
   (extg: input -> v_res -> input_g)
   (tf: system input_f oracle_f state_f v_res)
   (tg: system input_g oracle_g state_g v_acc):
-       system input (Some v_res `type_join` (oracle_f `type_join` oracle_g))
+       system input (oracle_f `type_join` oracle_g)
                     (Some v_acc `type_join` (state_f `type_join` state_g)) v_res =
   { init = type_join_tup seed (type_join_tup tf.init tg.init);
     step = (fun i o s ->
-      let res_oracle = type_join_fst o in
-      let o_inner    = type_join_snd o in
-      let orf        = type_join_fst o_inner in
-      let org        = type_join_snd o_inner in
-      let reg_acc    = type_join_fst s in
-      let s_inner    = type_join_snd s in
-      let sf         = type_join_fst s_inner in
-      let sg         = type_join_snd s_inner in
-      let stpf = tf.step (extf i reg_acc)    orf sf in
-      let stpg = tg.step (extg i res_oracle) org sg in
+      let orf     = type_join_fst o in
+      let org     = type_join_snd o in
+      let reg_acc = type_join_fst s in
+      let s_inner = type_join_snd s in
+      let sf      = type_join_fst s_inner in
+      let sg      = type_join_snd s_inner in
+      let stpf = tf.step (extf i reg_acc) orf sf in
+      let res  = stpf.v in
+      let stpg = tg.step (extg i res) org sg in
       {
         s = type_join_tup stpg.v (type_join_tup stpf.s stpg.s);
-        v = res_oracle;
-        chck = checks_assumption (res_oracle == stpf.v) `checks_join`
-               (stpf.chck `checks_join` stpg.chck);
+        v = res;
+        chck = stpf.chck `checks_join` stpg.chck;
       });
   }

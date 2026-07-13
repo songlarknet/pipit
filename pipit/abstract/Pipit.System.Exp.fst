@@ -40,7 +40,7 @@ let rec oracle_of_exp (#t: table) (#c: context t) (#a: t.ty) (e: exp t c a): Tot
   | XApps e1 -> oracle_of_exp_apps e1
   | XFby v e1 -> oracle_of_exp e1
   | XMu e1 -> Some (t.ty_sem a) `type_join` oracle_of_exp e1
-  | XMufby acc seed f g -> Some (t.ty_sem a) `type_join` (oracle_of_exp f `type_join` oracle_of_exp g)
+  | XMufby acc seed f g -> oracle_of_exp f `type_join` oracle_of_exp g
   | XLet b e1 e2 -> oracle_of_exp e1 `type_join` oracle_of_exp e2
   | XCheck name e1 -> oracle_of_exp e1
   // Contracts do not expose their body in abstract mode, so we only need state of rely and guar
@@ -103,8 +103,8 @@ let rec system_of_exp
       let t' = system_of_exp e1 in
       system_mu t'
     | XMufby acc seed f g ->
-      // Oracle-augmented fused loop: f and g are each translated once; the
-      // immediate `res`-knot is resolved by an oracle (see `system_mufby`).
+      // Causal-by-construction fused loop: f and g are each translated once;
+      // the output is computed directly (no res-oracle) -- see `system_mufby`.
       let tf = system_of_exp f in
       let tg = system_of_exp g in
       system_mufby #(row c) #(t.ty_sem acc & row c) #(t.ty_sem a & row c) #(t.ty_sem acc) #(t.ty_sem a)
