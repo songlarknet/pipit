@@ -173,12 +173,15 @@ let rec check_of_sealed
       XB.bigsteps_deterministic_squash rows (XMu e1) vs (XC.lemma_bigsteps_total_vs rows (XMu e1));
     ()
   | XMufby acc seed f g ->
-    // sealed and check both quantify over all f/g environments; recurse.
+    // check and sealed for XMufby both quantify over the loop's actual
+    // accumulator (`accs`) and output (`mres`) histories; recurse under each.
     assert_norm (XC.causal (XMufby acc seed f g) == (XC.causal f && XC.causal g));
-    introduce forall (accvs: list (t.ty_sem acc) { FStar.List.Tot.length accvs == FStar.List.Tot.length rows }).
+    let mres: exp t c a   = XBind.mufby_desugar seed f g in
+    let accs: exp t c acc = XFby seed (XBind.subst1 g mres) in
+    introduce forall (accvs: list (t.ty_sem acc) { XB.bigsteps_same_length rows accs accvs }).
       XK.check PM.check_mode_unknown (CR.extend1 accvs rows) f
     with check_of_sealed (CR.extend1 accvs rows) f;
-    introduce forall (resvs: list (t.ty_sem a) { FStar.List.Tot.length resvs == FStar.List.Tot.length rows }).
+    introduce forall (resvs: list (t.ty_sem a) { XB.bigsteps_same_length rows mres resvs }).
       XK.check PM.check_mode_unknown (CR.extend1 resvs rows) g
     with check_of_sealed (CR.extend1 resvs rows) g;
     ()
@@ -263,16 +266,35 @@ let rec check_base_unknown_of_check_invariant
     ()
 
   | XMufby acc seed f g ->
-    // The core `check` for XMufby is conservatively universal (it requires `f`
-    // and `g` to check under *every* environment of the right arity), whereas
-    // the abstract `check_invariant` is established only on the loop's actual
-    // accumulator/output histories by the deterministic system run.  Bridging
-    // the specific (run-established) unknown invariant to the universal core
-    // unknown check would require discharging f/g's unknown properties under all
-    // environments, which the single deterministic run does not provide.  This
-    // is the sole remaining XMufby abstract admit (see notes); all other cases
-    // (system, oracle, step, assumptions, obligations, sealed) are discharged.
-    admit ()
+    // Now that the core `check` for XMufby is tied to the loop's actual
+    // accumulator (`accs`) and output (`mres`) histories, we mirror the XMu
+    // case on each side: discharge the unknown check at the canonical (total)
+    // history via the invariant, then transfer to any equal-length history by
+    // bigstep determinism.
+    assert_norm (XC.causal (XMufby acc seed f g) == (XC.causal f && XC.causal g));
+    let mres: exp t c a   = XBind.mufby_desugar seed f g in
+    let accs: exp t c acc = XFby seed (XBind.subst1 g mres) in
+    XC.lemma_causal_mufby_desugar seed f g;
+    XC.lemma_causal_subst g 0 mres;
+    // f side, against the accumulator history `accs`
+    let arows' = CR.extend1 (XC.lemma_bigsteps_total_vs rows accs) rows in
+    assert (XK.check PM.check_mode_valid arows' f);
+    assert (check_invariant PM.check_mode_unknown arows' f);
+    check_base_unknown_of_check_invariant arows' f;
+    introduce forall (accvs: list (t.ty_sem acc) { XB.bigsteps_same_length rows accs accvs }).
+      XK.check PM.check_mode_unknown (CR.extend1 accvs rows) f
+    with
+      XB.bigsteps_deterministic_squash rows accs accvs (XC.lemma_bigsteps_total_vs rows accs);
+    // g side, against the output history `mres`
+    let rrows' = CR.extend1 (XC.lemma_bigsteps_total_vs rows mres) rows in
+    assert (XK.check PM.check_mode_valid rrows' g);
+    assert (check_invariant PM.check_mode_unknown rrows' g);
+    check_base_unknown_of_check_invariant rrows' g;
+    introduce forall (resvs: list (t.ty_sem a) { XB.bigsteps_same_length rows mres resvs }).
+      XK.check PM.check_mode_unknown (CR.extend1 resvs rows) g
+    with
+      XB.bigsteps_deterministic_squash rows mres resvs (XC.lemma_bigsteps_total_vs rows mres);
+    ()
 
   | XLet b e1 e2 ->
     check_base_unknown_of_check_invariant rows e1;

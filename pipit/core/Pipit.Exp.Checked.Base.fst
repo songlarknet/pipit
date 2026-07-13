@@ -31,12 +31,16 @@ let rec check (#t: table u#i u#j) (#c: context t) (#a: t.ty)
     forall (vs: list (t.ty_sem a) { bigsteps_same_length rows (XMu e1) vs }).
       check mode (CR.extend1 vs rows) e1
   | XMufby acc seed f g ->
-    // Conservative check for the fused loop: require `f` and `g` to check under
-    // every environment of the appropriate arity (this is sound, since it
-    // includes the loop's actual accumulator/output streams).
-    (forall (accvs: list (t.ty_sem acc) { List.Tot.length accvs == List.Tot.length rows }).
+    // Check for the fused loop `res = f(acc); acc = seed fby g(res)`, tied to
+    // the loop's actual streams (like XMu/XLet, so it collapses under bigstep
+    // determinism): `f` is checked against the accumulator stream
+    // `accs = seed fby g(res)` and `g` against the output stream `res` (the
+    // desugaring `mres`).
+    let mres: exp t c a   = mufby_desugar seed f g in
+    let accs: exp t c acc = XFby seed (subst1 g mres) in
+    (forall (accvs: list (t.ty_sem acc) { bigsteps_same_length rows accs accvs }).
       check mode (CR.extend1 accvs rows) f) /\
-    (forall (resvs: list (t.ty_sem a) { List.Tot.length resvs == List.Tot.length rows }).
+    (forall (resvs: list (t.ty_sem a) { bigsteps_same_length rows mres resvs }).
       check mode (CR.extend1 resvs rows) g)
   | XLet b e1 e2 ->
     // Check e1, then use e1's values to check e2
