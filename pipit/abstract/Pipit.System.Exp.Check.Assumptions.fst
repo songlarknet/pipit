@@ -14,6 +14,7 @@ module SXP = Pipit.System.Exp.Properties
 
 module XB  = Pipit.Exp.Bigstep
 module XC  = Pipit.Exp.Causality
+module XBind = Pipit.Exp.Binding
 
 module PM  = Pipit.Prop.Metadata
 
@@ -67,6 +68,7 @@ let contract_always_rely
 
 
 
+#push-options "--fuel 4 --ifuel 2 --z3rlimit 300"
 let rec check_step_asm
   (#t: table) (#c: context t) (#a: t.ty)
   (rows: list (row c))
@@ -100,8 +102,35 @@ let rec check_step_asm
     ()
 
   | XMufby acc seed f g ->
-    // Assumptions of the admitted abstract XMufby system (future work).
-    admit ()
+    // Fused-loop assumptions decompose into the per-step assumption
+    // `res_oracle == f(acc)` (the fixpoint, discharged by the desugar-output
+    // lemma) plus the assumptions of the f- and g- sub-steps (by recursion).
+    let mres = XBind.mufby_desugar seed f g in
+    assert_norm (XC.causal (XMufby acc seed f g) == (XC.causal f && XC.causal g));
+    XC.lemma_causal_mufby_desugar seed f g;
+    XC.lemma_causal_subst g 0 mres;
+    let accsys : exp t c acc = XFby seed (XBind.subst1 g mres) in
+    lemma_eval_step_XMufby seed f g rows row1 s;
+    let s: SB.option_type_sem (SB.type_join (Some (t.ty_sem acc)) (SB.type_join (SX.state_of_exp f) (SX.state_of_exp g))) = s in
+    let reg_acc : t.ty_sem acc = SB.type_join_fst s in
+    let inner = SB.type_join_snd s in
+    let sf = SB.type_join_fst inner in
+    let sg = SB.type_join_snd inner in
+    let rows_f = CR.extend1 (XC.lemma_bigsteps_total_vs rows accsys) rows in
+    let rows_g = CR.extend1 (XC.lemma_bigsteps_total_vs rows mres) rows in
+    let v_out : t.ty_sem a = XC.lemma_bigstep_total_v (row1 :: rows) (XMufby acc seed f g) in
+    // sub-invariants (from the decomposition helper).
+    assert (SXP.system_of_exp_invariant rows_f f sf);
+    assert (SXP.system_of_exp_invariant rows_g g sg);
+    // check_invariant (XMufby ..) unfolds to f/g checks on their histories; the
+    // helper's bridges align those histories with the recursion arguments.
+    assert (check_invariant PM.check_mode_valid  (CR.cons reg_acc row1 :: rows_f) f);
+    assert (check_invariant PM.check_mode_unknown                       rows_f    f);
+    assert (check_invariant PM.check_mode_valid  (CR.cons v_out   row1 :: rows_g) g);
+    assert (check_invariant PM.check_mode_unknown                       rows_g    g);
+    check_step_asm rows_f (CR.cons reg_acc row1) f sf;
+    check_step_asm rows_g (CR.cons v_out   row1) g sg;
+    ()
 
   | XLet b e1 e2 ->
     let (| vleft :: vlefts, hBS1s |) = XC.lemma_bigsteps_total (row1 :: rows) e1 in
@@ -187,3 +216,4 @@ and check_step_apps_asm
     check_step_asm rows row1 e2 (SB.type_join_fst s);
     check_step_apps_asm rows row1 e1 f' (v2, inp0) (SB.type_join_snd s);
     ()
+#pop-options
