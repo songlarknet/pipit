@@ -26,6 +26,36 @@ module T    = FStar.Tactics
 
 #set-options "--split_queries always"
 
+(* --------------------------------------------------------------------------
+   type_join projection rewrites.
+
+   The fused loop's state type has a NON-literal second component
+   (`type_join (estate_of_exp f) (estate_of_exp g)`), so `type_join_fst`/
+   `type_join_snd` of a `type_join_tup` do NOT reduce by computation (the match
+   on the component option types is stuck).  These two rewrites discharge them
+   by a small case-analysis on the component types and fire automatically
+   (SMTPat), so every projection obligation of the fused-loop (XMufby) system
+   proofs becomes a tiny deterministic query instead of a hand-written `assert`.
+   This mirrors the same de-flaking lever used in the abstract soundness proofs
+   (Pipit.System.Exp.Properties). *)
+let lemma_type_join_fst_tup (#t1 #t2: option Type)
+  (v1: SB.option_type_sem t1) (v2: SB.option_type_sem t2)
+  : Lemma (ensures SB.type_join_fst #t1 #t2 (SB.type_join_tup #t1 #t2 v1 v2) == v1)
+    [SMTPat (SB.type_join_fst #t1 #t2 (SB.type_join_tup #t1 #t2 v1 v2))] =
+  match t1, t2 with
+  | Some _, Some _ -> ()
+  | None, _ -> ()
+  | _, None -> ()
+
+let lemma_type_join_snd_tup (#t1 #t2: option Type)
+  (v1: SB.option_type_sem t1) (v2: SB.option_type_sem t2)
+  : Lemma (ensures SB.type_join_snd #t1 #t2 (SB.type_join_tup #t1 #t2 v1 v2) == v2)
+    [SMTPat (SB.type_join_snd #t1 #t2 (SB.type_join_tup #t1 #t2 v1 v2))] =
+  match t1, t2 with
+  | Some _, Some _ -> ()
+  | None, _ -> ()
+  | _, None -> ()
+
 (*
    The invariant describes the transition system's state after it has been fed with all of `rows` as inputs.
 *)
@@ -60,9 +90,7 @@ let rec system_of_exp_invariant
     let sg = SB.type_join_snd inner in
     let mres = XBind.mufby_desugar seed f g in
     let accsys : exp t c acc = XFby seed (XBind.subst1 g mres) in
-    XC.lemma_causal_mufby_desugar seed f g;
-    assert_norm (XC.causal (XMufby acc seed f g) == (XC.causal f && XC.causal g));
-    XC.lemma_causal_subst g 0 mres;
+    XC.lemma_causal_XMufby seed f g;
     system_of_exp_invariant (CR.extend1 (XC.lemma_bigsteps_total_vs rows accsys) rows) f sf /\
     system_of_exp_invariant (CR.extend1 (XC.lemma_bigsteps_total_vs rows mres) rows) g sg /\
     (match rows with
@@ -123,11 +151,10 @@ let rec step_invariant_init
       ()
 
     | XMufby acc seed f g ->
-      assert_norm (XC.causal (XMufby acc seed f g) == (XC.causal f && XC.causal g));
+      // factored causal facts: causal f/g/mres/(subst1 g mres)/accsys.
+      XC.lemma_causal_XMufby seed f g;
       step_invariant_init f;
       step_invariant_init g;
-      XC.lemma_causal_mufby_desugar seed f g;
-      XC.lemma_causal_subst g 0 (XBind.mufby_desugar seed f g);
       // Reduce the fused-loop initial state to its `type_join_tup` structure so
       // SMT can discharge the register/sub-state projections in the invariant.
       assert ((EX.esystem_of_exp (XMufby acc seed f g)).init ==
@@ -196,7 +223,7 @@ let rec step_invariant_step
     : Lemma (ensures
         (let (s', v') = (EX.esystem_of_exp e).step row1 s in
         v' == v /\ system_of_exp_invariant (row1 :: rows) e s'))
-      (decreases e) =
+      (decreases %[e; 1]) =
     match e with
     | XBase _ -> ()
 
@@ -250,115 +277,12 @@ let rec step_invariant_step
       ()
 
     | XMufby acc seed f g ->
-      // Single-evaluation bisimulation for the fused loop.
-      //
-      // esystem_mufby.step reads reg_acc = type_join_fst s, runs f ONCE on
-      // (reg_acc, row1) to get res, then g ONCE on (res, row1) to get the next
-      // accumulator acc'; it outputs res and stores (acc', (sf', sg')).
-      //
-      // The f-side is now symmetric to the g-side because the invariant tracks
-      // f's history against the *operational* accumulator stream
-      // `accsys = seed fby g(mres)` -- exactly the register value fed to f.
-      let mres = XBind.mufby_desugar seed f g in
-      let accsys : exp t c acc = XFby seed (XBind.subst1 g mres) in
-      // NOTE: this fragile step-bisimulation proof depends on the exact SMT
-      // context; keep the explicit causal facts rather than the factored
-      // `lemma_causal_XMufby` (which perturbs the query and breaks it here).
-      assert_norm (XC.causal (XMufby acc seed f g) == (XC.causal f && XC.causal g));
-      XC.lemma_causal_mufby_desugar seed f g;
-      XC.lemma_causal_subst g 0 mres;
-      let s: SB.option_type_sem (SB.type_join (Some (t.ty_sem acc)) (SB.type_join (EX.estate_of_exp f) (EX.estate_of_exp g))) = s in
-      let reg_acc = SB.type_join_fst s in
-      let inner = SB.type_join_snd s in
-      let sf = SB.type_join_fst inner in
-      let sg = SB.type_join_snd inner in
-      // Expose the current-state invariant's conjuncts (sub-invariants for f/g
-      // and the register fact) while the parameter refinement is fresh.
-      assert (system_of_exp_invariant (CR.extend1 (XC.lemma_bigsteps_total_vs rows accsys) rows) f sf);
-      assert (system_of_exp_invariant (CR.extend1 (XC.lemma_bigsteps_total_vs rows mres) rows) g sg);
-      assert (match rows with
-              | [] -> reg_acc == seed
-              | _ :: _ -> XB.bigstep_prop rows (XBind.subst1 g mres) reg_acc);
-
-      // (A) The fused-loop output is the desugar's output; unfolding one loop
-      //     step exposes `f` applied to the operational accumulator `accsys`.
-      let hBS_mres : XB.bigstep (row1 :: rows) mres v =
-        (match hBS with | XB.BSMufby _ _ _ _ _ h -> h) in
-      let hBS_subst : XB.bigstep (row1 :: rows) (XBind.subst1 f accsys) v =
-        XC.lemma_bigstep_mufby_desugar_output (row1 :: rows) seed f g v hBS_mres in
-
-      // (B) The accumulator value stream; its head equals the register value.
-      let (| avs, hBSaccsys' |) = XC.lemma_bigsteps_total (row1 :: rows) accsys in
-      let XB.BSsS _ _ avs_tl _ av_hd hBSaccsys_tl hBSaccsys_head = hBSaccsys' in
-      // The register fact from the current-state invariant identifies av_hd (the
-      // accumulator value of accsys = seed fby g(mres)) with reg_acc.
-      (match rows with
-       | [] ->
-         // register invariant: reg_acc == seed; accsys value at [row1] is seed.
-         assert (reg_acc == seed);
-         (match hBSaccsys_head with | XB.BSFby1 _ _ _ -> ())
-       | _ :: _ ->
-         // register invariant: bigstep_prop rows (subst1 g mres) reg_acc.
-         assert (XB.bigstep_prop rows (XBind.subst1 g mres) reg_acc);
-         (match hBSaccsys_head with
-          | XB.BSFbyS _ _ _ _ _ hprev ->
-            introduce exists (h: XB.bigstep rows (XBind.subst1 g mres) av_hd). True
-              with hprev and ();
-            XB.bigstep_deterministic_squash rows (XBind.subst1 g mres) av_hd reg_acc));
-      assert (av_hd == reg_acc);
-
-      // (C) f's bigstep on the accsys-extended history, producing v; recurse.
-      let hBS_f0 : XB.bigstep (CR.extend1 avs (row1 :: rows)) f v =
-        XC.lemma_bigstep_substitute_elim 0 (row1 :: rows) accsys avs f v hBSaccsys' hBS_subst in
-      let rows_f = CR.extend1 (XC.lemma_bigsteps_total_vs rows accsys) rows in
-      assert (CR.extend1 avs (row1 :: rows) == CR.cons reg_acc row1 :: rows_f);
-      let hBS_f : XB.bigstep (CR.cons reg_acc row1 :: rows_f) f v = hBS_f0 in
-      step_invariant_step rows_f (CR.cons reg_acc row1) f v hBS_f sf;
-
-      // (D) g's next accumulator on the mres-extended history; recurse.
-      let (| mvs, hBSmres' |) = XC.lemma_bigsteps_total (row1 :: rows) mres in
-      let XB.BSsS _ _ mvs_tl _ mv_hd hBSmres_tl hBSmres_head = hBSmres' in
-      XB.bigstep_deterministic hBS_mres hBSmres_head;
-      assert (mv_hd == v);
-      let rows_g = CR.extend1 (XC.lemma_bigsteps_total_vs rows mres) rows in
-      assert (CR.extend1 mvs (row1 :: rows) == CR.cons v row1 :: rows_g);
-      let (| v_g, hBS_g0 |) = XC.lemma_bigstep_total (CR.extend1 mvs (row1 :: rows)) g in
-      let hBS_g : XB.bigstep (CR.cons v row1 :: rows_g) g v_g = hBS_g0 in
-      step_invariant_step rows_g (CR.cons v row1) g v_g hBS_g sg;
-
-      // register fact for the new accumulator: bigstep_prop (subst1 g mres) v_g.
-      let hBSreg : XB.bigstep (row1 :: rows) (XBind.subst1 g mres) v_g =
-        XC.lemma_bigstep_substitute_intros 0 (row1 :: rows) mres mvs g v_g hBSmres' hBS_g0 in
-
-      // (E) Reconstruct the new state `s' = (acc', (sf', sg'))` from the f/g
-      //     sub-steps (each evaluated once) and prove the invariant on it.
-      let (sf', res) = (EX.esystem_of_exp f).step (CR.cons reg_acc row1) sf in
-      // res == v from the f recursion (input (reg_acc, row1) == CR.cons reg_acc row1).
-      let (sg', acc') = (EX.esystem_of_exp g).step (CR.cons res row1) sg in
-      // acc' == v_g from the g recursion (res == v).
-      assert (acc' == v_g);
-      let s' : SB.option_type_sem (EX.estate_of_exp (XMufby acc seed f g)) =
-        SB.type_join_tup #(Some (t.ty_sem acc)) #(SB.type_join (EX.estate_of_exp f) (EX.estate_of_exp g))
-          acc' (SB.type_join_tup #(EX.estate_of_exp f) #(EX.estate_of_exp g) sf' sg') in
-      // single-level type_join projections of the new state
-      assert (SB.type_join_fst #(Some (t.ty_sem acc)) #(SB.type_join (EX.estate_of_exp f) (EX.estate_of_exp g)) s' == acc');
-      assert (SB.type_join_snd #(Some (t.ty_sem acc)) #(SB.type_join (EX.estate_of_exp f) (EX.estate_of_exp g)) s' == SB.type_join_tup sf' sg');
-      assert (SB.type_join_fst #(EX.estate_of_exp f) #(EX.estate_of_exp g) (SB.type_join_tup sf' sg') == sf');
-      assert (SB.type_join_snd #(EX.estate_of_exp f) #(EX.estate_of_exp g) (SB.type_join_tup sf' sg') == sg');
-      // Bridge the recursion output histories to the new-state invariant's histories.
-      assert (CR.extend1 (XC.lemma_bigsteps_total_vs (row1 :: rows) accsys) (row1 :: rows) == CR.cons reg_acc row1 :: rows_f);
-      assert (CR.extend1 (XC.lemma_bigsteps_total_vs (row1 :: rows) mres) (row1 :: rows) == CR.cons v row1 :: rows_g);
-      // register bigstep for the new accumulator acc' == v_g
-      introduce exists (h: XB.bigstep (row1 :: rows) (XBind.subst1 g mres) acc'). True
-        with hBSreg and ();
-      assert (system_of_exp_invariant (row1 :: rows) (XMufby acc seed f g) s');
-      // The operational step outputs (s', res): fst stp == s', snd stp == v.
-      let stp = (EX.esystem_of_exp e).step row1 s in
-      assert (fst stp == s');
-      assert (snd stp == v);
-      // Transfer the invariant to the step output by congruence (fst stp == s').
-      lemma_system_of_exp_invariant_cong (row1 :: rows) e s' (fst stp);
-      ()
+      // The whole fused-loop single-evaluation bisimulation lives in the
+      // standalone helper `lemma_step_invariant_step_XMufby`, which mirrors the
+      // abstract `Pipit.System.Exp.Properties.invariant_step` XMufby case: each
+      // Z3 query is small and local, and the causal facts come from the factored
+      // `XC.lemma_causal_XMufby`.
+      lemma_step_invariant_step_XMufby seed f g rows row1 v hBS s
 
     | XLet b e1 e2 ->
       let (| vlefts', hBS1s' |) = XC.lemma_bigsteps_total (row1 :: rows) e1 in
@@ -395,7 +319,7 @@ and step_apps_invariant_step
         let (s', v') = (EX.esystem_of_exp_apps e f).step (inp0, row1) s in
         v' == f v inp0 /\
         system_of_exp_apps_invariant (row1 :: rows) e s'))
-      (decreases e) =
+      (decreases %[e; 1]) =
   match e with
   | XPrim _ -> ()
   | XApp e1 e2 ->
@@ -407,6 +331,122 @@ and step_apps_invariant_step
     assert (system_of_exp_apps_invariant rows e1 (SB.type_join_snd s));
     step_invariant_step      rows row1 e2 v2 hBS2 (SB.type_join_fst s);
     step_apps_invariant_step rows row1 e1 v1 hBS1 f' (v2, inp0) (SB.type_join_snd s)
+
+(* Standalone fused-loop (XMufby) single-evaluation bisimulation step.
+   Pulled out of `step_invariant_step` so the delicate accumulator/output
+   reasoning is a small, self-contained mutually-recursive lemma with a local
+   SMT context (each `assert` becomes its own tiny `--split_queries always`
+   query).  Structurally identical to the abstract
+   `Pipit.System.Exp.Properties.invariant_step` XMufby case:
+
+     accsys = seed fby g(mres)   (operational accumulator = register stream, f's input)
+     mres   = mufby_desugar seed f g   (output stream, g's input)
+
+   esystem_mufby.step reads reg_acc = type_join_fst s, runs f ONCE on
+   (reg_acc, row1) to get res, then g ONCE on (res, row1) for the next
+   accumulator acc'; it outputs res and stores (acc', (sf', sg')).  The output
+   equals the desugar output because f applied to the accumulator stream IS the
+   desugar output (single evaluation), so there is no res-oracle / fixpoint knot.
+   Reuses the shared core helpers `XC.lemma_causal_XMufby`,
+   `XC.lemma_bigstep_mufby_accsys_head`, `XC.lemma_extend1_value_stream_cons`,
+   `XC.lemma_bigstep_mufby_desugar_output`, and the module's `type_join`
+   projection SMTPat rewrites. *)
+and lemma_step_invariant_step_XMufby
+    (#t: table) (#c: context t) (#acc #a: t.ty)
+    (seed: t.ty_sem acc)
+    (f: exp t (acc :: c) a { XC.causal f })
+    (g: exp t (a :: c) acc { XC.causal g })
+    (rows: list (row c))
+    (row1: row c)
+    (v: t.ty_sem a)
+    (hBS: XB.bigstep (row1 :: rows) (XMufby acc seed f g) v)
+    (s: SB.option_type_sem (EX.estate_of_exp (XMufby acc seed f g))
+      { system_of_exp_invariant rows (XMufby acc seed f g) s })
+    : Lemma (ensures (
+        let e = XMufby acc seed f g in
+        let (s', v') = (EX.esystem_of_exp e).step row1 s in
+        v' == v /\ system_of_exp_invariant (row1 :: rows) e s'))
+      (decreases %[(XMufby acc seed f g <: exp t c a); 0]) =
+    let e : exp t c a = XMufby acc seed f g in
+    let mres = XBind.mufby_desugar seed f g in
+    let accsys : exp t c acc = XFby seed (XBind.subst1 g mres) in
+    // factored causal facts: causal f/g/mres/(subst1 g mres)/accsys.
+    XC.lemma_causal_XMufby seed f g;
+    let s: SB.option_type_sem (SB.type_join (Some (t.ty_sem acc)) (SB.type_join (EX.estate_of_exp f) (EX.estate_of_exp g))) = s in
+    let reg_acc = SB.type_join_fst s in
+    let inner = SB.type_join_snd s in
+    let sf = SB.type_join_fst inner in
+    let sg = SB.type_join_snd inner in
+    // (0) Expose the current-state invariant conjuncts while the refinement is fresh.
+    assert (system_of_exp_invariant (CR.extend1 (XC.lemma_bigsteps_total_vs rows accsys) rows) f sf);
+    assert (system_of_exp_invariant (CR.extend1 (XC.lemma_bigsteps_total_vs rows mres) rows) g sg);
+    assert (match rows with
+            | [] -> reg_acc == seed
+            | _ :: _ -> XB.bigstep_prop rows (XBind.subst1 g mres) reg_acc);
+
+    // (A) The fused-loop output equals the desugar output; single evaluation
+    //     exposes `f` applied to the operational accumulator `accsys`.
+    let hBS_mres : XB.bigstep (row1 :: rows) mres v =
+      (match hBS with | XB.BSMufby _ _ _ _ _ h -> h) in
+    let hBS_subst : XB.bigstep (row1 :: rows) (XBind.subst1 f accsys) v =
+      XC.lemma_bigstep_mufby_desugar_output (row1 :: rows) seed f g v hBS_mres in
+
+    // (B) The accumulator value stream's head equals the register value.
+    XC.lemma_bigstep_mufby_accsys_head seed f g rows row1 reg_acc;
+
+    // (C) Bridge both extended histories to CR.cons form so the recursion
+    //     histories line up with the current-state invariant's histories.
+    let rows_f = CR.extend1 (XC.lemma_bigsteps_total_vs rows accsys) rows in
+    let rows_g = CR.extend1 (XC.lemma_bigsteps_total_vs rows mres) rows in
+    XC.lemma_extend1_value_stream_cons rows row1 accsys;
+    XC.lemma_extend1_value_stream_cons rows row1 mres;
+    // mres head == v (the loop output).
+    introduce exists (h: XB.bigstep (row1 :: rows) mres v). True with hBS_mres and ();
+    XB.bigstep_deterministic_squash (row1 :: rows) mres v (XC.lemma_bigstep_total_v (row1 :: rows) mres);
+    assert (CR.extend1 (XC.lemma_bigsteps_total_vs (row1 :: rows) accsys) (row1 :: rows) == CR.cons reg_acc row1 :: rows_f);
+    assert (CR.extend1 (XC.lemma_bigsteps_total_vs (row1 :: rows) mres) (row1 :: rows) == CR.cons v row1 :: rows_g);
+
+    // (D) f applied to the accumulator stream produces v; recurse on f.
+    let (| avs, hBSaccsys |) = XC.lemma_bigsteps_total (row1 :: rows) accsys in
+    let hBS_f0 : XB.bigstep (CR.extend1 avs (row1 :: rows)) f v =
+      XC.lemma_bigstep_substitute_elim 0 (row1 :: rows) accsys avs f v hBSaccsys hBS_subst in
+    assert (CR.extend1 avs (row1 :: rows) == CR.cons reg_acc row1 :: rows_f);
+    let hBS_f : XB.bigstep (CR.cons reg_acc row1 :: rows_f) f v = hBS_f0 in
+    step_invariant_step rows_f (CR.cons reg_acc row1) f v hBS_f sf;
+
+    // (E) g's next accumulator on the mres history; recurse on g.
+    let (| mvs, hBSmres' |) = XC.lemma_bigsteps_total (row1 :: rows) mres in
+    let XB.BSsS _ _ mvs_tl _ mv_hd hBSmres_tl hBSmres_head = hBSmres' in
+    XB.bigstep_deterministic hBS_mres hBSmres_head;   // mv_hd == v
+    assert (CR.extend1 mvs (row1 :: rows) == CR.cons v row1 :: rows_g);
+    let (| v_g, hBS_g0 |) = XC.lemma_bigstep_total (CR.extend1 mvs (row1 :: rows)) g in
+    let hBS_g : XB.bigstep (CR.cons v row1 :: rows_g) g v_g = hBS_g0 in
+    step_invariant_step rows_g (CR.cons v row1) g v_g hBS_g sg;
+    // register fact for the new accumulator: bigstep_prop (subst1 g mres) v_g.
+    let hBSreg : XB.bigstep (row1 :: rows) (XBind.subst1 g mres) v_g =
+      XC.lemma_bigstep_substitute_intros 0 (row1 :: rows) mres mvs g v_g hBSmres' hBS_g0 in
+
+    // (F) Reconstruct the new state s' = (acc', (sf', sg')) from the f/g
+    //     sub-steps (each evaluated once).  The type_join projections reduce
+    //     via the module's SMTPat rewrites.
+    let (sf', res) = (EX.esystem_of_exp f).step (CR.cons reg_acc row1) sf in
+    let (sg', acc') = (EX.esystem_of_exp g).step (CR.cons res row1) sg in
+    assert (res == v);        // f recursion, input CR.cons reg_acc row1
+    assert (acc' == v_g);     // g recursion, input CR.cons res row1 == CR.cons v row1
+    let s' : SB.option_type_sem (EX.estate_of_exp (XMufby acc seed f g)) =
+      SB.type_join_tup #(Some (t.ty_sem acc)) #(SB.type_join (EX.estate_of_exp f) (EX.estate_of_exp g))
+        acc' (SB.type_join_tup #(EX.estate_of_exp f) #(EX.estate_of_exp g) sf' sg') in
+    // register bigstep for the new accumulator acc' == v_g
+    introduce exists (h: XB.bigstep (row1 :: rows) (XBind.subst1 g mres) acc'). True
+      with hBSreg and ();
+    assert (system_of_exp_invariant (row1 :: rows) (XMufby acc seed f g) s');
+
+    // (G) Output correspondence + invariant transfer to the opaque step output.
+    let stp = (EX.esystem_of_exp e).step row1 s in
+    assert (fst stp == s');
+    assert (snd stp == v);
+    lemma_system_of_exp_invariant_cong (row1 :: rows) e s' (fst stp);
+    ()
 
 #pop-options
 
