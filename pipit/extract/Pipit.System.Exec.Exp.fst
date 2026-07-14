@@ -20,6 +20,7 @@ let rec estate_of_exp (#t: table) (#c: context t) (#a: t.ty) (e: exp t c a): Tot
   | XApps e1 -> estate_of_exp_apps e1
   | XFby v e1 -> Some (t.ty_sem a) `type_join` estate_of_exp e1
   | XMu e1 -> estate_of_exp e1
+  | XMufby acc seed f g -> Some (t.ty_sem acc) `type_join` (estate_of_exp f `type_join` estate_of_exp g)
   | XLet b e1 e2 -> estate_of_exp e1 `type_join` estate_of_exp e2
   | XCheck name e1 -> None
   | XContract status rely guar impl ->
@@ -59,6 +60,12 @@ let rec esystem_of_exp
     | XMu e1 ->
       let t' = esystem_of_exp e1 in
       esystem_mu_causal #(row c) #(t.ty_sem a & row c) (t.val_default a) (fun i v -> (v, i)) t'
+    | XMufby acc seed f g ->
+      // Single-evaluation fused loop: f and g are each applied once per step.
+      let tf = esystem_of_exp f in
+      let tg = esystem_of_exp g in
+      esystem_mufby #(row c) #(t.ty_sem acc & row c) #(t.ty_sem a & row c) #(t.ty_sem acc) #(t.ty_sem a)
+        seed (fun i v -> (v, i)) (fun i v -> (v, i)) tf tg
     | XLet b e1 e2 ->
       // Tiny optimisation: mark interesting lets as no-inline; variables and values can be inlined
       (match e1 with

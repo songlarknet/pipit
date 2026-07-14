@@ -30,6 +30,18 @@ let rec check (#t: table u#i u#j) (#c: context t) (#a: t.ty)
     // Extend environment to include recursive value of e1; check subexpression
     forall (vs: list (t.ty_sem a) { bigsteps_same_length rows (XMu e1) vs }).
       check mode (CR.extend1 vs rows) e1
+  | XMufby acc seed f g ->
+    // Check for the fused loop `res = f(acc); acc = seed fby g(res)`, tied to
+    // the loop's actual streams (like XMu/XLet, so it collapses under bigstep
+    // determinism): `f` is checked against the accumulator stream
+    // `accs = seed fby g(res)` and `g` against the output stream `res` (the
+    // desugaring `mres`).
+    let mres: exp t c a   = mufby_desugar seed f g in
+    let accs: exp t c acc = XFby seed (subst1 g mres) in
+    (forall (accvs: list (t.ty_sem acc) { bigsteps_same_length rows accs accvs }).
+      check mode (CR.extend1 accvs rows) f) /\
+    (forall (resvs: list (t.ty_sem a) { bigsteps_same_length rows mres resvs }).
+      check mode (CR.extend1 resvs rows) g)
   | XLet b e1 e2 ->
     // Check e1, then use e1's values to check e2
     check mode rows e1 /\
@@ -112,6 +124,7 @@ let rec sealed (#t: table u#i u#j) (#c: context t) (#a: t.ty)
     sealed_apps allow_unknowns ea
   | XFby v e1 -> sealed allow_unknowns e1
   | XMu e1 -> sealed allow_unknowns e1
+  | XMufby acc seed f g -> sealed allow_unknowns f /\ sealed allow_unknowns g
   | XLet b e1 e2 -> sealed allow_unknowns e1 /\ sealed allow_unknowns e2
   | XCheck ps e1 -> (ps == PM.PSUnknown ==> allow_unknowns) /\ sealed allow_unknowns e1
   | XContract ps rely guar body ->
@@ -133,6 +146,7 @@ let rec bless (#t: table) (#c: context t) (#a: t.ty) (e: exp t c a): Tot (exp t 
   | XApps e1 -> XApps (bless_apps e1)
   | XFby v e1 -> XFby v (bless e1)
   | XMu e1 -> XMu (bless e1)
+  | XMufby acc seed f g -> XMufby acc seed (bless f) (bless g)
   | XLet b e1 e2 -> XLet b (bless e1) (bless e2)
   | XCheck s e1 -> XCheck PM.PSValid (bless e1)
   | XContract s r g i ->

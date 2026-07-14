@@ -61,6 +61,9 @@ let rec expr_eq (#t: table) (#ctx: context t) (#ty: t.ty) (e1 e2: exp t ctx ty)
     (match e2 with
     | XMu j -> expr_eq i j
     | _ -> false)
+  | XMufby _ _ _ _ ->
+    // Conservatively never CSE-merge fused loops (sound: false ==> e1 == e2).
+    false
   | XLet it i i' ->
     (match e2 with
     | XLet jt j j' -> ty_eq it jt && expr_eq i j && expr_eq i' j'
@@ -106,6 +109,8 @@ let rec exp_free_contains (#t: table) (#ctx: context t) (#ty: t.ty) (e: exp t ct
     exp_free_contains i' keep
   | XMu i ->
     exp_free_contains i keep
+  | XMufby acc seed f g ->
+    exp_free_contains f keep || exp_free_contains g keep
   | XLet it i i' ->
     exp_free_contains i keep || exp_free_contains i' keep
   | XContract is ir ig ii ->

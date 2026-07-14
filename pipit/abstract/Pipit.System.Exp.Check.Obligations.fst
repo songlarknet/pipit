@@ -13,6 +13,7 @@ module SXP = Pipit.System.Exp.Properties
 
 module XB = Pipit.Exp.Bigstep
 module XC = Pipit.Exp.Causality
+module XBind = Pipit.Exp.Binding
 
 module PM = Pipit.Prop.Metadata
 
@@ -59,6 +60,7 @@ let step_XLet_obl' (#t: table) (#c: context t) (#a b: t.ty)
     assert (stp.chck == stp1.chck `SB.checks_join` stp2.chck);
     ()
 
+#push-options "--fuel 4 --ifuel 2 --z3rlimit 300"
 let rec check_step_obl
   (#t: table) (#c: context t) (#a: t.ty)
   (rows: list (row c))
@@ -91,6 +93,33 @@ let rec check_step_obl
     check_step_obl rows' row1' e1 s;
     let hBS1 = XC.lemma_bigstep_substitute_elim_XMu (row1 :: rows) e1 (v :: vs) hBSs in
     XB.bigstep_deterministic_squash (row1' :: rows') e1 v (XC.lemma_bigstep_total_v (row1' :: rows') e1);
+    ()
+
+  | XMufby acc seed f g ->
+    // The fused-loop obligation follows structurally: the composite step's
+    // obligations are exactly the f- and g- sub-step obligations, and
+    // check_invariant (XMufby ..) at (row1 :: rows) is the f/g unknown checks on
+    // their operational histories.
+    let mres = XBind.mufby_desugar seed f g in
+    XC.lemma_causal_XMufby seed f g;
+    let accsys : exp t c acc = XFby seed (XBind.subst1 g mres) in
+    lemma_eval_step_XMufby seed f g rows row1 s;
+    let s: SB.option_type_sem (SB.type_join (Some (t.ty_sem acc)) (SB.type_join (SX.state_of_exp f) (SX.state_of_exp g))) = s in
+    let reg_acc : t.ty_sem acc = SB.type_join_fst s in
+    let inner = SB.type_join_snd s in
+    let sf = SB.type_join_fst inner in
+    let sg = SB.type_join_snd inner in
+    let rows_f = CR.extend1 (XC.lemma_bigsteps_total_vs rows accsys) rows in
+    let rows_g = CR.extend1 (XC.lemma_bigsteps_total_vs rows mres) rows in
+    let v_out : t.ty_sem a = XC.lemma_bigstep_total_v (row1 :: rows) (XMufby acc seed f g) in
+    assert (SXP.system_of_exp_invariant rows_f f sf);
+    assert (SXP.system_of_exp_invariant rows_g g sg);
+    assert (check_invariant PM.check_mode_valid  (CR.cons reg_acc row1 :: rows_f) f);
+    assert (check_invariant PM.check_mode_unknown                       rows_f    f);
+    assert (check_invariant PM.check_mode_valid  (CR.cons v_out   row1 :: rows_g) g);
+    assert (check_invariant PM.check_mode_unknown                       rows_g    g);
+    check_step_obl rows_f (CR.cons reg_acc row1) f sf;
+    check_step_obl rows_g (CR.cons v_out   row1) g sg;
     ()
 
   | XLet b e1 e2 ->
@@ -161,3 +190,4 @@ and check_step_apps_obl
     // ()
   (* TODO:ADMIT:update to latest F* 20251116 *)
     admit ()
+#pop-options

@@ -39,6 +39,7 @@ let rec simplify (#t: table) (#c: context t) (#a: t.ty) (e: exp t c a): Tot (exp
   | XApps app -> XApps (simplify_apps app)
   | XFby v e1 -> XFby v (simplify e1)
   | XMu e1 -> XMu (simplify e1)
+  | XMufby acc seed f g -> XMufby acc seed (simplify f) (simplify g)
   | XLet b e1 e2 ->
     let e1' = simplify e1 in
     let e2' = simplify e2 in

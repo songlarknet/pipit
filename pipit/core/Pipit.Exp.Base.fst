@@ -43,6 +43,14 @@ type exp (t: table u#i u#j) (c: context t): t.ty -> Type u#(max i j) =
   // µx. e[x]
   //  this has to be a pure value type for the same reason as fby: recursive occurrences must be guarded by a fby, so any values will almost certainly need to be stored in a buffer
   | XMu    : #valty: t.ty -> exp t (valty :: c) valty -> exp t c valty
+  // Fused delayed loop (Mealy machine with a shared intermediate). `XMufby seed f g`:
+  //   acc = seed fby g(f(acc));   output = res = f(acc)
+  // `acc` is the registered (delayed) accumulator; `res` is the shared result,
+  // computed once per step and used both as the output and as the input to the
+  // next-accumulator function `g`. It desugars to XMu/XFby/XLet (recursion at type
+  // acc, see Pipit.Exp.Binding.mufby_desugar) but extracts to a single-evaluation
+  // register loop, so the shared `f` runs once per step rather than twice.
+  | XMufby : #res: t.ty -> acc: t.ty -> seed: t.ty_sem acc -> exp t (acc :: c) res -> exp t (res :: c) acc -> exp t c res
   // let x = e in e[x]
   // XXX: I have relaxed this from (valty: t.ty) to arbitrary type 'a: this makes it easier to infer `XLet e1 e2`
   | XLet   : #valty: t.ty -> b: t.ty -> exp t c b -> exp t (b :: c) valty -> exp t c valty
@@ -126,6 +134,7 @@ let rec weaken (#c c': context 't) (#a: ('t).ty) (e: exp 't c a): Tot (exp 't (C
   | XApps e1 -> XApps (weaken_apps c' e1)
   | XFby v e -> XFby v (weaken c' e)
   | XMu e1 -> XMu (weaken c' e1)
+  | XMufby acc seed f g -> XMufby acc seed (weaken c' f) (weaken c' g)
   | XLet b e1 e2 -> XLet b (weaken c' e1) (weaken c' e2)
   | XCheck ps e1 -> XCheck ps (weaken c' e1)
   | XContract ps r g i -> XContract ps (weaken c' r) (weaken c' g) (weaken c' i)

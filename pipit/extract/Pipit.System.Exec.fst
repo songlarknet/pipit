@@ -103,6 +103,33 @@ let esystem_let (#input #input' #v1 #v2: Type)
       (type_join_tup s1' s2', r2));
   }
 
+(* Single-evaluation executable translation of the fused mufby loop
+     res = f(acc);   acc = seed fby g(res)
+   The register holds the (delayed) accumulator `acc`; each step reads it,
+   evaluates `f` ONCE to produce the output/result `res`, then evaluates `g`
+   ONCE to produce the next accumulator. Contrast with esystem_mu_causal, which
+   evaluates its body twice per step to resolve the immediate knot. *)
+noextract inline_for_extraction
+let esystem_mufby (#input #input_f #input_g #v_acc #v_res: Type)
+  (#state_f #state_g: option Type)
+  (seed: v_acc)
+  (extf: input -> v_acc -> input_f)
+  (extg: input -> v_res -> input_g)
+  (tf: esystem input_f state_f v_res)
+  (tg: esystem input_g state_g v_acc):
+       esystem input (Some v_acc `type_join` (state_f `type_join` state_g)) v_res =
+  { init = type_join_tup seed (type_join_tup tf.init tg.init);
+    step = (fun i s ->
+      let reg_acc = type_join_fst s in
+      let inner = type_join_snd s in
+      let (sf', res) = tf.step (extf i reg_acc) (type_join_fst inner) in
+      // res is used twice (as the output and as g's input), so don't inline it
+      [@@no_inline_let]
+      let res = res in
+      let (sg', acc') = tg.step (extg i res) (type_join_snd inner) in
+      (type_join_tup acc' (type_join_tup sf' sg'), res));
+  }
+
 noextract inline_for_extraction
 let esystem_let_no_inline (#input #input' #v1 #v2: Type)
   (#state1 #state2: option Type)

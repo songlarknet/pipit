@@ -38,6 +38,9 @@ let rec lemma_lift_lift_commute (#a: ('t).ty) (#c: context 't) (e: exp 't c a) (
     lemma_lift_lift_commute e1 i1 i2 t1 t2
   | XMu e1 ->
     lemma_lift_lift_commute_bind e1
+  | XMufby _ _ f g ->
+    lemma_lift_lift_commute_bind f;
+    lemma_lift_lift_commute_bind g
   | XLet _ e1 e2 ->
     lemma_lift_lift_commute e1 i1 i2 t1 t2;
     lemma_lift_lift_commute_bind e2
@@ -77,6 +80,9 @@ let rec lemma_subst_lift_id (#a: ('t).ty) (#c: context 't) (e: exp 't c a) (i: C
     lemma_subst_lift_id e1 i t p
   | XMu e1 ->
     lemma_subst_lift_id_bind e1
+  | XMufby _ _ f g ->
+    lemma_subst_lift_id_bind f;
+    lemma_subst_lift_id_bind g
   | XLet b e1 e2 ->
     lemma_subst_lift_id e1 i t p;
     lemma_subst_lift_id_bind e2
@@ -152,6 +158,11 @@ let rec lemma_lift_subst_distribute_le (#a: ('t).ty) (#c: context 't) (e: exp 't
   | XMu e1 ->
     lemma_lift_lift_commute p i2 0 t2 a;
     bind e1
+  | XMufby acc seed f g ->
+    lemma_lift_lift_commute p i2 0 t2 acc;
+    bind f;
+    lemma_lift_lift_commute p i2 0 t2 a;
+    bind g
   | XLet b e1 e2 ->
     lemma_lift_lift_commute p i2 0 t2 b;
     lemma_lift_subst_distribute_le e1 i1 i2 t2 p;
@@ -335,6 +346,26 @@ let lemma_subst_subst_distribute_le_XContract
     subst1' (subst1' (XContract status er eg ei) (i2 + 1) (lift1' p2 i1 (C.get_index c i1))) i1 (subst1' p1 i2 p2)
   ) by (tac_unfold_env ())
 
+private
+let lemma_subst_subst_distribute_le_XMufby
+  (#c: context 't)
+  (#tres #tacc: ('t).ty)
+  (seed: ('t).ty_sem tacc)
+  (f: exp 't (tacc :: c) tres) (g: exp 't (tres :: c) tacc)
+  (i1: C.index_lookup c) (i2: C.index { i1 <= i2 /\ i2 < List.Tot.length c - 1 }) (p1: exp 't (C.drop1 c i1) (C.get_index c i1)) (p2: exp 't (C.drop1 (C.drop1 c i1) i2) (C.get_index (C.drop1 c i1) i2)):
+  Lemma
+    (requires (
+      lemma_subst_subst_distribute_le_def f (i1 + 1) (i2 + 1) (_lift_of_drop i1 p1 tacc) (_lift_of_drop2 i1 i2 p2 tacc) /\
+      lemma_subst_subst_distribute_le_def g (i1 + 1) (i2 + 1) (_lift_of_drop i1 p1 tres) (_lift_of_drop2 i1 i2 p2 tres)))
+    (ensures (lemma_subst_subst_distribute_le_def (XMufby tacc seed f g) i1 i2 p1 p2)) =
+  lemma_subst_subst_distribute_le_bind f i1 i2 p1 p2;
+  lemma_subst_subst_distribute_le_bind g i1 i2 p1 p2;
+  CP.lemma_lift_drop_commute_le (C.drop1 c i1) i2 i1 (C.get_index c i1);
+  assert (
+    subst1' (subst1' (XMufby tacc seed f g) i1 p1) i2 p2 ==
+    subst1' (subst1' (XMufby tacc seed f g) (i2 + 1) (lift1' p2 i1 (C.get_index c i1))) i1 (subst1' p1 i2 p2)
+  ) by (tac_unfold_env ())
+
 #pop-options
 
 // (Error 19) Subtyping check failed; expected type exp ’t
@@ -368,6 +399,11 @@ let rec lemma_subst_subst_distribute_le (#a: ('t).ty) (#c: context 't) (e: exp '
   | XMu e1 ->
     bind e1;
     lemma_subst_subst_distribute_le_XMu e1 i1 i2 p1 p2
+
+  | XMufby acc seed f g ->
+    bind f;
+    bind g;
+    lemma_subst_subst_distribute_le_XMufby seed f g i1 i2 p1 p2
 
   | XLet b e1 e2 ->
     lemma_subst_subst_distribute_le e1 i1 i2 p1 p2;
@@ -403,3 +439,65 @@ let lemma_subst_subst_distribute_XMu (#c: context 't) (#te: ('t).ty) (e: exp 't 
     subst1 (subst1' e (i + 1) (lift1 p te)) (XMu (subst1' e (i + 1) (lift1 p te))))
     =
   lemma_subst_subst_distribute_le e 0 i (XMu e) p
+
+(* Substitution commutes with the mufby desugaring `mu res. let acc = seed fby g(res) in f(acc)`.
+   The only non-structural step is the interaction of the substitution with the
+   `lift1' f 1 res` weakening in `f`'s position, discharged by lift/subst
+   distribution and lift/lift commute. *)
+#push-options "--fuel 4 --ifuel 1 --z3rlimit 60"
+let lemma_subst_mufby_desugar_commute
+  (#t: table) (#c: context t) (#acc #res: t.ty)
+  (seed: t.ty_sem acc) (f: exp t (acc :: c) res) (g: exp t (res :: c) acc)
+  (i: C.index_lookup c) (e: exp t (C.drop1 c i) (C.get_index c i)):
+  Lemma (ensures
+    subst1' (mufby_desugar seed f g) i e ==
+    mufby_desugar seed (subst1' f (i + 1) (lift1 e acc)) (subst1' g (i + 1) (lift1 e res))) =
+  lemma_lift_subst_distribute_le f (i + 1) 1 res (lift1 e acc);
+  lemma_lift_lift_commute e 0 0 res acc
+#pop-options
+
+(* A structural size measure on expressions. `XMufby` is deliberately weighted
+   heavier than its desugaring `mu res. let acc = seed fby g(res) in f(acc)`
+   (which has size `3 + exp_size f + exp_size g` once lift is accounted for), so
+   that a termination metric based on `exp_size` lets a recursion on `XMufby`
+   step to its desugar. Lifting preserves the size (it only shifts indices). *)
+let rec exp_size (#t: table) (#c: context t) (#a: t.ty) (e: exp t c a): Tot nat (decreases e) =
+  match e with
+  | XBase _ -> 1
+  | XApps ea -> 1 + exp_apps_size ea
+  | XFby _ e1 -> 1 + exp_size e1
+  | XMu e1 -> 1 + exp_size e1
+  | XMufby _ _ f g -> 4 + exp_size f + exp_size g
+  | XLet _ e1 e2 -> 1 + exp_size e1 + exp_size e2
+  | XCheck _ e1 -> 1 + exp_size e1
+  | XContract _ r g i -> 1 + exp_size r + exp_size g + exp_size i
+and exp_apps_size (#t: table) (#c: context t) (#a: funty t.ty) (e: exp_apps t c a): Tot nat (decreases e) =
+  match e with
+  | XPrim _ -> 1
+  | XApp f e -> 1 + exp_apps_size f + exp_size e
+
+let rec lemma_exp_size_lift (#t: table) (#c: context t) (#a: t.ty) (e: exp t c a) (n: C.index_insert c) (ty: t.ty):
+  Lemma (ensures exp_size (lift1' e n ty) == exp_size e) (decreases e) =
+  match e with
+  | XBase _ -> ()
+  | XApps ea -> lemma_exp_size_lift_apps ea n ty
+  | XFby _ e1 -> lemma_exp_size_lift e1 n ty
+  | XMu e1 -> lemma_exp_size_lift e1 (n + 1) ty
+  | XMufby _ _ f g ->
+    lemma_exp_size_lift f (n + 1) ty;
+    lemma_exp_size_lift g (n + 1) ty
+  | XLet _ e1 e2 ->
+    lemma_exp_size_lift e1 n ty;
+    lemma_exp_size_lift e2 (n + 1) ty
+  | XCheck _ e1 -> lemma_exp_size_lift e1 n ty
+  | XContract _ r g i ->
+    lemma_exp_size_lift r n ty;
+    lemma_exp_size_lift g (n + 1) ty;
+    lemma_exp_size_lift i n ty
+and lemma_exp_size_lift_apps (#t: table) (#c: context t) (#a: funty t.ty) (e: exp_apps t c a) (n: C.index_insert c) (ty: t.ty):
+  Lemma (ensures exp_apps_size (lift1_apps' e n ty) == exp_apps_size e) (decreases e) =
+  match e with
+  | XPrim _ -> ()
+  | XApp f e ->
+    lemma_exp_size_lift_apps f n ty;
+    lemma_exp_size_lift e n ty

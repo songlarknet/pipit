@@ -36,6 +36,9 @@ let rec direct_dependency (#t: table) (#c: context t) (#a: t.ty) (e: exp t c a) 
   | XApps e1 -> direct_dependency_apps e1 i
   | XFby _ _ -> false
   | XMu e1 -> direct_dependency e1 (i + 1)
+  (* The output of a fused loop is `res = f(acc)`; `g` only feeds the delayed
+     accumulator, so only `f`'s dependency (shifted past the acc binder) matters. *)
+  | XMufby acc seed f g -> direct_dependency f (i + 1)
   (* This is more restrictive than necessary. The following should work:
      > rec x. let y = x + 1 in 0 fby y
      Maybe the definition should allow `e1` to directly refer to `i` if `e2` does
@@ -76,6 +79,10 @@ let rec causal (#t: table) (#c: context t) (#a: t.ty) (e: exp t c a): Tot bool (
   | XApps e1 -> causal_apps e1
   | XFby _ e1 -> causal e1
   | XMu e1 -> causal e1 && not (direct_dependency e1 0)
+  (* The seed-fby built into the loop already guards the accumulator recursion,
+     so no direct-dependency check is needed here; `f` and `g` just need to be
+     causal themselves (f may reference its index-0 accumulator freely). *)
+  | XMufby acc seed f g -> causal f && causal g
   | XLet b e1 e2 -> causal e1 && causal e2
   | XCheck _ e1 -> causal e1
   | XContract _ rely guar impl ->
@@ -94,6 +101,7 @@ let rec lemma_direct_dependency_lift_ge (#tbl: table) (#c: context tbl) (#a: tbl
   | XApps e1 -> lemma_direct_dependency_lift_ge_apps e1 i i' t
   | XFby _ e1 -> lemma_direct_dependency_lift_ge e1 i i' t
   | XMu e1 -> lemma_direct_dependency_lift_ge e1 (i + 1) (i' + 1) t
+  | XMufby acc seed f g -> lemma_direct_dependency_lift_ge f (i + 1) (i' + 1) t
   | XLet b e1 e2 ->
     lemma_direct_dependency_lift_ge e1 i i' t;
     lemma_direct_dependency_lift_ge e2 (i + 1) (i' + 1) t
@@ -111,6 +119,260 @@ and
   | XApp ea e ->
     lemma_direct_dependency_lift_ge_apps ea i i' t;
     lemma_direct_dependency_lift_ge e i i' t
+
+(* The mufby desugaring's output path is `lift1' f 1 res`, so its direct
+   dependencies coincide with those of the constructor (`direct_dependency f (i+1)`). *)
+#push-options "--fuel 2 --ifuel 1 --z3rlimit 30"
+let lemma_direct_dependency_mufby
+  (#t: table) (#c: context t) (#acc #res: t.ty)
+  (seed: t.ty_sem acc) (f: exp t (acc :: c) res) (g: exp t (res :: c) acc) (i: C.index_lookup c):
+  Lemma (ensures direct_dependency (mufby_desugar seed f g) i == direct_dependency f (i + 1)) =
+  lemma_direct_dependency_lift_ge f (i + 1) 1 res;
+  assert_norm (direct_dependency (mufby_desugar seed f g) i == direct_dependency (lift1' f 1 res) (i + 2))
+#pop-options
+
+// let rec lemma_direct_dependency_lift_lt (e: exp 'c 'a) (i: C.index { C.has_index 'c i }) (i': C.index { i < i' /\ i' <= List.Tot.length 'c }) (t: Type):
+//     Lemma (ensures direct_dependency e i == direct_dependency (lift1' e i' t) i) (decreases e) =
+
+(* Lifting at a position strictly above `i` does not change the direct
+   dependency on `i`. *)
+let rec lemma_direct_dependency_lift_lt (#tbl: table) (#c: context tbl) (#a: tbl.ty) (e: exp tbl c a) (i: C.index) (i': C.index_insert c { i < i' }) (t: tbl.ty):
+  Lemma (ensures direct_dependency e i == direct_dependency (lift1' e i' t) i) (decreases e) =
+  match e with
+  | XBase _ -> ()
+  | XApps e1 -> lemma_direct_dependency_lift_lt_apps e1 i i' t
+  | XFby _ e1 -> ()
+  | XMu e1 -> lemma_direct_dependency_lift_lt e1 (i + 1) (i' + 1) t
+  | XMufby _ _ f g -> lemma_direct_dependency_lift_lt f (i + 1) (i' + 1) t
+  | XLet _ e1 e2 ->
+    lemma_direct_dependency_lift_lt e1 i i' t;
+    lemma_direct_dependency_lift_lt e2 (i + 1) (i' + 1) t
+  | XCheck _ e1 -> lemma_direct_dependency_lift_lt e1 i i' t
+  | XContract _ r g i0 ->
+    lemma_direct_dependency_lift_lt r i i' t;
+    lemma_direct_dependency_lift_lt g (i + 1) (i' + 1) t;
+    lemma_direct_dependency_lift_lt i0 i i' t
+and lemma_direct_dependency_lift_lt_apps (#tbl: table) (#c: context tbl) (#a: funty tbl.ty) (e: exp_apps tbl c a) (i: C.index) (i': C.index_insert c { i < i' }) (t: tbl.ty):
+  Lemma (ensures direct_dependency_apps e i == direct_dependency_apps (lift1_apps' e i' t) i) (decreases e) =
+  match e with
+  | XPrim _ -> ()
+  | XApp f e ->
+    lemma_direct_dependency_lift_lt_apps f i i' t;
+    lemma_direct_dependency_lift_lt e i i' t
+
+(* The freshly-inserted slot has no direct dependency. *)
+let rec lemma_direct_dependency_lift_at (#tbl: table) (#c: context tbl) (#a: tbl.ty) (e: exp tbl c a) (i': C.index_insert c) (t: tbl.ty):
+  Lemma (ensures direct_dependency (lift1' e i' t) i' == false) (decreases e) =
+  match e with
+  | XBase _ -> ()
+  | XApps e1 -> lemma_direct_dependency_lift_at_apps e1 i' t
+  | XFby _ e1 -> ()
+  | XMu e1 -> lemma_direct_dependency_lift_at e1 (i' + 1) t
+  | XMufby _ _ f g -> lemma_direct_dependency_lift_at f (i' + 1) t
+  | XLet _ e1 e2 ->
+    lemma_direct_dependency_lift_at e1 i' t;
+    lemma_direct_dependency_lift_at e2 (i' + 1) t
+  | XCheck _ e1 -> lemma_direct_dependency_lift_at e1 i' t
+  | XContract _ r g i0 ->
+    lemma_direct_dependency_lift_at r i' t;
+    lemma_direct_dependency_lift_at g (i' + 1) t;
+    lemma_direct_dependency_lift_at i0 i' t
+and lemma_direct_dependency_lift_at_apps (#tbl: table) (#c: context tbl) (#a: funty tbl.ty) (e: exp_apps tbl c a) (i': C.index_insert c) (t: tbl.ty):
+  Lemma (ensures direct_dependency_apps (lift1_apps' e i' t) i' == false) (decreases e) =
+  match e with
+  | XPrim _ -> ()
+  | XApp f e ->
+    lemma_direct_dependency_lift_at_apps f i' t;
+    lemma_direct_dependency_lift_at e i' t
+
+(* Lifting preserves causality (it only shifts variable indices). *)
+let rec lemma_causal_lift (#tbl: table) (#c: context tbl) (#a: tbl.ty) (e: exp tbl c a) (n: C.index_insert c) (t: tbl.ty):
+  Lemma (ensures causal (lift1' e n t) == causal e) (decreases e) =
+  match e with
+  | XBase _ -> ()
+  | XApps e1 -> lemma_causal_lift_apps e1 n t
+  | XFby _ e1 -> lemma_causal_lift e1 n t
+  | XMu e1 ->
+    lemma_causal_lift e1 (n + 1) t;
+    lemma_direct_dependency_lift_lt e1 0 (n + 1) t
+  | XMufby _ _ f g ->
+    lemma_causal_lift f (n + 1) t;
+    lemma_causal_lift g (n + 1) t
+  | XLet _ e1 e2 ->
+    lemma_causal_lift e1 n t;
+    lemma_causal_lift e2 (n + 1) t
+  | XCheck _ e1 -> lemma_causal_lift e1 n t
+  | XContract _ r g i0 ->
+    lemma_causal_lift r n t;
+    lemma_causal_lift g (n + 1) t;
+    lemma_causal_lift i0 n t
+and lemma_causal_lift_apps (#tbl: table) (#c: context tbl) (#a: funty tbl.ty) (e: exp_apps tbl c a) (n: C.index_insert c) (t: tbl.ty):
+  Lemma (ensures causal_apps (lift1_apps' e n t) == causal_apps e) (decreases e) =
+  match e with
+  | XPrim _ -> ()
+  | XApp f e ->
+    lemma_causal_lift_apps f n t;
+    lemma_causal_lift e n t
+
+(* The mufby desugaring is causal whenever `f` and `g` are. *)
+#push-options "--fuel 4 --ifuel 2 --z3rlimit 40"
+let lemma_causal_mufby_desugar (#t: table) (#c: context t) (#acc #res: t.ty)
+  (seed: t.ty_sem acc) (f: exp t (acc :: c) res { causal f }) (g: exp t (res :: c) acc { causal g }):
+  Lemma (ensures causal (mufby_desugar seed f g)) =
+  lemma_causal_lift f 1 res;
+  lemma_direct_dependency_lift_at f 1 res
+#pop-options
+
+(* Substituting at index `j` does not affect the direct dependency on a strictly
+   lower index `k`, provided the payload `p` itself has no direct dependency on
+   `k` (so it introduces none where the index-`j` occurrences were). *)
+#push-options "--fuel 2 --ifuel 2 --z3rlimit 40"
+let rec lemma_direct_dependency_subst_lt
+  (#tbl: table) (#c: context tbl) (#a: tbl.ty)
+  (e: exp tbl c a)
+  (j: C.index_lookup c)
+  (k: C.index { k < j })
+  (p: exp tbl (C.drop1 c j) (C.get_index c j)):
+    Lemma (requires ~ (direct_dependency p k))
+      (ensures direct_dependency (subst1' e j p) k == direct_dependency e k) (decreases e) =
+  match e with
+  | XBase _ -> ()
+  | XApps ea -> lemma_direct_dependency_subst_lt_apps ea j k p
+  | XFby _ e1 -> ()
+  | XMu e1 ->
+    lemma_direct_dependency_lift_ge p k 0 a;
+    lemma_direct_dependency_subst_lt e1 (j + 1) (k + 1) (lift1 p a)
+  | XMufby acc seed f g ->
+    lemma_direct_dependency_lift_ge p k 0 acc;
+    lemma_direct_dependency_subst_lt f (j + 1) (k + 1) (lift1 p acc)
+  | XLet b e1 e2 ->
+    lemma_direct_dependency_subst_lt e1 j k p;
+    lemma_direct_dependency_lift_ge p k 0 b;
+    lemma_direct_dependency_subst_lt e2 (j + 1) (k + 1) (lift1 p b)
+  | XCheck _ e1 ->
+    lemma_direct_dependency_subst_lt e1 j k p
+  | XContract _ rely guar impl ->
+    lemma_direct_dependency_subst_lt rely j k p;
+    lemma_direct_dependency_lift_ge p k 0 a;
+    lemma_direct_dependency_subst_lt guar (j + 1) (k + 1) (lift1 p a);
+    lemma_direct_dependency_subst_lt impl j k p
+and lemma_direct_dependency_subst_lt_apps
+  (#tbl: table) (#c: context tbl) (#a: funty tbl.ty)
+  (e: exp_apps tbl c a)
+  (j: C.index_lookup c)
+  (k: C.index { k < j })
+  (p: exp tbl (C.drop1 c j) (C.get_index c j)):
+    Lemma (requires ~ (direct_dependency p k))
+      (ensures direct_dependency_apps (subst1_apps' e j p) k == direct_dependency_apps e k) (decreases e) =
+  match e with
+  | XPrim _ -> ()
+  | XApp e1 e2 ->
+    lemma_direct_dependency_subst_lt_apps e1 j k p;
+    lemma_direct_dependency_subst_lt e2 j k p
+#pop-options
+
+(* Substitution preserves causality when the payload is causal. *)
+#push-options "--fuel 2 --ifuel 2 --z3rlimit 40"
+let rec lemma_causal_subst
+  (#tbl: table) (#c: context tbl) (#a: tbl.ty)
+  (e: exp tbl c a)
+  (i: C.index_lookup c)
+  (p: exp tbl (C.drop1 c i) (C.get_index c i)):
+    Lemma (requires causal e /\ causal p)
+      (ensures causal (subst1' e i p)) (decreases e) =
+  match e with
+  | XBase _ -> ()
+  | XApps ea -> lemma_causal_subst_apps ea i p
+  | XFby _ e1 -> lemma_causal_subst e1 i p
+  | XMu e1 ->
+    lemma_causal_lift p 0 a;
+    lemma_direct_dependency_lift_at p 0 a;
+    lemma_causal_subst e1 (i + 1) (lift1 p a);
+    lemma_direct_dependency_subst_lt e1 (i + 1) 0 (lift1 p a)
+  | XMufby acc seed f g ->
+    lemma_causal_lift p 0 acc;
+    lemma_causal_lift p 0 a;
+    lemma_causal_subst f (i + 1) (lift1 p acc);
+    lemma_causal_subst g (i + 1) (lift1 p a)
+  | XLet b e1 e2 ->
+    lemma_causal_lift p 0 b;
+    lemma_causal_subst e1 i p;
+    lemma_causal_subst e2 (i + 1) (lift1 p b)
+  | XCheck _ e1 ->
+    lemma_causal_subst e1 i p
+  | XContract _ rely guar impl ->
+    lemma_causal_lift p 0 a;
+    lemma_causal_subst rely i p;
+    lemma_causal_subst guar (i + 1) (lift1 p a);
+    lemma_causal_subst impl i p
+and lemma_causal_subst_apps
+  (#tbl: table) (#c: context tbl) (#a: funty tbl.ty)
+  (e: exp_apps tbl c a)
+  (i: C.index_lookup c)
+  (p: exp tbl (C.drop1 c i) (C.get_index c i)):
+    Lemma (requires causal_apps e /\ causal p)
+      (ensures causal_apps (subst1_apps' e i p)) (decreases e) =
+  match e with
+  | XPrim _ -> ()
+  | XApp e1 e2 ->
+    lemma_causal_subst_apps e1 i p;
+    lemma_causal_subst e2 i p
+#pop-options
+
+(* Bundled causality facts for the fused loop and its desugaring.  From the
+   single hypothesis `causal (XMufby acc seed f g)` this discharges, in one
+   call, every causality obligation that the XMufby proof sites repeatedly need:
+   `causal f`, `causal g`, `causal (mufby_desugar seed f g)`,
+   `causal (subst1 g (mufby_desugar seed f g))`, and the operational accumulator
+   `causal (XFby seed (subst1 g (mufby_desugar seed f g)))`.  Factoring this out
+   replaces the fragile repeated `assert_norm`/`lemma_causal_*` boilerplate with
+   a uniform, already-discharged context at each caller. *)
+#push-options "--fuel 4 --ifuel 2 --z3rlimit 40"
+let lemma_causal_XMufby (#t: table) (#c: context t) (#acc #res: t.ty)
+  (seed: t.ty_sem acc) (f: exp t (acc :: c) res) (g: exp t (res :: c) acc):
+  Lemma (requires causal (XMufby acc seed f g))
+    (ensures
+      causal f /\ causal g /\
+      causal (mufby_desugar seed f g) /\
+      causal (subst1 g (mufby_desugar seed f g)) /\
+      causal (XFby seed (subst1 g (mufby_desugar seed f g)))) =
+  assert_norm (causal (XMufby acc seed f g) == (causal f && causal g));
+  lemma_causal_mufby_desugar seed f g;
+  lemma_causal_subst g 0 (mufby_desugar seed f g)
+#pop-options
+
+(* From a bigstep of the fused loop's desugar `mres = mufby_desugar seed f g`,
+   extract a bigstep of `f` applied to the *operational* accumulator stream
+   `accsys = seed fby g(mres)`.  This captures the single-evaluation step
+   `res = f(acc)`: unfolding the guarded recursion one step (BSMu) rewrites
+   `subst1 body mres` (body = `let acc = seed fby g in lift1' f 1 res`) into
+   `XLet acc accsys f` -- the extra `res` column that `lift1' f 1 res` inserts is
+   exactly cancelled by the substitution (via `lemma_subst_lift_id`), and the
+   XFby's `g` picks up the `mres` payload.  The BSLet premise of that is precisely
+   `bigstep rows (subst1 f accsys) v`.  No fixpoint-uniqueness reasoning needed. *)
+#push-options "--fuel 4 --ifuel 2 --z3rlimit 60"
+let lemma_bigstep_mufby_desugar_output
+  (#t: table) (#c: context t) (#acc #res: t.ty)
+  (rows: list (row c) { Cons? rows })
+  (seed: t.ty_sem acc)
+  (f: exp t (acc :: c) res)
+  (g: exp t (res :: c) acc)
+  (v: t.ty_sem res)
+  (hBS: bigstep rows (mufby_desugar seed f g) v):
+    (bigstep rows (subst1 f (XFby seed (subst1 g (mufby_desugar seed f g)))) v) =
+  let mres = mufby_desugar seed f g in
+  // one recursion-unfolding step: mres == XMu body, BSMu gives subst1 body mres
+  let hBS' : bigstep rows (subst1' (XLet acc (XFby seed g) (lift1' f 1 res)) 0 mres) v =
+    (match hBS with | BSMu _ _ _ h -> h) in
+  // the `res` column inserted by `lift1' f 1 res` is cancelled by substituting at
+  // the same index, leaving `f`; the XFby carries `subst1 g mres`.
+  lemma_subst_lift_id f 1 res (lift1 mres acc);
+  assert_norm (subst1' (XLet acc (XFby seed g) (lift1' f 1 res)) 0 mres ==
+    XLet acc (XFby seed (subst1' g 0 mres)) (subst1' (lift1' f 1 res) 1 (lift1 mres acc)));
+  let accsys : exp t c acc = XFby seed (subst1 g mres) in
+  let hBSlet : bigstep rows (XLet acc accsys f) v = hBS' in
+  (match hBSlet with | BSLet _ _ _ _ h -> h)
+#pop-options
 
 // let rec lemma_direct_dependency_lift_lt (e: exp 'c 'a) (i: C.index { C.has_index 'c i }) (i': C.index { i < i' /\ i' <= List.Tot.length 'c }) (t: Type):
 //     Lemma (ensures direct_dependency e i == direct_dependency (lift1' e i' t) i) (decreases e) =
@@ -132,6 +394,9 @@ let rec lemma_direct_dependency_not_subst
   | XMu e1 ->
     lemma_direct_dependency_lift_ge p i 0 (XMu?.valty e);
     lemma_direct_dependency_not_subst (i + 1) (i' + 1) e1 (lift1 p (XMu?.valty e))
+  | XMufby acc seed f g ->
+    lemma_direct_dependency_lift_ge p i 0 acc;
+    lemma_direct_dependency_not_subst (i + 1) (i' + 1) f (lift1 p acc)
   | XLet b e1 e2 ->
     lemma_direct_dependency_not_subst i i' e1 p;
     lemma_direct_dependency_lift_ge p i 0 b;
@@ -237,6 +502,15 @@ let rec lemma_bigstep_substitute_elim
       let hBSe1': bigstep rows se v' = hBSe1 in
       let hBSX = lemma_bigstep_substitute_elim i rows e vs (subst1 e1 (XMu e1)) v' hBSse hBSe1' in
       BSMu _ e1 _ hBSX)
+  | XMufby acc seed f g ->
+    (match hBSe' with
+    | BSMufby _ _ _ _ _ hBSpremise ->
+      // hBSpremise : bigstep rows (mufby_desugar seed (subst f) (subst g)) v'
+      // which, by the commute lemma, is bigstep rows (subst1' (mufby_desugar seed f g) i e) v'
+      lemma_subst_mufby_desugar_commute seed f g i e;
+      let hBSpremise': bigstep rows (subst1' (mufby_desugar seed f g) i e) v' = hBSpremise in
+      let hBSX = lemma_bigstep_substitute_elim i rows e vs (mufby_desugar seed f g) v' hBSse hBSpremise' in
+      BSMufby _ _ _ _ _ hBSX)
   | XLet b e1 e2 ->
     (match hBSe' with
     | BSLet _ e1' e2' _ hBSe1' ->
@@ -350,6 +624,16 @@ let rec lemma_bigstep_substitute_intros
       lemma_subst_subst_distribute_XMu e1 i e;
       assert (subst1' (XMu e1) i e == XMu (subst1' e1 (i + 1) (lift1 e valty)));
       BSMu _ (subst1' e1 (i + 1) (lift1 e valty)) _ hBSX)
+  | XMufby acc seed f g ->
+    (match hBSe' with
+    | BSMufby _ _ _ _ _ hBSpremise ->
+      // hBSpremise : bigstep (zip) (mufby_desugar seed f g) v
+      let hBSX = lemma_bigstep_substitute_intros i rows e vs (mufby_desugar seed f g) v hBSse hBSpremise in
+      // hBSX : bigstep rows (subst1' (mufby_desugar seed f g) i e) v
+      lemma_subst_mufby_desugar_commute seed f g i e;
+      let hBSX': bigstep rows (mufby_desugar seed (subst1' f (i + 1) (lift1 e acc)) (subst1' g (i + 1) (lift1 e a))) v = hBSX in
+      assert_norm (subst1' (XMufby acc seed f g) i e == XMufby acc seed (subst1' f (i + 1) (lift1 e acc)) (subst1' g (i + 1) (lift1 e a)));
+      BSMufby _ _ _ _ _ hBSX')
   | XLet b e1 e2 ->
     (match hBSe' with
     | BSLet _ _ _ _ hBSX ->
@@ -466,6 +750,18 @@ let rec lemma_bigstep_substitute_intros_no_dep
       lemma_subst_subst_distribute_XMu e1 i e;
       assert_norm (subst1' (XMu e1) i e == XMu (subst1' e1 (i + 1) (lift1 e valty)));
       BSMu _ (subst1' e1 (i + 1) (lift1 e valty)) _ hBSX)
+
+  | XMufby acc seed f g ->
+    (match hBSe' with
+    | BSMufby _ _ _ _ _ hBSpremise ->
+      // the loop's output depends only on `f`, so no-direct-dependency transfers to the desugar
+      assert_norm (direct_dependency (XMufby acc seed f g) i == direct_dependency f (i + 1));
+      lemma_direct_dependency_mufby seed f g i;
+      let hBSX = lemma_bigstep_substitute_intros_no_dep i rows e vs (mufby_desugar seed f g) r v va hBSse hBSpremise in
+      lemma_subst_mufby_desugar_commute seed f g i e;
+      let hBSX': bigstep (r :: rows) (mufby_desugar seed (subst1' f (i + 1) (lift1 e acc)) (subst1' g (i + 1) (lift1 e a))) va = hBSX in
+      assert_norm (subst1' (XMufby acc seed f g) i e == XMufby acc seed (subst1' f (i + 1) (lift1 e acc)) (subst1' g (i + 1) (lift1 e a)));
+      BSMufby _ _ _ _ _ hBSX')
 
   | XLet b e1 e2 ->
     (match hBSe' with
@@ -589,7 +885,7 @@ let rec lemma_bigstep_total
   (#a: t.ty)
   (rows: list (row c) { Cons? rows })
   (e: exp t c a { causal e }):
-    Tot (v: t.ty_sem a & bigstep rows e v) (decreases %[e; rows; 0]) =
+    Tot (v: t.ty_sem a & bigstep rows e v) (decreases %[exp_size e; rows; 0]) =
   let hd = List.Tot.hd rows in
   let tl = List.Tot.tl rows in
   match e with
@@ -614,6 +910,16 @@ let rec lemma_bigstep_total
     let hBS' = lemma_bigstep_substitute_intros_XMu tl e1 vs hd v v' hBSs hBS0 in
     (| v, hBS' |)
 
+  | XMufby acc seed f g ->
+    // Totality of the fused loop, reusing the desugar's totality. The termination
+    // metric is exp_size, and exp_size (mufby_desugar seed f g) < exp_size (XMufby ...)
+    // (the constructor is weighted heavier than its desugaring, using that lifting
+    // preserves size). The desugar is causal since f and g are.
+    lemma_causal_mufby_desugar seed f g;
+    lemma_exp_size_lift f 1 a;
+    let (| v, hBS |) = lemma_bigstep_total rows (mufby_desugar seed f g) in
+    (| v, BSMufby rows seed f g v hBS |)
+
   | XLet b e1 e2 ->
     let (| vs, hBSs |) = lemma_bigsteps_total rows e1 in
     let (| v, hBS2 |) = lemma_bigstep_total (CR.extend1 vs rows) e2 in
@@ -634,7 +940,7 @@ and lemma_bigstep_apps_total
   (#a: funty t.ty)
   (rows: list (row c) { Cons? rows })
   (e: exp_apps t c a { causal_apps e }):
-    Tot (v: funty_sem t.ty_sem a & bigstep_apps rows e v) (decreases %[e; rows; 0]) =
+    Tot (v: funty_sem t.ty_sem a & bigstep_apps rows e v) (decreases %[exp_apps_size e; rows; 0]) =
   let hd = List.Tot.hd rows in
   let tl = List.Tot.tl rows in
   match e with
@@ -650,7 +956,7 @@ and lemma_bigsteps_total
   (#c: context t)
   (#a: t.ty)
   (rows: list (row c)) (e: exp t c a { causal e }):
-    Tot (vs: list (t.ty_sem a) { List.Tot.length vs == List.Tot.length rows } & bigsteps rows e vs) (decreases %[e; rows; 1]) =
+    Tot (vs: list (t.ty_sem a) { List.Tot.length vs == List.Tot.length rows } & bigsteps rows e vs) (decreases %[exp_size e; rows; 1]) =
   match rows with
   | [] -> (| [], BSs0 e |)
   | r :: rows' ->
@@ -685,3 +991,56 @@ let lemma_bigstep_total_always
     [SMTPat (bigstep_always (row1 :: rows) e)] =
   let v = lemma_bigstep_total_v (row1 :: rows) e in
   bigstep_deterministic_squash (row1 :: rows) e v true
+
+(* The canonical value stream over `row1 :: rows` decomposes structurally into
+   its current-step head value and the value stream over `rows`, so extending
+   the rows by these values (CR.extend1) peels exactly one `CR.cons` off the
+   front.  This is the history-bridge equation the fused-loop (XMufby) system and
+   check proofs rely on; isolating it as a small structural lemma keeps those
+   proofs' Z3 queries local and deterministic. *)
+#push-options "--fuel 2 --ifuel 1 --z3rlimit 20"
+let lemma_extend1_value_stream_cons
+  (#t: table) (#c: context t) (#a: t.ty)
+  (rows: list (row c)) (row1: row c) (e: exp t c a { causal e }):
+  Lemma (ensures
+    CR.extend1 (lemma_bigsteps_total_vs (row1 :: rows) e) (row1 :: rows)
+      == CR.cons (lemma_bigstep_total_v (row1 :: rows) e) row1
+         :: CR.extend1 (lemma_bigsteps_total_vs rows e) rows) =
+  ()
+#pop-options
+
+(* The head of the operational-accumulator value stream `accsys = seed fby
+   g(mres)` equals the fused loop's register value `reg_acc`.  `reg_acc` holds
+   the accumulator to feed at the current step: `seed` initially, else the
+   previous value of `subst1 g mres` (the register fact carried by the system /
+   check invariant).  The `seed fby _` delay means the accumulator stream's head
+   is exactly that value, so the two agree by fby unfolding + determinism.  Used
+   by both the system-step and check-step XMufby proofs to align f's input. *)
+#push-options "--fuel 4 --ifuel 2 --z3rlimit 40"
+let lemma_bigstep_mufby_accsys_head
+  (#t: table) (#c: context t) (#acc #res: t.ty)
+  (seed: t.ty_sem acc)
+  (f: exp t (acc :: c) res)
+  (g: exp t (res :: c) acc)
+  (rows: list (row c)) (row1: row c)
+  (reg_acc: t.ty_sem acc):
+  Lemma (requires
+      causal (XFby seed (subst1 g (mufby_desugar seed f g))) /\
+      (match rows with
+       | [] -> reg_acc == seed
+       | _ :: _ -> bigstep_prop rows (subst1 g (mufby_desugar seed f g)) reg_acc))
+    (ensures
+      lemma_bigstep_total_v (row1 :: rows) (XFby seed (subst1 g (mufby_desugar seed f g))) == reg_acc) =
+  let mres = mufby_desugar seed f g in
+  let accsys : exp t c acc = XFby seed (subst1 g mres) in
+  let (| av_hd, hBS |) = lemma_bigstep_total (row1 :: rows) accsys in
+  (match rows with
+   | [] ->
+     (match hBS with | BSFby1 _ _ _ -> ())
+   | _ :: _ ->
+     (match hBS with
+      | BSFbyS _ _ _ _ _ hprev ->
+        introduce exists (h: bigstep rows (subst1 g mres) av_hd). True
+          with hprev and ();
+        bigstep_deterministic_squash rows (subst1 g mres) av_hd reg_acc))
+#pop-options

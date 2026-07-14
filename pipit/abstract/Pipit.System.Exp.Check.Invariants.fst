@@ -18,6 +18,7 @@ module SI  = Pipit.System.Ind
 module XB  = Pipit.Exp.Bigstep
 module XC  = Pipit.Exp.Causality
 module XK  = Pipit.Exp.Checked.Base
+module XBind = Pipit.Exp.Binding
 
 module PM = Pipit.Prop.Metadata
 
@@ -43,6 +44,9 @@ let rec check_base_nil
     check_base_nil mode e1
   | XMu e1 ->
     check_base_nil mode e1
+  | XMufby acc seed f g ->
+    check_base_nil mode f;
+    check_base_nil mode g
   | XLet b e1 e2 ->
     check_base_nil mode e1;
     check_base_nil mode e2
@@ -93,6 +97,18 @@ let rec check_invariant_of_check_base
   | XMu e1 ->
     let rows' = CR.extend1 (XC.lemma_bigsteps_total_vs rows (XMu e1)) rows in
     check_invariant_of_check_base mode rows' e1
+  | XMufby acc seed f g ->
+    // The core `check` for XMufby quantifies over all f/g environments; the
+    // abstract `check_invariant` uses the operational accumulator/output
+    // histories.  Instantiate the universal core check at those histories.
+    let mres = XBind.mufby_desugar seed f g in
+    let accsys : exp t c acc = XFby seed (XBind.subst1 g mres) in
+    XC.lemma_causal_XMufby seed f g;
+    let accvs = XC.lemma_bigsteps_total_vs rows accsys in
+    let resvs = XC.lemma_bigsteps_total_vs rows mres in
+    check_invariant_of_check_base mode (CR.extend1 accvs rows) f;
+    check_invariant_of_check_base mode (CR.extend1 resvs rows) g;
+    ()
   | XLet b e1 e2 ->
     check_invariant_of_check_base  mode rows e1;
     let rows' = CR.extend1 (XC.lemma_bigsteps_total_vs rows e1) rows in
@@ -153,6 +169,19 @@ let rec check_of_sealed
       XK.check PM.check_mode_unknown (CR.extend1 vs rows) e1
     with
       XB.bigsteps_deterministic_squash rows (XMu e1) vs (XC.lemma_bigsteps_total_vs rows (XMu e1));
+    ()
+  | XMufby acc seed f g ->
+    // check and sealed for XMufby both quantify over the loop's actual
+    // accumulator (`accs`) and output (`mres`) histories; recurse under each.
+    XC.lemma_causal_XMufby seed f g;
+    let mres: exp t c a   = XBind.mufby_desugar seed f g in
+    let accs: exp t c acc = XFby seed (XBind.subst1 g mres) in
+    introduce forall (accvs: list (t.ty_sem acc) { XB.bigsteps_same_length rows accs accvs }).
+      XK.check PM.check_mode_unknown (CR.extend1 accvs rows) f
+    with check_of_sealed (CR.extend1 accvs rows) f;
+    introduce forall (resvs: list (t.ty_sem a) { XB.bigsteps_same_length rows mres resvs }).
+      XK.check PM.check_mode_unknown (CR.extend1 resvs rows) g
+    with check_of_sealed (CR.extend1 resvs rows) g;
     ()
   | XLet b e1 e2 ->
     check_of_sealed rows e1;
@@ -232,6 +261,35 @@ let rec check_base_unknown_of_check_invariant
     with
       XB.bigsteps_deterministic_squash rows (XMu e1) vs (XC.lemma_bigsteps_total_vs rows (XMu e1));
 
+    ()
+
+  | XMufby acc seed f g ->
+    // Now that the core `check` for XMufby is tied to the loop's actual
+    // accumulator (`accs`) and output (`mres`) histories, we mirror the XMu
+    // case on each side: discharge the unknown check at the canonical (total)
+    // history via the invariant, then transfer to any equal-length history by
+    // bigstep determinism.
+    XC.lemma_causal_XMufby seed f g;
+    let mres: exp t c a   = XBind.mufby_desugar seed f g in
+    let accs: exp t c acc = XFby seed (XBind.subst1 g mres) in
+    // f side, against the accumulator history `accs`
+    let arows' = CR.extend1 (XC.lemma_bigsteps_total_vs rows accs) rows in
+    assert (XK.check PM.check_mode_valid arows' f);
+    assert (check_invariant PM.check_mode_unknown arows' f);
+    check_base_unknown_of_check_invariant arows' f;
+    introduce forall (accvs: list (t.ty_sem acc) { XB.bigsteps_same_length rows accs accvs }).
+      XK.check PM.check_mode_unknown (CR.extend1 accvs rows) f
+    with
+      XB.bigsteps_deterministic_squash rows accs accvs (XC.lemma_bigsteps_total_vs rows accs);
+    // g side, against the output history `mres`
+    let rrows' = CR.extend1 (XC.lemma_bigsteps_total_vs rows mres) rows in
+    assert (XK.check PM.check_mode_valid rrows' g);
+    assert (check_invariant PM.check_mode_unknown rrows' g);
+    check_base_unknown_of_check_invariant rrows' g;
+    introduce forall (resvs: list (t.ty_sem a) { XB.bigsteps_same_length rows mres resvs }).
+      XK.check PM.check_mode_unknown (CR.extend1 resvs rows) g
+    with
+      XB.bigsteps_deterministic_squash rows mres resvs (XC.lemma_bigsteps_total_vs rows mres);
     ()
 
   | XLet b e1 e2 ->

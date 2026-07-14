@@ -29,6 +29,7 @@ let rec close1' (#a #b: ('t).ty) (#c: context 't) (e: exp 't c a) (x: C.var b) (
   | XApps e1 -> XApps (close1_apps' e1 x n)
   | XFby v e -> XFby v (close1' e x n)
   | XMu e -> XMu (close1' e x (n + 1))
+  | XMufby acc seed f g -> XMufby acc seed (close1' f x (n + 1)) (close1' g x (n + 1))
   | XLet b e1 e2 -> XLet b (close1' e1 x n) (close1' e2 x (n + 1))
   | XContract ps r g i -> XContract ps (close1' r x n) (close1' g x (n + 1)) (close1' i x n)
   | XCheck name e1 -> XCheck name (close1' e1 x n)
@@ -61,6 +62,7 @@ let rec lift1' (#a: ('t).ty) (#c: context 't) (e: exp 't c a) (n: C.index_insert
   | XFby v e -> XFby v (lift1' e n t)
   | XMu e1 ->
     XMu (lift1' e1 (n + 1) t)
+  | XMufby acc seed f g -> XMufby acc seed (lift1' f (n + 1) t) (lift1' g (n + 1) t)
   | XLet b e1 e2 -> XLet b (lift1' e1 n t) (lift1' e2 (n + 1) t)
   | XContract ps r g i -> XContract ps (lift1' r n t) (lift1' g (n + 1) t) (lift1' i n t)
   | XCheck name e1 -> XCheck name (lift1' e1 n t)
@@ -96,6 +98,7 @@ let rec subst1' (#a: ('t).ty) (#c: context 't) (e: exp 't c a) (i: C.index { C.h
   | XFby v e -> XFby v (subst1' e i payload)
   | XMu e1 ->
     XMu (subst1' e1 (i + 1) (lift1 payload a))
+  | XMufby acc seed f g -> XMufby acc seed (subst1' f (i + 1) (lift1 payload acc)) (subst1' g (i + 1) (lift1 payload a))
   | XLet b e1 e2 -> XLet b (subst1' e1 i payload) (subst1' e2 (i + 1) (lift1 payload b))
   | XContract ps r g impl -> XContract ps (subst1' r i payload) (subst1' g (i + 1) (lift1 payload a)) (subst1' impl i payload)
   | XCheck name e1 -> XCheck name (subst1' e1 i payload)
@@ -131,6 +134,7 @@ let rec lifts' (#a: ('t).ty) (#c: context 't) (e: exp 't c a) (n: C.index_insert
   | XFby v e -> XFby v (lifts' e n c')
   | XMu e1 ->
     XMu (lifts' e1 (n + 1) c')
+  | XMufby acc seed f g -> XMufby acc seed (lifts' f (n + 1) c') (lifts' g (n + 1) c')
   | XLet b e1 e2 -> XLet b (lifts' e1 n c') (lifts' e2 (n + 1) c')
   | XContract ps r g i -> XContract ps (lifts' r n c') (lifts' g (n + 1) c') (lifts' i n c')
   | XCheck name e1 -> XCheck name (lifts' e1 n c')
@@ -142,3 +146,15 @@ and lifts_apps' (#a: funty ('t).ty) (#c: context 't) (e: exp_apps 't c a) (n: C.
 
 let lifts (#a: ('t).ty) (#c: context 't) (e: exp 't c a) (c': context 't): Tot (exp 't (C.append c' c) a) =
   lifts' e 0 c'
+
+(* Desugaring of the fused loop `XMufby seed f g` into a single guarded XMu.
+   The recursion is over the *output* `res`:
+     res = f(acc)   where   acc = seed fby g(res)
+   i.e. `mu res. let acc = seed fby g(res) in f(acc)`.  Each of `f` and `g` is
+   applied exactly once per step (single-evaluation semantics), the loop is
+   guarded by the `fby`, and no product type is needed: `acc = g(res)` is a
+   function of the recursion variable, so only `res` is carried in the knot. *)
+unfold
+let mufby_desugar (#t: table) (#c: context t) (#acc #res: t.ty)
+  (seed: t.ty_sem acc) (f: exp t (acc :: c) res) (g: exp t (res :: c) acc): exp t c res =
+  XMu (XLet acc (XFby seed g) (lift1' f 1 res))
