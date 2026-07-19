@@ -1,31 +1,6 @@
-(* Pipit.Exp.Anf -- an A-normal-form core IR and the normalizing lowering from
-   a `tterm`, with common-subexpression elimination that recovers the sharing the
-   shallow source layer loses.
-
-   Why this exists. The source layer emits each output of a multi-output node
-   call as its own `TLet`-binding of the *same* `TStreamApp` -- the projection
-   idiom `TLet tys (TStreamApp ..) (TTuple [SBVar i])` (see
-   `Pipit.Source.Stream.node22`). Because a term is a tree (not a DAG), that
-   node-application subterm is *duplicated* wherever more than one of its outputs
-   is used. So the sharing is recovered here, by a *multi-output* binding form,
-   `CLetNode` (the `LetStreamApp` of the plan): lowering hoists each *distinct*
-   node instantiation into one `CLetNode` and rewrites its projections to
-   variable references. CSE is uniform -- every binding is hash-consed against
-   the ones already emitted -- so ordinary common subexpressions collapse too.
-
-   de Bruijn *levels*, not indices. Unlike `sterm` (whose `SBVar` counts binders
-   inward, innermost = 0), an ANF `AVar` is a de Bruijn *level*: 0 is the
-   *outermost* `CLet`/`CLetNode`. Levels are what make the append-only telescope
-   construction sound -- emitting a new binding never shifts the atoms already
-   built, which is exactly what lets CSE reuse an earlier binding's level. A
-   consumer reads levels from the outside in.
-
-   Scope. Full ANF (every `SPureApp` argument is named to an atom) over the
-   first-order fragment: `SPure`, `SBVar`, `SFby`, `SPureApp`, and the tuple
-   formers `TTuple` / `TStreamApp` / `TLet`. Recursion (the n-ary `TRec`
-   group) is deferred -- faithful recursive ANF wants the register / transition-
-   system view -- so the lowering is partial (`option`) and returns `None` on
-   `TRec` (and on free `SVar`s). *)
+(* Pipit.Exp.Anf -- an A-normal-form core IR and the normalizing lowering from a
+   `tterm`, with CSE that recovers the sharing the shallow source layer loses.
+   Design notes and rationale: see Pipit.Exp.Anf.md. *)
 module Pipit.Exp.Anf
 
 module PEB = Pipit.Exp.Base
@@ -33,25 +8,16 @@ module L   = FStar.List.Tot
 
 (* ----- ANF syntax ------------------------------------------------------- *)
 
-(* A trivial operand: a bound stream (by de Bruijn level) or a constant pure
-   value. `APure` subsumes literals, so there is no separate atom for those. *)
 [@@plugin]
 type atom =
   | AVar  : nat -> atom
   | APure : PEB.pterm -> atom
 
-(* The right-hand side of a single-output binding: a delay or a single-output
-   primitive / operator application, both over already-named atoms. *)
 [@@plugin]
 type rhs =
   | RFby     : PEB.pterm -> atom -> rhs
   | RPureApp : PEB.pterm -> list atom -> rhs
 
-(* An A-normal continuation. `CLet` binds one flow; `CLetNode` instantiates a
-   node once and binds its (list of) output flows; `CRet` is the tail, returning
-   the term's output flows (a list, for multi-output node bodies). The `list typ`
-   on `CLetNode` is the node's output types (all streams, so a plain type list
-   suffices -- no binder kind needed). *)
 [@@plugin]
 type cont =
   | CLet     : PEB.typ -> rhs -> cont -> cont
@@ -60,8 +26,6 @@ type cont =
 
 (* ----- Lowering state (an append-only, hash-consed telescope) ----------- *)
 
-(* One emitted binding, paired with its width (number of output flows it binds):
-   a `BLet` binds 1, a `BNode` binds one per output type. *)
 type binding =
   | BLet  : PEB.typ -> rhs -> binding
   | BNode : string -> list atom -> list PEB.typ -> binding
@@ -71,22 +35,16 @@ let width (b: binding): nat =
   | BLet _ _       -> 1
   | BNode _ _ tys  -> L.length tys
 
-(* The telescope built so far (outermost binding first) and the next free level
-   (= total width emitted). *)
 type state = { binds: list binding; next: nat }
 
 let init_state: state = { binds = []; next = 0 }
 
-(* The base level of the first binding structurally equal to `target`, or `None`.
-   `acc` is the running level (each binding advances it by its width). *)
 let rec find_level (binds: list binding) (acc: nat) (target: binding)
 : Tot (option nat) (decreases binds) =
   match binds with
   | []      -> None
   | b :: tl -> if b = target then Some acc else find_level tl (acc + width b) target
 
-(* Hash-consing emit: reuse an existing structurally-equal binding's base level
-   (CSE), else append the binding and return its fresh base level. *)
 let emit (st: state) (b: binding): state & nat =
   match find_level st.binds 0 b with
   | Some lvl -> (st, lvl)
@@ -94,24 +52,16 @@ let emit (st: state) (b: binding): state & nat =
 
 (* ----- Lowering sterm -> ANF -------------------------------------------- *)
 
-(* The `i`-th projection atoms of a node call bound at base level `base`:
-   `[AVar base; AVar (base+1); ..]`, one per result type. *)
 let rec proj_atoms (base: nat) (tys: list PEB.typ): Tot (list atom) (decreases tys) =
   match tys with
   | []      -> []
   | _ :: tl -> AVar base :: proj_atoms (base + 1) tl
 
-(* Pair up already-lowered atoms with their types for `senv` extension. *)
 let rec zip_at (atoms: list atom) (tys: list PEB.typ): list (atom & PEB.typ) =
   match atoms, tys with
   | a :: atl, t :: ttl -> (a, t) :: zip_at atl ttl
   | _, _               -> []
 
-(* `senv` maps a source de-Bruijn *index* to the ANF atom (and type) it lowered
-   to; `st` is the telescope. Each call returns the updated telescope, the atom
-   naming `e`'s (single) output, and its type. Partial: `None` on the deferred /
-   ill-formed cases. `lower_t` is the tuple counterpart, returning one atom per
-   component flow. *)
 let rec lower (env: PEB.sigenv) (senv: list (atom & PEB.typ)) (st: state) (e: PEB.sterm)
 : Tot (option (state & atom & PEB.typ)) (decreases e) =
   match e with
@@ -182,8 +132,6 @@ let rec build_cont (binds: list binding) (tail: list atom): Tot cont (decreases 
   | BLet ty r :: tl             -> CLet ty r (build_cont tl tail)
   | BNode nm args outtys :: tl  -> CLetNode nm args outtys (build_cont tl tail)
 
-(* Lower a closed, recursion-free (`TRec`) `tterm` to ANF, or `None` if
-   out of scope. *)
 [@@plugin]
 let to_anf (env: PEB.sigenv) (t: PEB.tterm): option cont =
   match lower_t env [] init_state t with
