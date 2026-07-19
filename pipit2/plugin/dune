@@ -1,0 +1,6 @@
+(library
+ (name pipit2_plugin)
+ (libraries fstar.lib fstar.pluginlib fstar.compiler)
+ (modes native)
+ (flags (:standard -w -A)))
+(include_subdirs unqualified)

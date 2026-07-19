@@ -7,3 +7,5 @@ _opam
 shelve/
 .python-version
 pipit/plugin/generated/
+pipit2/plugin/generated/
+pipit2/plugin/_build/

@@ -1,0 +1,4 @@
+{ "fstar_exe":"../_opam/bin/fstar.exe",
+  "options":["--cache_dir", "../_build/pipit2/cache"],
+  "include_dirs":["core", "plugin-test"]
+}
