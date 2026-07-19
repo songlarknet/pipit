@@ -1,10 +1,10 @@
 (* Pipit.Test.Node -- exercise the multi-output node path (TStreamApp / the TLet
    projection idiom).
 
-   Build a source term that instantiates a two-output node with `node22` and
-   combines its two projected outputs (`o1 && o2`), lower it to a core `tterm`,
-   and check two things by normalisation (everything is closed and ground, and
-   `tterm` is an `eqtype`):
+   Build a source term that instantiates a two-output node with `node`, projects
+   its two outputs with `unzip2`, and combines them (`o1 && o2`), lower it to a
+   core `tterm`, and check two things by normalisation (everything is closed and
+   ground, and `tterm` is an `eqtype`):
 
      - the lowered term binds each output with its own
        `TLet [B;B] (TStreamApp "ctrl" [true; false]) (TTuple [SBVar i])` -- the
@@ -25,20 +25,24 @@ let btrue:  PEB.pterm = PEB.PLit (PEB.LBool true)
 let bfalse: PEB.pterm = PEB.PLit (PEB.LBool false)
 
 (* Source term:  let (o1, o2) = ctrl(true, false) in o1 && o2.
-   The node arguments are constant streams (atoms), so the two projections carry
-   syntactically identical copies of the application. *)
-let src: S.stream EB.bool_ty =
+   The node arguments are constant streams (atoms). `unzip2` projects the two
+   outputs (each re-emitting the node application), and `zip2` re-pairs them for
+   the lifted `&&`, so the node call ends up duplicated syntactically. *)
+let src: S.stream [EB.bool_ty] =
   let (o1, o2) =
-    S.node22 #EB.bool_ty #EB.bool_ty #EB.bool_ty #EB.bool_ty
-      "ctrl" (S.const btrue) (S.const bfalse)
+    S.unzip2 #EB.bool_ty #[EB.bool_ty]
+      (S.node #[EB.bool_ty; EB.bool_ty] #[EB.bool_ty; EB.bool_ty]
+        "ctrl" (S.zip2 (S.const btrue) (S.const bfalse)))
   in
-  S.liftP2 EB.p_and o1 o2
+  S.liftP EB.p_and (S.zip2 o1 o2)
 
 let term: PEB.tterm = S.exp_of_stream src
 
-(* The shared node application and the expected lowered term. Each `node22`
-   output binds the node call under its own `TLet`, projecting one component; the
-   `&&` then binds both outputs. *)
+(* The shared node application and the expected lowered term. Each output binds
+   the node call under its own `TLet`, projecting one component; `zip2` then
+   re-binds both projections and `liftP` binds the resulting pair before the
+   `&&`. The administrative `TLet`s are the syntactic overhead a later CSE /
+   simplification pass folds away (see `anf_shares_node`). *)
 let capp: PEB.tterm =
   PEB.TStreamApp "ctrl" [PEB.SPure btrue; PEB.SPure bfalse]
 
@@ -46,9 +50,11 @@ let o_proj (i: nat) : PEB.tterm =
   PEB.TLet [EB.bool_ty; EB.bool_ty] capp (PEB.TTuple [PEB.SBVar i])
 
 let expected: PEB.tterm =
-  PEB.TLet [EB.bool_ty] (o_proj 0)
-    (PEB.TLet [EB.bool_ty] (o_proj 1)
-      (PEB.TTuple [PEB.SPureApp EB.p_and [PEB.SBVar 1; PEB.SBVar 0]]))
+  PEB.TLet [EB.bool_ty; EB.bool_ty]
+    (PEB.TLet [EB.bool_ty] (o_proj 0)
+      (PEB.TLet [EB.bool_ty] (o_proj 1)
+        (PEB.TTuple [PEB.SBVar 1; PEB.SBVar 0])))
+    (PEB.TTuple [PEB.SPureApp EB.p_and [PEB.SBVar 0; PEB.SBVar 1]])
 
 (* Lowering emits the two outputs of one (duplicated) node application. *)
 let node_lowers_ok (): Lemma (term == expected) =

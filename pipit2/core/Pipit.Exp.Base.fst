@@ -12,6 +12,7 @@ module L = FStar.List.Tot
 type lit =
   | LBool : bool -> lit
   | LInt  : int  -> lit
+  | LBV   : nat -> nat -> lit
 
 [@@plugin]
 type pterm =
@@ -120,6 +121,7 @@ let lit_ty (l: lit): typ =
   match l with
   | LBool _ -> TBool
   | LInt  _ -> TInt
+  | LBV w _ -> TBV w
 
 let infer_val (v: pterm): option typ =
   match v with

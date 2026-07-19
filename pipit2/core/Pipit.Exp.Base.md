@@ -57,7 +57,7 @@ Deliberately excluded from v0:
 Also deferred to v1: nominal enums / named typedefs (a `TNamed string` former
 plus a typedef environment) and refinement / subrange integers (ttcan's
 `S32R.t {min; max}`); v0 treats those as `TInt`. `TBV n` is a fixed-width
-bitvector (ttcan `U64 = TBV 64`).
+bitvector (ttcan `U64 = TBV 64`); a bitvector constant is the literal `LBV n v`.
 
 ## Pure terms (`pterm`)
 
@@ -67,7 +67,9 @@ structural equality.
 - `PVar name` — a *reference*: a primitive / meta-function operator name, or a
   bound meta parameter, resolved against the environment / binder scope. Appears
   as a `PApp` / `SPureApp` head.
-- `PLit l` — a literal.
+- `PLit l` — a literal. `lit` is a closed sum (keeps every term an eqtype):
+  `LBool` / `LInt`, and `LBV w v` a *width-first* bitvector constant of type
+  `TBV w` (e.g. `LBV 8 255` = `255'u8`).
 - `PCon c args` — a *value constructor application*: irreducible data, e.g. an
   enum tag `PCon "Mode_Running" []` or a bitvector value. Head is a *name*.
 - `PApp h args` — a *reducible application*: applying a primitive / meta-function

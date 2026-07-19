@@ -19,15 +19,15 @@ let btrue:  PEB.pterm = PEB.PLit (PEB.LBool true)
 let bfalse: PEB.pterm = PEB.PLit (PEB.LBool false)
 
 (* Surface sugar over the boolean environment. *)
-let sofar (s: S.stream EB.bool_ty): S.stream EB.bool_ty =
-  S.liftP1 EB.p_sofar s
+let sofar (s: S.stream [EB.bool_ty]): S.stream [EB.bool_ty] =
+  S.liftP EB.p_sofar s
 
-let ( &&. ) (a b: S.stream EB.bool_ty): S.stream EB.bool_ty =
-  S.liftP2 EB.p_and a b
+let ( &&. ) (a b: S.stream [EB.bool_ty]): S.stream [EB.bool_ty] =
+  S.liftP EB.p_and (S.zip2 a b)
 
 (* Source term:  let x = true in sofar (x && false).
    `let'` shares `x` into the body under a single binder. *)
-let src: S.stream EB.bool_ty =
+let src: S.stream [EB.bool_ty] =
   S.let' (S.const btrue) (fun x -> sofar (x &&. S.const bfalse))
 
 (* Lowered core expression. *)
