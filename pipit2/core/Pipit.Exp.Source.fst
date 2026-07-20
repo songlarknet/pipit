@@ -1,15 +1,8 @@
-(* Source core: a signature environment (`sigenv`) and a stratified stream /
-   tuple term language (`sterm` / `tterm`) with locally-nameless binders and a
-   decidable checker. This is the frontend, non-normalised language; value
-   types, values, and primitives live in `Pipit.Exp.Prim`, pure terms in
-   `Pipit.Exp.Pure`. Design notes and rationale: see Pipit.Exp.Source.md. *)
 module Pipit.Exp.Source
 
 module PR = Pipit.Exp.Prim
 module PP = Pipit.Exp.Pure
 module L  = FStar.List.Tot
-
-(* ----- Signatures and environment --------------------------------------- *)
 
 [@@plugin]
 type binder =
@@ -21,8 +14,6 @@ type nodety = { params: list binder; results: list PR.typ }
 
 [@@plugin]
 type sigenv = { nodes: list (string & nodety) }
-
-(* ----- Stream terms ----------------------------------------------------- *)
 
 [@@plugin]
 type svar = { svname: nat; svty: PR.typ }
@@ -41,8 +32,6 @@ type tterm =
   | TStreamApp : string -> list sterm -> tterm
   | TRec       : list PR.typ -> tterm -> tterm
   | TLet       : list PR.typ -> tterm -> tterm -> tterm
-
-(* ----- Locally-nameless open / close (object binders only) -------------- *)
 
 let rec close_rec_s (k: nat) (x: svar) (e: sterm): Tot sterm (decreases e) =
   match e with
@@ -82,13 +71,9 @@ let rec open_rec_t (k: nat) (u: sterm) (t: tterm): Tot tterm (decreases t) =
   | TRec tys body      -> TRec tys (open_rec_t (k + L.length tys) u body)
   | TLet tys rhs bod   -> TLet tys (open_rec_t k u rhs) (open_rec_t (k + L.length tys) u bod)
 
-(* Close `x` into a fresh outermost binder (index 0) of a single stream. *)
 let close (x: svar) (e: sterm): sterm = close_rec_s 0 x e
 
-(* Open the outermost binder (index 0) with the free variable `x`. *)
 let open_var (x: svar) (e: sterm): sterm = open_rec_s 0 (SVar x) e
-
-(* ----- Type checking (decidable, environment-driven) -------------------- *)
 
 let rec infer_s (env: sigenv) (ctx: list PR.typ) (e: sterm): Tot (option PR.typ) (decreases e) =
   match e with
@@ -108,9 +93,6 @@ and infer_sargs (env: sigenv) (ctx: list PR.typ) (args: list sterm)
   | a :: tl -> (match infer_s env ctx a, infer_sargs env ctx tl with
                | Some t, Some ts -> Some (t :: ts)
                | _, _            -> None)
-(* Check node arguments against parameter binders: a `BStream t` accepts any
-   stream of type `t`; a `BConst t` accepts only a *constant* stream (`SPure`)
-   of type `t`. *)
 and check_node_args (env: sigenv) (ctx: list PR.typ) (args: list sterm) (params: list binder)
 : Tot bool (decreases args) =
   match args, params with
@@ -120,8 +102,6 @@ and check_node_args (env: sigenv) (ctx: list PR.typ) (args: list sterm) (params:
     (match a with SPure v -> PP.infer_p v = Some t | _ -> false) && check_node_args env ctx atl ptl
   | _, _                       -> false
 
-(* Tuple inference: `infer_t` gives the list of component types; layered on
-   `infer_s`, never the reverse. *)
 let rec infer_t (env: sigenv) (ctx: list PR.typ) (t: tterm): Tot (option (list PR.typ)) (decreases t) =
   match t with
   | TTuple es          -> infer_sargs env ctx es
@@ -134,6 +114,5 @@ let rec infer_t (env: sigenv) (ctx: list PR.typ) (t: tterm): Tot (option (list P
   | TLet tys rhs bod   -> if infer_t env ctx rhs = Some tys
                          then infer_t env (L.append tys ctx) bod else None
 
-(* `e` is well typed at `a` when inference agrees. *)
 let well_typed (env: sigenv) (ctx: list PR.typ) (e: sterm) (a: PR.typ): prop =
   infer_s env ctx e == Some a

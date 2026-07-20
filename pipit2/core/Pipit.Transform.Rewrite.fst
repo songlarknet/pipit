@@ -1,6 +1,3 @@
-(* Pipit.Transform.Rewrite -- an unverified, environment-free rewrite driver: a
-   single bottom-up pass applying a local `step` at every `sterm` node. Design
-   notes and rationale: see Pipit.Transform.Rewrite.md. *)
 module Pipit.Transform.Rewrite
 
 module PES = Pipit.Exp.Source
@@ -21,7 +18,6 @@ and rewrite_args (step: PES.sterm -> PES.sterm) (args: list PES.sterm)
   | []      -> []
   | a :: tl -> rewrite step a :: rewrite_args step tl
 
-(* Traverse the tuple layer, rewriting every `sterm` leaf. *)
 let rec rewrite_t (step: PES.sterm -> PES.sterm) (t: PES.tterm): Tot PES.tterm (decreases t) =
   match t with
   | PES.TTuple es          -> PES.TTuple (rewrite_args step es)

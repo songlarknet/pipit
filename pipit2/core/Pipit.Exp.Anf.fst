@@ -1,14 +1,9 @@
-(* Pipit.Exp.Anf -- an A-normal-form core IR and the normalizing lowering from a
-   `tterm`, with CSE that recovers the sharing the shallow source layer loses.
-   Design notes and rationale: see Pipit.Exp.Anf.md. *)
 module Pipit.Exp.Anf
 
 module PR  = Pipit.Exp.Prim
 module PP  = Pipit.Exp.Pure
 module PES = Pipit.Exp.Source
 module L   = FStar.List.Tot
-
-(* ----- ANF syntax ------------------------------------------------------- *)
 
 [@@plugin]
 type atom =
@@ -25,8 +20,6 @@ type cont =
   | CLet     : PR.typ -> rhs -> cont -> cont
   | CLetNode : string -> list atom -> list PR.typ -> cont -> cont
   | CRet     : list atom -> cont
-
-(* ----- Lowering state (an append-only, hash-consed telescope) ----------- *)
 
 type binding =
   | BLet  : PR.typ -> rhs -> binding
@@ -51,8 +44,6 @@ let emit (st: state) (b: binding): state & nat =
   match find_level st.binds 0 b with
   | Some lvl -> (st, lvl)
   | None     -> ({ binds = L.append st.binds [b]; next = st.next + width b }, st.next)
-
-(* ----- Lowering sterm -> ANF -------------------------------------------- *)
 
 let rec proj_atoms (base: nat) (tys: list PR.typ): Tot (list atom) (decreases tys) =
   match tys with
@@ -124,7 +115,6 @@ and lower_list (env: PES.sigenv) (senv: list (atom & PR.typ)) (st: state) (es: l
         | None -> None
         | Some (st2, atoms, tys) -> Some (st2, a :: atoms, ty :: tys)))
 
-(* Fold the finished telescope (outermost first) into nested lets over `tail`. *)
 let rec build_cont (binds: list binding) (tail: list atom): Tot cont (decreases binds) =
   match binds with
   | []                          -> CRet tail

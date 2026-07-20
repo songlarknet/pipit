@@ -1,14 +1,9 @@
-(* A Sugar-style source layer over the core stream terms: a `stream ts` is a
-   reducible builder emitting a width-|ts| `tterm` from a fresh-name counter.
-   Design notes and rationale: see Pipit.Source.Stream.md. *)
 module Pipit.Source.Stream
 
 module PR  = Pipit.Exp.Prim
 module PP  = Pipit.Exp.Pure
 module PES = Pipit.Exp.Source
 module L   = FStar.List.Tot
-
-(* ----- Builder and fresh names ------------------------------------------ *)
 
 type stream (ts: list PR.typ) = nat -> PES.tterm & nat
 
@@ -26,8 +21,6 @@ let rec close_vars (k: nat) (xs: list PES.svar) (body: PES.tterm): Tot PES.tterm
   match xs with
   | []      -> body
   | x :: tl -> PES.close_rec_t k x (close_vars (k + 1) tl body)
-
-(* ----- Meta-unwrap ------------------------------------------------------ *)
 
 let atomize (a: PR.typ) (t: PES.tterm) (n: nat)
 : PES.sterm & (PES.tterm -> PES.tterm) & nat =
@@ -47,8 +40,6 @@ let components (ts: list PR.typ) (t: PES.tterm) (n: nat)
      (fun body -> PES.TLet ts t (close_vars 0 xs body)),
      n)
 
-(* ----- Pointwise -------------------------------------------------------- *)
-
 let fvar (#a: PR.typ) (x: PES.svar): stream [a] =
   fun n -> (PES.TTuple [PES.SVar x], n)
 
@@ -67,8 +58,6 @@ let liftP (#args: list PR.typ) (#result: PR.typ)
     let (t, n)     = s n in
     let (es, w, n) = components args t n in
     (w (PES.TTuple [PES.SPureApp p es]), n)
-
-(* ----- Tupling ---------------------------------------------------------- *)
 
 let zips (#xs #ys: list PR.typ) (x: stream xs) (y: stream ys): stream (L.append xs ys) =
   fun n ->
@@ -107,8 +96,6 @@ let unzip3 (#a #b: PR.typ) (#c: list PR.typ)
   let (y, z)  = unzips #[b] #c yz in
   (x, y, z)
 
-(* ----- Binding and recursion -------------------------------------------- *)
-
 let let' (#a #b: list PR.typ)
     (e: stream a) (f: stream a -> stream b): stream b =
   fun n ->
@@ -129,16 +116,12 @@ let letrec (#a #b: list PR.typ)
     (f: stream a -> stream a) (cont: stream a -> stream b): stream b =
   let' (mu f) cont
 
-(* ----- Nodes ------------------------------------------------------------ *)
-
 let node (#args #results: list PR.typ)
     (head: string) (s: stream args): stream results =
   fun n ->
     let (t, n)     = s n in
     let (es, w, n) = components args t n in
     (w (PES.TStreamApp head es), n)
-
-(* ----- Lowering --------------------------------------------------------- *)
 
 let exp_of_stream (#a: list PR.typ) (s: stream a): PES.tterm =
   fst (s 0)

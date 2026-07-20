@@ -4,8 +4,8 @@ MAKEFLAGS := --jobs=$(NUM_JOBS)
 ROOT_DIR = $(realpath .)
 export ROOT_DIR
 
-all: abstract base core extract plugin plugin-test source test rts example
-.PHONY: all abstract base core extract plugin plugin-test source test rts example
+all: abstract base core extract plugin plugin-test source test rts example pipit2
+.PHONY: all abstract base core extract plugin plugin-test source test rts example pipit2
 
 clean:
 	@rm -rf _build
@@ -62,6 +62,12 @@ example: extract source plugin
 	@$(MAKE) -C example
 example-%:
 	@$(MAKE) -C example $(patsubst example-%,%,$@)
+
+# pipit2: successor experiment (self-contained; see doc/roadmap/).
+pipit2:
+	@$(MAKE) -C pipit2
+pipit2-%:
+	@$(MAKE) -C pipit2 $(patsubst pipit2-%,%,$@)
 
 # The example/ttcan/ subdirectory is currently disabled (see example/readme.md)
 # and is not built by the example target.

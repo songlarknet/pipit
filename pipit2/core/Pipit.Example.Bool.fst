@@ -1,8 +1,3 @@
-(* A small example signature environment over the boolean type: two multi-output
-   nodes, `ctrl` and the temporal `sofar`. The boolean *operators* (`and`, `or`,
-   `not`) are built-in primitives (`Pipit.Exp.Prim`), so they need no signature
-   here; `sofar` is genuinely a node -- a recursive stream definition -- and is
-   registered as such. Design notes and rationale: see Pipit.Example.Bool.md. *)
 module Pipit.Example.Bool
 
 module PR  = Pipit.Exp.Prim
