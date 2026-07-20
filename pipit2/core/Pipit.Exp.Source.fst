@@ -1,72 +1,46 @@
-(* Core term representation: pure terms (`pterm`), value types (`typ`), a
-   signature environment (`sigenv`), and a stratified stream / tuple term
-   language (`sterm` / `tterm`) with locally-nameless binders and a decidable
-   checker. Design notes and rationale: see Pipit.Exp.Base.md. *)
-module Pipit.Exp.Base
+(* Source core: a signature environment (`sigenv`) and a stratified stream /
+   tuple term language (`sterm` / `tterm`) with locally-nameless binders and a
+   decidable checker. This is the frontend, non-normalised language; value
+   types, values, and primitives live in `Pipit.Exp.Prim`, pure terms in
+   `Pipit.Exp.Pure`. Design notes and rationale: see Pipit.Exp.Source.md. *)
+module Pipit.Exp.Source
 
-module L = FStar.List.Tot
-
-(* ----- Pure terms ------------------------------------------------------- *)
-
-[@@plugin]
-type lit =
-  | LBool : bool -> lit
-  | LInt  : int  -> lit
-  | LBV   : nat -> nat -> lit
-
-[@@plugin]
-type pterm =
-  | PVar : string -> pterm
-  | PLit : lit -> pterm
-  | PCon : string -> list pterm -> pterm
-  | PApp : pterm -> list pterm -> pterm
-
-(* ----- Value types ------------------------------------------------------ *)
-
-[@@plugin]
-type typ =
-  | TBool : typ
-  | TInt  : typ
-  | TBV   : nat -> typ
+module PR = Pipit.Exp.Prim
+module PP = Pipit.Exp.Pure
+module L  = FStar.List.Tot
 
 (* ----- Signatures and environment --------------------------------------- *)
 
 [@@plugin]
-type funty = { args: list typ; result: typ }
-
-[@@plugin]
 type binder =
-  | BConst  : typ -> binder
-  | BStream : typ -> binder
+  | BConst  : PR.typ -> binder
+  | BStream : PR.typ -> binder
 
 [@@plugin]
-type nodety = { params: list binder; results: list typ }
+type nodety = { params: list binder; results: list PR.typ }
 
 [@@plugin]
-type sigenv = {
-  prims: list (string & funty);
-  nodes: list (string & nodety);
-}
+type sigenv = { nodes: list (string & nodety) }
 
 (* ----- Stream terms ----------------------------------------------------- *)
 
 [@@plugin]
-type svar = { svname: nat; svty: typ }
+type svar = { svname: nat; svty: PR.typ }
 
 [@@plugin]
 type sterm =
-  | SPure    : pterm -> sterm
+  | SPure    : PP.pterm -> sterm
   | SVar     : svar -> sterm
   | SBVar    : nat -> sterm
-  | SFby     : pterm -> sterm -> sterm
-  | SPureApp : pterm -> list sterm -> sterm
+  | SFby     : PP.pterm -> sterm -> sterm
+  | SPureApp : PR.prim -> list sterm -> sterm
 
 [@@plugin]
 type tterm =
   | TTuple     : list sterm -> tterm
   | TStreamApp : string -> list sterm -> tterm
-  | TRec       : list typ -> tterm -> tterm
-  | TLet       : list typ -> tterm -> tterm -> tterm
+  | TRec       : list PR.typ -> tterm -> tterm
+  | TLet       : list PR.typ -> tterm -> tterm -> tterm
 
 (* ----- Locally-nameless open / close (object binders only) -------------- *)
 
@@ -116,67 +90,41 @@ let open_var (x: svar) (e: sterm): sterm = open_rec_s 0 (SVar x) e
 
 (* ----- Type checking (decidable, environment-driven) -------------------- *)
 
-(* Base type of a literal. *)
-let lit_ty (l: lit): typ =
-  match l with
-  | LBool _ -> TBool
-  | LInt  _ -> TInt
-  | LBV w _ -> TBV w
-
-let infer_val (v: pterm): option typ =
-  match v with
-  | PLit l -> Some (lit_ty l)
-  | _      -> None
-
-let head_name (h: pterm): option string =
-  match h with
-  | PVar n          -> Some n
-  | PApp (PVar n) _ -> Some n
-  | _               -> None
-
-let rec infer_s (env: sigenv) (ctx: list typ) (e: sterm): Tot (option typ) (decreases e) =
+let rec infer_s (env: sigenv) (ctx: list PR.typ) (e: sterm): Tot (option PR.typ) (decreases e) =
   match e with
-  | SPure v         -> infer_val v
+  | SPure v         -> PP.infer_p v
   | SVar x          -> Some x.svty
   | SBVar i         -> if i < L.length ctx then Some (L.index ctx i) else None
-  | SFby v e'       -> (match infer_val v with
+  | SFby v e'       -> (match PP.infer_p v with
                        | Some a -> if infer_s env ctx e' = Some a then Some a else None
                        | None   -> None)
-  | SPureApp h args -> (match head_name h with
-                       | Some n -> (match L.assoc n env.prims with
-                                   | Some ft -> if check_args env ctx args ft.args
-                                               then Some ft.result else None
-                                   | None    -> None)
-                       | None   -> None)
-and check_args (env: sigenv) (ctx: list typ) (args: list sterm) (tys: list typ)
-: Tot bool (decreases args) =
-  match args, tys with
-  | [], []             -> true
-  | a :: atl, t :: ttl -> infer_s env ctx a = Some t && check_args env ctx atl ttl
-  | _, _               -> false
+  | SPureApp p args -> (match infer_sargs env ctx args with
+                       | Some tys -> PR.prim_ty p tys
+                       | None     -> None)
+and infer_sargs (env: sigenv) (ctx: list PR.typ) (args: list sterm)
+: Tot (option (list PR.typ)) (decreases args) =
+  match args with
+  | []      -> Some []
+  | a :: tl -> (match infer_s env ctx a, infer_sargs env ctx tl with
+               | Some t, Some ts -> Some (t :: ts)
+               | _, _            -> None)
 (* Check node arguments against parameter binders: a `BStream t` accepts any
    stream of type `t`; a `BConst t` accepts only a *constant* stream (`SPure`)
    of type `t`. *)
-and check_node_args (env: sigenv) (ctx: list typ) (args: list sterm) (params: list binder): Tot bool (decreases args) =
+and check_node_args (env: sigenv) (ctx: list PR.typ) (args: list sterm) (params: list binder)
+: Tot bool (decreases args) =
   match args, params with
   | [], []                     -> true
   | a :: atl, BStream t :: ptl -> infer_s env ctx a = Some t && check_node_args env ctx atl ptl
   | a :: atl, BConst t :: ptl  ->
-    (match a with SPure v -> infer_val v = Some t | _ -> false) && check_node_args env ctx atl ptl
+    (match a with SPure v -> PP.infer_p v = Some t | _ -> false) && check_node_args env ctx atl ptl
   | _, _                       -> false
 
 (* Tuple inference: `infer_t` gives the list of component types; layered on
    `infer_s`, never the reverse. *)
-let rec infer_args (env: sigenv) (ctx: list typ) (args: list sterm)
-: Tot (option (list typ)) (decreases args) =
-  match args with
-  | []      -> Some []
-  | a :: tl -> (match infer_s env ctx a, infer_args env ctx tl with
-               | Some t, Some ts -> Some (t :: ts)
-               | _, _            -> None)
-and infer_t (env: sigenv) (ctx: list typ) (t: tterm): Tot (option (list typ)) (decreases t) =
+let rec infer_t (env: sigenv) (ctx: list PR.typ) (t: tterm): Tot (option (list PR.typ)) (decreases t) =
   match t with
-  | TTuple es          -> infer_args env ctx es
+  | TTuple es          -> infer_sargs env ctx es
   | TStreamApp nm args -> (match L.assoc nm env.nodes with
                           | Some nt -> if check_node_args env ctx args nt.params
                                       then Some nt.results else None
@@ -187,5 +135,5 @@ and infer_t (env: sigenv) (ctx: list typ) (t: tterm): Tot (option (list typ)) (d
                          then infer_t env (L.append tys ctx) bod else None
 
 (* `e` is well typed at `a` when inference agrees. *)
-let well_typed (env: sigenv) (ctx: list typ) (e: sterm) (a: typ): prop =
+let well_typed (env: sigenv) (ctx: list PR.typ) (e: sterm) (a: PR.typ): prop =
   infer_s env ctx e == Some a

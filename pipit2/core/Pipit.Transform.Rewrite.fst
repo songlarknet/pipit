@@ -3,28 +3,28 @@
    notes and rationale: see Pipit.Transform.Rewrite.md. *)
 module Pipit.Transform.Rewrite
 
-module PEB = Pipit.Exp.Base
+module PES = Pipit.Exp.Source
 
-let rec rewrite (step: PEB.sterm -> PEB.sterm) (e: PEB.sterm): Tot PEB.sterm (decreases e) =
-  let e': PEB.sterm =
+let rec rewrite (step: PES.sterm -> PES.sterm) (e: PES.sterm): Tot PES.sterm (decreases e) =
+  let e': PES.sterm =
     match e with
-    | PEB.SPure _         -> e
-    | PEB.SVar _          -> e
-    | PEB.SBVar _         -> e
-    | PEB.SFby v b        -> PEB.SFby v (rewrite step b)
-    | PEB.SPureApp h args -> PEB.SPureApp h (rewrite_args step args)
+    | PES.SPure _         -> e
+    | PES.SVar _          -> e
+    | PES.SBVar _         -> e
+    | PES.SFby v b        -> PES.SFby v (rewrite step b)
+    | PES.SPureApp h args -> PES.SPureApp h (rewrite_args step args)
   in
   step e'
-and rewrite_args (step: PEB.sterm -> PEB.sterm) (args: list PEB.sterm)
-: Tot (list PEB.sterm) (decreases args) =
+and rewrite_args (step: PES.sterm -> PES.sterm) (args: list PES.sterm)
+: Tot (list PES.sterm) (decreases args) =
   match args with
   | []      -> []
   | a :: tl -> rewrite step a :: rewrite_args step tl
 
 (* Traverse the tuple layer, rewriting every `sterm` leaf. *)
-let rec rewrite_t (step: PEB.sterm -> PEB.sterm) (t: PEB.tterm): Tot PEB.tterm (decreases t) =
+let rec rewrite_t (step: PES.sterm -> PES.sterm) (t: PES.tterm): Tot PES.tterm (decreases t) =
   match t with
-  | PEB.TTuple es          -> PEB.TTuple (rewrite_args step es)
-  | PEB.TStreamApp nm args -> PEB.TStreamApp nm (rewrite_args step args)
-  | PEB.TRec tys body      -> PEB.TRec tys (rewrite_t step body)
-  | PEB.TLet tys rhs bod   -> PEB.TLet tys (rewrite_t step rhs) (rewrite_t step bod)
+  | PES.TTuple es          -> PES.TTuple (rewrite_args step es)
+  | PES.TStreamApp nm args -> PES.TStreamApp nm (rewrite_args step args)
+  | PES.TRec tys body      -> PES.TRec tys (rewrite_t step body)
+  | PES.TLet tys rhs bod   -> PES.TLet tys (rewrite_t step rhs) (rewrite_t step bod)

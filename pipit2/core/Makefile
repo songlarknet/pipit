@@ -17,7 +17,7 @@ include $(ROOT_DIR)/make/include/base.mk
 # match like `step_sofar_and` could not be extracted. With `pterm`/`sterm` as
 # plain first-order inductives, even the concrete `Pipit.Example.Bool` rule
 # compiles to honest OCaml, so it is back in the extraction set.
-FSTAR_EXTRACT_MODULES = Pipit.Exp.Base,Pipit.Exp.Anf,Pipit.Source.Stream,Pipit.Transform.Rewrite,Pipit.Example.Bool
+FSTAR_EXTRACT_MODULES = Pipit.Exp.Prim,Pipit.Exp.Pure,Pipit.Exp.Source,Pipit.Exp.Anf,Pipit.Source.Stream,Pipit.Transform.Rewrite,Pipit.Example.Bool
 include ../make/extract.mk
 
 # base.mk's clean only touches the shared $(BUILD)/cache; also clean the private
