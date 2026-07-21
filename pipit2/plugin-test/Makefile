@@ -1,7 +1,7 @@
 ROOT_DIR             ?= ../..
 PIPIT_DIR            ?= ..
 COMPONENT            ?= pipit2-plugin-test
-FSTAR_INC_DIRS       ?= core plugin/_build/default
+FSTAR_INC_DIRS       ?= base core plugin/_build/default
 FSTAR_SRC_DIRS       ?= .
 FSTAR_ALREADY_CACHED ?=
 

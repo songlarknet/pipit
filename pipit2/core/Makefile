@@ -1,7 +1,7 @@
 ROOT_DIR             ?= ../..
 PIPIT_DIR            ?= ..
 COMPONENT            ?= pipit2-core
-FSTAR_INC_DIRS       ?=
+FSTAR_INC_DIRS       ?= base
 FSTAR_SRC_DIRS       ?= .
 FSTAR_ALREADY_CACHED ?=
 
@@ -17,7 +17,7 @@ include $(ROOT_DIR)/make/include/base.mk
 # match like `step_sofar_and` could not be extracted. With `pterm`/`sterm` as
 # plain first-order inductives, even the concrete `Pipit.Example.Bool` rule
 # compiles to honest OCaml, so it is back in the extraction set.
-FSTAR_EXTRACT_MODULES = Pipit.Exp.Prim,Pipit.Exp.Pure,Pipit.Exp.Source,Pipit.Exp.Anf,Pipit.Source.Stream,Pipit.Transform.Rewrite,Pipit.Example.Bool
+FSTAR_EXTRACT_MODULES = Pipit.Base.Prop.Metadata,Pipit.Exp.Prim,Pipit.Exp.Pure,Pipit.Exp.Source,Pipit.Exp.Anf,Pipit.Source.Stream,Pipit.Transform.Rewrite,Pipit.Example.Bool
 include ../make/extract.mk
 
 # base.mk's clean only touches the shared $(BUILD)/cache; also clean the private

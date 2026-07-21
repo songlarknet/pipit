@@ -14,10 +14,15 @@
 ROOT_DIR ?= $(realpath ..)
 export ROOT_DIR
 
-all: core plugin plugin-test
-.PHONY: all core plugin plugin-test clean
+all: base core plugin plugin-test
+.PHONY: all base core plugin plugin-test clean
 
-core:
+base:
+	@$(MAKE) -C base
+base-%:
+	@$(MAKE) -C base $(patsubst base-%,%,$@)
+
+core: base
 	@$(MAKE) -C core
 core-%:
 	@$(MAKE) -C core $(patsubst core-%,%,$@)
@@ -34,6 +39,7 @@ plugin-test-%:
 	@$(MAKE) -C plugin-test $(patsubst plugin-test-%,%,$@)
 
 clean:
+	@$(MAKE) -C base clean
 	@$(MAKE) -C core clean
 	@$(MAKE) -C plugin clean
 	@$(MAKE) -C plugin-test clean

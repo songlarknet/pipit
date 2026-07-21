@@ -45,75 +45,83 @@ let emit (st: state) (b: binding): state & nat =
   | Some lvl -> (st, lvl)
   | None     -> ({ binds = L.append st.binds [b]; next = st.next + width b }, st.next)
 
-let rec proj_atoms (base: nat) (tys: list PR.typ): Tot (list atom) (decreases tys) =
+let rec proj_pairs (base: nat) (tys: list PR.typ): Tot (list (atom & PR.typ)) (decreases tys) =
   match tys with
   | []      -> []
-  | _ :: tl -> AVar base :: proj_atoms (base + 1) tl
+  | t :: tl -> (AVar base, t) :: proj_pairs (base + 1) tl
 
-let rec zip_at (atoms: list atom) (tys: list PR.typ): list (atom & PR.typ) =
-  match atoms, tys with
-  | a :: atl, t :: ttl -> (a, t) :: zip_at atl ttl
-  | _, _               -> []
-
-let rec lower (env: PES.sigenv) (senv: list (atom & PR.typ)) (st: state) (e: PES.sterm)
-: Tot (option (state & atom & PR.typ)) (decreases e) =
+let rec lower (env: PES.sigenv) (senv: list (list (atom & PR.typ))) (st: state) (e: PES.term)
+: Tot (option (state & list (atom & PR.typ))) (decreases e) =
   match e with
-  | PES.SPure v ->
-    (match PP.infer_p v with
-     | Some ty -> Some (st, APure v, ty)
+  | PES.XPure v ->
+    (match PP.pterm_ty PP.ty_empty v with
+     | Some ty -> Some (st, [(APure v, ty)])
      | None    -> None)
-  | PES.SBVar i ->
-    if i < L.length senv then (let (a, ty) = L.index senv i in Some (st, a, ty)) else None
-  | PES.SFby v e' ->
-    (match PP.infer_p v with
+  | PES.XBVar i ->
+    if i < L.length senv then Some (st, L.index senv i) else None
+  | PES.XFby v e' ->
+    (match PP.pterm_ty PP.ty_empty v with
      | None    -> None
      | Some ty ->
        (match lower env senv st e' with
-        | None -> None
-        | Some (st1, a, _) ->
+        | Some (st1, [(a, _)]) ->
           let (st2, lvl) = emit st1 (BLet ty (RFby v a)) in
-          Some (st2, AVar lvl, ty)))
-  | PES.SPureApp p args ->
-    (match lower_list env senv st args with
+          Some (st2, [(AVar lvl, ty)])
+        | _ -> None))
+  | PES.XPrim p args ->
+    (match lower_scalars env senv st args with
      | None -> None
-     | Some (st1, atoms, tys) ->
+     | Some (st1, ats) ->
+       let atoms = L.map fst ats in
+       let tys   = L.map snd ats in
        (match PR.prim_ty p tys with
         | None     -> None
         | Some rty ->
           let (st2, lvl) = emit st1 (BLet rty (RPureApp p atoms)) in
-          Some (st2, AVar lvl, rty)))
-  | _ -> None  (* SVar *)
-and lower_t (env: PES.sigenv) (senv: list (atom & PR.typ)) (st: state) (t: PES.tterm)
-: Tot (option (state & list atom & list PR.typ)) (decreases t) =
-  match t with
-  | PES.TTuple es -> lower_list env senv st es
-  | PES.TStreamApp nm args ->
+          Some (st2, [(AVar lvl, rty)])))
+  | PES.XTuple es -> lower_list env senv st es
+  | PES.XNode nm args ->
     (match L.assoc nm env.nodes with
      | None    -> None
      | Some nt ->
-       (match lower_list env senv st args with
+       (match lower_scalars env senv st args with
         | None -> None
-        | Some (st1, atoms, _) ->
+        | Some (st1, ats) ->
+          let atoms = L.map fst ats in
           let (st2, base) = emit st1 (BNode nm atoms nt.results) in
-          Some (st2, proj_atoms base nt.results, nt.results)))
-  | PES.TLet _ rhs body ->
-    (* the source let is inlined into `senv`; only `rhs`'s own bindings persist *)
-    (match lower_t env senv st rhs with
+          Some (st2, proj_pairs base nt.results)))
+  | PES.XProj j e' ->
+    (match lower env senv st e' with
      | None -> None
-     | Some (st1, atoms, rtys) ->
-       lower_t env (L.append (zip_at atoms rtys) senv) st1 body)
-  | PES.TRec _ _ -> None  (* deferred *)
-and lower_list (env: PES.sigenv) (senv: list (atom & PR.typ)) (st: state) (es: list PES.sterm)
-: Tot (option (state & list atom & list PR.typ)) (decreases es) =
+     | Some (st1, grp) -> if j < L.length grp then Some (st1, [L.index grp j]) else None)
+  | PES.XLet _ d b ->
+    (match lower env senv st d with
+     | None -> None
+     | Some (st1, grp) -> lower env (grp :: senv) st1 b)
+  | PES.XContract _ _ _ i -> lower env senv st i
+  | _ -> None  (* XVar, XMu, XCheck: deferred *)
+and lower_scalars (env: PES.sigenv) (senv: list (list (atom & PR.typ))) (st: state) (args: list PES.term)
+: Tot (option (state & list (atom & PR.typ))) (decreases args) =
+  match args with
+  | []      -> Some (st, [])
+  | a :: tl ->
+    (match lower env senv st a with
+     | Some (st1, [(atom, ty)]) ->
+       (match lower_scalars env senv st1 tl with
+        | Some (st2, rest) -> Some (st2, (atom, ty) :: rest)
+        | None             -> None)
+     | _ -> None)
+and lower_list (env: PES.sigenv) (senv: list (list (atom & PR.typ))) (st: state) (es: list PES.term)
+: Tot (option (state & list (atom & PR.typ))) (decreases es) =
   match es with
-  | []      -> Some (st, [], [])
+  | []      -> Some (st, [])
   | e :: tl ->
     (match lower env senv st e with
      | None -> None
-     | Some (st1, a, ty) ->
+     | Some (st1, grp) ->
        (match lower_list env senv st1 tl with
         | None -> None
-        | Some (st2, atoms, tys) -> Some (st2, a :: atoms, ty :: tys)))
+        | Some (st2, rest) -> Some (st2, L.append grp rest)))
 
 let rec build_cont (binds: list binding) (tail: list atom): Tot cont (decreases binds) =
   match binds with
@@ -122,7 +130,7 @@ let rec build_cont (binds: list binding) (tail: list atom): Tot cont (decreases 
   | BNode nm args outtys :: tl  -> CLetNode nm args outtys (build_cont tl tail)
 
 [@@plugin]
-let to_anf (env: PES.sigenv) (t: PES.tterm): option cont =
-  match lower_t env [] init_state t with
-  | Some (st, atoms, _) -> Some (build_cont st.binds atoms)
-  | None                -> None
+let to_anf (env: PES.sigenv) (t: PES.term): option cont =
+  match lower env [] init_state t with
+  | Some (st, grp) -> Some (build_cont st.binds (L.map fst grp))
+  | None           -> None
