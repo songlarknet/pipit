@@ -1,7 +1,7 @@
-module Pipit.Exp.Source
+module Pipit.Core.Exp.Source
 
-module PR = Pipit.Exp.Prim
-module PP = Pipit.Exp.Pure
+module PR = Pipit.Core.Exp.Prim
+module PP = Pipit.Core.Exp.Pure
 module PM = Pipit.Base.Prop.Metadata
 module L  = FStar.List.Tot
 

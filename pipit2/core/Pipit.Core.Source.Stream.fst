@@ -1,8 +1,8 @@
-module Pipit.Source.Stream
+module Pipit.Core.Source.Stream
 
-module PR  = Pipit.Exp.Prim
-module PP  = Pipit.Exp.Pure
-module PES = Pipit.Exp.Source
+module PR  = Pipit.Core.Exp.Prim
+module PP  = Pipit.Core.Exp.Pure
+module PES = Pipit.Core.Exp.Source
 module L   = FStar.List.Tot
 
 type stream (ts: list PR.typ) = nat -> PES.term & nat

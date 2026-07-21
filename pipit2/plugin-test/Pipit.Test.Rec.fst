@@ -1,8 +1,8 @@
 module Pipit.Test.Rec
 
-module PR  = Pipit.Exp.Prim
-module PP  = Pipit.Exp.Pure
-module PES = Pipit.Exp.Source
+module PR  = Pipit.Core.Exp.Prim
+module PP  = Pipit.Core.Exp.Pure
+module PES = Pipit.Core.Exp.Source
 
 let env : PES.sigenv = { PES.nodes = [] }
 

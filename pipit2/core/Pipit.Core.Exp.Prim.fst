@@ -1,4 +1,4 @@
-module Pipit.Exp.Prim
+module Pipit.Core.Exp.Prim
 
 [@@plugin]
 type typ =

@@ -6,7 +6,7 @@ FSTAR_SRC_DIRS       ?= .
 FSTAR_ALREADY_CACHED ?=
 
 # Load the compiled pipit2 plugin so its `[@@plugin]` definitions (notably
-# `Pipit.Exp.Anf.to_anf`) are registered as native normalizer primitive steps.
+# `Pipit.Core.Exp.Anf.to_anf`) are registered as native normalizer primitive steps.
 # With the plugin loaded, an `assert_norm`/`norm` over `to_anf` reduces via the
 # extracted OCaml rather than the F* interpreter. `--load_cmxs` fails hard if the
 # cmxs is missing, so the top-level Makefile builds `plugin` before this package.

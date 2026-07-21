@@ -1,7 +1,7 @@
-module Pipit.Example.Bool
+module Pipit.Core.Example.Bool
 
-module PR  = Pipit.Exp.Prim
-module PES = Pipit.Exp.Source
+module PR  = Pipit.Core.Exp.Prim
+module PES = Pipit.Core.Exp.Source
 
 let bool_ty: PR.typ = PR.TBool
 

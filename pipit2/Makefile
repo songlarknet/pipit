@@ -28,6 +28,7 @@ core-%:
 	@$(MAKE) -C core $(patsubst core-%,%,$@)
 
 plugin: core
+	@$(MAKE) -C base extract
 	@$(MAKE) -C core extract
 	@$(MAKE) -C plugin
 plugin-%:

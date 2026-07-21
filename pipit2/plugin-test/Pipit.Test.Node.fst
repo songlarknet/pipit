@@ -1,11 +1,11 @@
 module Pipit.Test.Node
 
-module PR  = Pipit.Exp.Prim
-module PP  = Pipit.Exp.Pure
-module PES = Pipit.Exp.Source
-module S   = Pipit.Source.Stream
-module EB  = Pipit.Example.Bool
-module A   = Pipit.Exp.Anf
+module PR  = Pipit.Core.Exp.Prim
+module PP  = Pipit.Core.Exp.Pure
+module PES = Pipit.Core.Exp.Source
+module S   = Pipit.Core.Source.Stream
+module EB  = Pipit.Core.Example.Bool
+module A   = Pipit.Core.Exp.Anf
 
 let btrue:  PP.pterm = PP.PValue (PR.VBool true)
 let bfalse: PP.pterm = PP.PValue (PR.VBool false)

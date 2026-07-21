@@ -1,6 +1,6 @@
-module Pipit.Exp.Pure
+module Pipit.Core.Exp.Pure
 
-module PR = Pipit.Exp.Prim
+module PR = Pipit.Core.Exp.Prim
 module N  = Pipit.Base.Context.Named
 
 type pvar = string

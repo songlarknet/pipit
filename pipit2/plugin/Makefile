@@ -1,7 +1,7 @@
 # pipit2 language plugin.
 #
-# Deliberately minimal: it extracts the core definitions (`Pipit.Exp.Base`)
-# from F* to OCaml with `--codegen Plugin`, and packages them with a tiny bit
+# Deliberately minimal: it aggregates the core OCaml (the `Pipit.Core.*` modules)
+# extracted with `--codegen Plugin`, and packages them with a tiny bit
 # of handwritten OCaml (`Pipit2_Plugin.ml`) that registers the `#lang-pipit`
 # extension. For now `#lang-pipit` is a passthrough (it parses as ordinary
 # F*); the point is only to (a) prove the extract+dune packaging works and
@@ -9,9 +9,10 @@
 # later.
 #
 # This Makefile is intentionally standalone (it does not use base.mk's
-# verify/deps machinery): the F* it needs is verified by the `core` subpackage,
-# which writes `Pipit.Exp.Base.fst.checked` into the shared pipit2 cache. Build
-# order (see ../Makefile) guarantees core runs first.
+# verify/deps machinery): the F* it needs is verified by the `base`/`core`
+# subpackages, which write their `.fst.checked` into the shared pipit2 cache and
+# emit the extracted OCaml. Build order (see ../Makefile) guarantees they run
+# first.
 
 # pipit2 language plugin.
 #

@@ -1,6 +1,6 @@
-module Pipit.Transform.Rewrite
+module Pipit.Core.Transform.Rewrite
 
-module PES = Pipit.Exp.Source
+module PES = Pipit.Core.Exp.Source
 
 let rec rewrite (step: PES.term -> PES.term) (e: PES.term): Tot PES.term (decreases e) =
   let e': PES.term =
