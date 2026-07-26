@@ -11,12 +11,6 @@ type binder =
   | BStream : PR.typ -> binder
 
 [@@plugin]
-type nodety = { params: list binder; results: list PR.typ }
-
-[@@plugin]
-type sigenv = { nodes: list (string & nodety) }
-
-[@@plugin]
 type svar = { svname: nat; svty: list PR.typ }
 
 [@@plugin]
@@ -33,7 +27,11 @@ type term =
   | XLet      : list PR.typ -> term -> term -> term
   | XContract : PM.contract_status -> term -> term -> term -> term
   | XCheck    : PM.prop_status -> term -> term
+[@@plugin]
+type node = { params: list binder; results: list PR.typ; body: option term }
 
+[@@plugin]
+type sigenv = { nodes: list (string & node) }
 let mk_proj (j: nat) (e: term): term =
   match e with
   | XTuple es -> if j < L.length es then L.index es j else XProj j e

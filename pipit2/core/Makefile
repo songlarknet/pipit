@@ -16,7 +16,9 @@ include $(ROOT_DIR)/make/include/base.mk
 # old `table` had abstract `ty`/`prim` (erased -> `Obj.t`), so a concrete prim
 # match like `step_sofar_and` could not be extracted. With `pterm`/`term` as
 # plain first-order inductives, even the concrete `Pipit.Core.Example.Bool` rule
-# compiles to honest OCaml, so it is in the extraction set.
+# compiles to honest OCaml. The relational bigstep semantics is a proof-only
+# indexed GADT, so it erases to dead `Obj.magic` code, but that is harmless, so
+# the whole namespace is extracted wholesale.
 FSTAR_EXTRACT_MODULES = Pipit.Core
 include ../make/extract.mk
 
