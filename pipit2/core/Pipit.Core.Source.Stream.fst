@@ -47,7 +47,7 @@ let fby (#a: PR.typ) (v: PP.pterm) (s: stream [a]): stream [a] =
   fun n ->
     let (t, n)    = s n in
     let (e, w, n) = atomize a t n in
-    (w (PES.XTuple [PES.XFby v e]), n)
+    (w (PES.XTuple [PES.XFby [v] [e]]), n)
 
 let liftP (#args: list PR.typ) (#result: PR.typ)
     (p: PR.prim) (s: stream args): stream [result] =

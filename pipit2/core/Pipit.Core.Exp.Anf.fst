@@ -59,15 +59,7 @@ let rec lower (env: PES.sigenv) (senv: list (list (atom & PR.typ))) (st: state) 
      | None    -> None)
   | PES.XBVar i ->
     if i < L.length senv then Some (st, L.index senv i) else None
-  | PES.XFby v e' ->
-    (match PP.pterm_ty PP.ty_empty v with
-     | None    -> None
-     | Some ty ->
-       (match lower env senv st e' with
-        | Some (st1, [(a, _)]) ->
-          let (st2, lvl) = emit st1 (BLet ty (RFby v a)) in
-          Some (st2, [(AVar lvl, ty)])
-        | _ -> None))
+  | PES.XFby v0s es -> lower_fby env senv st v0s es
   | PES.XPrim p args ->
     (match lower_scalars env senv st args with
      | None -> None
@@ -122,6 +114,23 @@ and lower_list (env: PES.sigenv) (senv: list (list (atom & PR.typ))) (st: state)
        (match lower_list env senv st1 tl with
         | None -> None
         | Some (st2, rest) -> Some (st2, L.append grp rest)))
+and lower_fby (env: PES.sigenv) (senv: list (list (atom & PR.typ))) (st: state)
+              (v0s: list PP.pterm) (es: list PES.term)
+: Tot (option (state & list (atom & PR.typ))) (decreases es) =
+  match v0s, es with
+  | [], []               -> Some (st, [])
+  | v0 :: v0s', e :: es'  ->
+    (match PP.pterm_ty PP.ty_empty v0 with
+     | None    -> None
+     | Some ty ->
+       (match lower env senv st e with
+        | Some (st1, [(a, _)]) ->
+          let (st2, lvl) = emit st1 (BLet ty (RFby v0 a)) in
+          (match lower_fby env senv st2 v0s' es' with
+           | None             -> None
+           | Some (st3, rest) -> Some (st3, (AVar lvl, ty) :: rest))
+        | _ -> None))
+  | _, _                 -> None
 
 let rec build_cont (binds: list binding) (tail: list atom): Tot cont (decreases binds) =
   match binds with

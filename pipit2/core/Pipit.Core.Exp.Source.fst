@@ -18,7 +18,7 @@ type term =
   | XPure     : PP.pterm -> term
   | XVar      : svar -> term
   | XBVar     : nat -> term
-  | XFby      : PP.pterm -> term -> term
+  | XFby      : list PP.pterm -> list term -> term
   | XPrim     : PR.prim -> list term -> term
   | XTuple    : list term -> term
   | XNode     : string -> list term -> term
@@ -42,7 +42,7 @@ let rec close_rec (k: nat) (x: svar) (e: term): Tot term (decreases e) =
   | XPure _           -> e
   | XVar y            -> if y = x then XBVar k else e
   | XBVar _           -> e
-  | XFby v e'         -> XFby v (close_rec k x e')
+  | XFby v0s es       -> XFby v0s (close_args k x es)
   | XPrim p args      -> XPrim p (close_args k x args)
   | XTuple es         -> XTuple (close_args k x es)
   | XNode nm args     -> XNode nm (close_args k x args)
@@ -61,7 +61,7 @@ let rec open_rec (k: nat) (u: term) (e: term): Tot term (decreases e) =
   | XPure _           -> e
   | XVar _            -> e
   | XBVar i           -> if i = k then u else e
-  | XFby v e'         -> XFby v (open_rec k u e')
+  | XFby v0s es       -> XFby v0s (open_args k u es)
   | XPrim p args      -> XPrim p (open_args k u args)
   | XTuple es         -> XTuple (open_args k u es)
   | XNode nm args     -> XNode nm (open_args k u args)
@@ -89,9 +89,9 @@ let rec infer (env: sigenv) (ctx: list (list PR.typ)) (e: term)
                       | None   -> None)
   | XVar x         -> Some x.svty
   | XBVar i        -> if i < L.length ctx then Some (L.index ctx i) else None
-  | XFby v e'      -> (match PP.pterm_ty PP.ty_empty v with
-                      | Some a -> if infer env ctx e' = Some [a] then Some [a] else None
-                      | None   -> None)
+  | XFby v0s es    -> (match PP.ty_args PP.ty_empty v0s, infer_scalars env ctx es with
+                      | Some ts, Some ts' -> if ts = ts' then Some ts else None
+                      | _, _              -> None)
   | XPrim p args   -> (match infer_scalars env ctx args with
                       | Some tys -> (match PR.prim_ty p tys with
                                     | Some r -> Some [r]

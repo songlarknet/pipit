@@ -6,11 +6,12 @@ module PES = Pipit.Core.Exp.Source
 module PM  = Pipit.Base.Prop.Metadata
 module L   = FStar.List.Tot
 
-let row = list (list PR.value)
+type tuple = list PR.value
+type row = list tuple
 
 [@@no_auto_projectors]
 noeq
-type bigstep (env: PES.sigenv): list row -> PES.term -> list PR.value -> Type =
+type bigstep (env: PES.sigenv): list row -> PES.term -> tuple -> Type =
   | BSPure:
       streams: list row ->
       p: PP.pterm ->
@@ -27,20 +28,20 @@ type bigstep (env: PES.sigenv): list row -> PES.term -> list PR.value -> Type =
 
   | BSFby1:
       start: list row { L.length start <= 1 } ->
-      v0: PP.pterm ->
-      e: PES.term ->
-      v: PR.value ->
-      squash (PP.pterm_sem PP.val_empty v0 == Some v) ->
-      bigstep env start (PES.XFby v0 e) [v]
+      v0s: list PP.pterm ->
+      es: list PES.term ->
+      vs: list PR.value ->
+      squash (PP.sem_args PP.val_empty v0s == Some vs) ->
+      bigstep env start (PES.XFby v0s es) vs
 
   | BSFbyS:
       latest: row ->
       prefix: list row { L.length prefix >= 1 } ->
-      v0: PP.pterm ->
-      e: PES.term ->
-      v': PR.value ->
-      bigstep env prefix e [v'] ->
-      bigstep env (latest :: prefix) (PES.XFby v0 e) [v']
+      v0s: list PP.pterm ->
+      es: list PES.term ->
+      vs: list PR.value ->
+      bigstep_widths env prefix es vs ->
+      bigstep env (latest :: prefix) (PES.XFby v0s es) vs
 
   | BSPrim:
       streams: list row ->
@@ -48,7 +49,7 @@ type bigstep (env: PES.sigenv): list row -> PES.term -> list PR.value -> Type =
       args: list PES.term ->
       vs: list PR.value ->
       r: PR.value ->
-      bigstep_scalars env streams args vs ->
+      bigstep_widths env streams args vs ->
       squash (PR.prim_sem p vs == Some r) ->
       bigstep env streams (PES.XPrim p args) [r]
 
@@ -114,20 +115,6 @@ type bigstep (env: PES.sigenv): list row -> PES.term -> list PR.value -> Type =
       bigstep env streams e [vp] ->
       bigstep env streams (PES.XCheck s e) []
 
-and bigstep_scalars (env: PES.sigenv): list row -> list PES.term -> list PR.value -> Type =
-  | BSSc0:
-      streams: list row ->
-      bigstep_scalars env streams [] []
-  | BSScS:
-      streams: list row ->
-      e: PES.term ->
-      es: list PES.term ->
-      v: PR.value ->
-      vs: list PR.value ->
-      bigstep env streams e [v] ->
-      bigstep_scalars env streams es vs ->
-      bigstep_scalars env streams (e :: es) (v :: vs)
-
 and bigstep_widths (env: PES.sigenv): list row -> list PES.term -> list PR.value -> Type =
   | BSW0:
       streams: list row ->
@@ -177,10 +164,10 @@ let rec bigstep_det
   | BSFbyS _ _ _ _ _ hb1 ->
     (match h2 with
      | BSFby1 _ _ _ _ _ -> ()
-     | BSFbyS _ _ _ _ _ hb2 -> bigstep_det hb1 hb2)
+     | BSFbyS _ _ _ _ _ hb2 -> bigstep_widths_det hb1 hb2)
   | BSPrim _ _ _ _ _ hs1 _ ->
     let BSPrim _ _ _ _ _ hs2 _ = h2 in
-    bigstep_scalars_det hs1 hs2
+    bigstep_widths_det hs1 hs2
   | BSTuple _ _ _ hw1 ->
     let BSTuple _ _ _ hw2 = h2 in
     bigstep_widths_det hw1 hw2
@@ -202,18 +189,6 @@ let rec bigstep_det
     bigstep_det hb1 hb2
   | BSCheck _ _ _ _ _ ->
     let BSCheck _ _ _ _ _ = h2 in ()
-
-and bigstep_scalars_det
-  (#env: PES.sigenv) (#streams: list row) (#es: list PES.term) (#vs1 #vs2: list PR.value)
-  (h1: bigstep_scalars env streams es vs1) (h2: bigstep_scalars env streams es vs2)
-  : Lemma (ensures vs1 == vs2) (decreases h1) =
-  match h1 with
-  | BSSc0 _ ->
-    let BSSc0 _ = h2 in ()
-  | BSScS _ _ _ _ _ hb1 ht1 ->
-    let BSScS _ _ _ _ _ hb2 ht2 = h2 in
-    bigstep_det hb1 hb2;
-    bigstep_scalars_det ht1 ht2
 
 and bigstep_widths_det
   (#env: PES.sigenv) (#streams: list row) (#es: list PES.term) (#ws1 #ws2: list PR.value)
