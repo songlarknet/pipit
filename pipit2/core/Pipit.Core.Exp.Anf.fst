@@ -60,8 +60,8 @@ let rec lower (env: PES.sigenv) (senv: list (list (atom & PR.typ))) (st: state) 
   | PES.XBVar i ->
     if i < L.length senv then Some (st, L.index senv i) else None
   | PES.XFby v0s es -> lower_fby env senv st v0s es
-  | PES.XPrim p args ->
-    (match lower_scalars env senv st args with
+  | PES.XPrim p arg ->
+    (match lower env senv st arg with
      | None -> None
      | Some (st1, ats) ->
        let atoms = L.map fst ats in

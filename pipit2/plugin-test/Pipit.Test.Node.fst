@@ -31,7 +31,7 @@ let expected: PES.term =
     (PES.XLet [EB.bool_ty] (o_proj 0)
       (PES.XLet [EB.bool_ty] (o_proj 1)
         (PES.XTuple [PES.XBVar 1; PES.XBVar 0])))
-    (PES.XTuple [PES.XPrim PR.PAnd [PES.XProj 0 (PES.XBVar 0); PES.XProj 1 (PES.XBVar 0)]])
+    (PES.XTuple [PES.XPrim PR.PAnd (PES.XTuple [PES.XProj 0 (PES.XBVar 0); PES.XProj 1 (PES.XBVar 0)])])
 
 let node_lowers_ok (): Lemma (term == expected) =
   assert_norm (term == expected)

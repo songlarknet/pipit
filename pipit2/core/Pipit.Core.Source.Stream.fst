@@ -54,7 +54,7 @@ let liftP (#args: list PR.typ) (#result: PR.typ)
   fun n ->
     let (t, n)     = s n in
     let (es, w, n) = components args t n in
-    (w (PES.XTuple [PES.XPrim p es]), n)
+    (w (PES.XTuple [PES.XPrim p (PES.XTuple es)]), n)
 
 let zips (#xs #ys: list PR.typ) (x: stream xs) (y: stream ys): stream (L.append xs ys) =
   fun n ->

@@ -19,7 +19,7 @@ type term =
   | XVar      : svar -> term
   | XBVar     : nat -> term
   | XFby      : list PP.pterm -> list term -> term
-  | XPrim     : PR.prim -> list term -> term
+  | XPrim     : PR.prim -> term -> term
   | XTuple    : list term -> term
   | XNode     : string -> list term -> term
   | XProj     : nat -> term -> term
@@ -27,6 +27,7 @@ type term =
   | XLet      : list PR.typ -> term -> term -> term
   | XContract : PM.contract_status -> term -> term -> term -> term
   | XCheck    : PM.prop_status -> term -> term
+
 [@@plugin]
 type node = { params: list binder; results: list PR.typ; body: option term }
 
@@ -43,7 +44,7 @@ let rec close_rec (k: nat) (x: svar) (e: term): Tot term (decreases e) =
   | XVar y            -> if y = x then XBVar k else e
   | XBVar _           -> e
   | XFby v0s es       -> XFby v0s (close_args k x es)
-  | XPrim p args      -> XPrim p (close_args k x args)
+  | XPrim p arg       -> XPrim p (close_rec k x arg)
   | XTuple es         -> XTuple (close_args k x es)
   | XNode nm args     -> XNode nm (close_args k x args)
   | XProj j e'        -> XProj j (close_rec k x e')
@@ -62,7 +63,7 @@ let rec open_rec (k: nat) (u: term) (e: term): Tot term (decreases e) =
   | XVar _            -> e
   | XBVar i           -> if i = k then u else e
   | XFby v0s es       -> XFby v0s (open_args k u es)
-  | XPrim p args      -> XPrim p (open_args k u args)
+  | XPrim p arg       -> XPrim p (open_rec k u arg)
   | XTuple es         -> XTuple (open_args k u es)
   | XNode nm args     -> XNode nm (open_args k u args)
   | XProj j e'        -> mk_proj j (open_rec k u e')
@@ -92,7 +93,7 @@ let rec infer (env: sigenv) (ctx: list (list PR.typ)) (e: term)
   | XFby v0s es    -> (match PP.ty_args PP.ty_empty v0s, infer_scalars env ctx es with
                       | Some ts, Some ts' -> if ts = ts' then Some ts else None
                       | _, _              -> None)
-  | XPrim p args   -> (match infer_scalars env ctx args with
+  | XPrim p arg    -> (match infer env ctx arg with
                       | Some tys -> (match PR.prim_ty p tys with
                                     | Some r -> Some [r]
                                     | None   -> None)

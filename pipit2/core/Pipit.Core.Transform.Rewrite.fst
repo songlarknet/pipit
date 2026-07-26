@@ -9,7 +9,7 @@ let rec rewrite (step: PES.term -> PES.term) (e: PES.term): Tot PES.term (decrea
     | PES.XVar _            -> e
     | PES.XBVar _           -> e
     | PES.XFby v0s es       -> PES.XFby v0s (rewrite_args step es)
-    | PES.XPrim h args      -> PES.XPrim h (rewrite_args step args)
+    | PES.XPrim h arg       -> PES.XPrim h (rewrite step arg)
     | PES.XTuple es         -> PES.XTuple (rewrite_args step es)
     | PES.XNode nm args     -> PES.XNode nm (rewrite_args step args)
     | PES.XProj j b         -> PES.XProj j (rewrite step b)

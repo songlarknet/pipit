@@ -46,12 +46,12 @@ type bigstep (env: PES.sigenv): list row -> PES.term -> tuple -> Type =
   | BSPrim:
       streams: list row ->
       p: PR.prim ->
-      args: list PES.term ->
+      arg: PES.term ->
       vs: list PR.value ->
       r: PR.value ->
-      bigstep_widths env streams args vs ->
+      bigstep env streams arg vs ->
       squash (PR.prim_sem p vs == Some r) ->
-      bigstep env streams (PES.XPrim p args) [r]
+      bigstep env streams (PES.XPrim p arg) [r]
 
   | BSTuple:
       streams: list row ->
@@ -167,7 +167,7 @@ let rec bigstep_det
      | BSFbyS _ _ _ _ _ hb2 -> bigstep_widths_det hb1 hb2)
   | BSPrim _ _ _ _ _ hs1 _ ->
     let BSPrim _ _ _ _ _ hs2 _ = h2 in
-    bigstep_widths_det hs1 hs2
+    bigstep_det hs1 hs2
   | BSTuple _ _ _ hw1 ->
     let BSTuple _ _ _ hw2 = h2 in
     bigstep_widths_det hw1 hw2
