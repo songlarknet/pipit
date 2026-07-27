@@ -82,6 +82,25 @@ let open_var (x: svar) (e: term): term = open_rec 0 (XVar x) e
 
 let subst_tuple (def: term) (body: term): term = open_rec 0 def body
 
+let rec psubst (x: PP.pvar) (r: PP.pterm) (e: term): Tot term (decreases e) =
+  match e with
+  | XPure p            -> XPure (PP.subst x r p)
+  | XVar _             -> e
+  | XBVar _            -> e
+  | XFby v0s es        -> XFby (PP.subst_args x r v0s) (psubst_args x r es)
+  | XPrim p arg        -> XPrim p (psubst x r arg)
+  | XTuple es          -> XTuple (psubst_args x r es)
+  | XNode nm args      -> XNode nm (psubst_args x r args)
+  | XProj j e'         -> XProj j (psubst x r e')
+  | XMu tys body       -> XMu tys (psubst x r body)
+  | XLet tys rhs bod   -> XLet tys (psubst x r rhs) (psubst x r bod)
+  | XContract s rl g i -> XContract s (psubst x r rl) (psubst x r g) (psubst x r i)
+  | XCheck s e'        -> XCheck s (psubst x r e')
+and psubst_args (x: PP.pvar) (r: PP.pterm) (args: list term): Tot (list term) (decreases args) =
+  match args with
+  | []      -> []
+  | a :: tl -> psubst x r a :: psubst_args x r tl
+
 let rec infer (env: sigenv) (ctx: list (list PR.typ)) (e: term)
 : Tot (option (list PR.typ)) (decreases e) =
   match e with
