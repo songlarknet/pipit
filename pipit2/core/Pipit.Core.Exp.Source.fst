@@ -29,7 +29,7 @@ type term =
   | XCheck    : PM.prop_status -> term -> term
 
 [@@plugin]
-type node = { params: list binder; results: list PR.typ; body: option term }
+type node = { params: list binder; results: list PR.typ; body: term }
 
 [@@plugin]
 type sigenv = { nodes: list (string & node) }
