@@ -7,7 +7,7 @@ module L  = FStar.List.Tot
 
 [@@plugin]
 type binder =
-  | BConst  : PR.typ -> binder
+  | BConst  : PP.pvar -> PR.typ -> binder
   | BStream : PR.typ -> binder
 
 [@@plugin]
@@ -101,6 +101,24 @@ and psubst_args (x: PP.pvar) (r: PP.pterm) (args: list term): Tot (list term) (d
   | []      -> []
   | a :: tl -> psubst x r a :: psubst_args x r tl
 
+let rec inst_streams (params: list binder) (args: list term): Tot (list term) (decreases params) =
+  match params, args with
+  | BStream _ :: ptl, a :: atl  -> a :: inst_streams ptl atl
+  | BConst _ _ :: ptl, _ :: atl -> inst_streams ptl atl
+  | _, _                        -> []
+
+let rec inst_consts (params: list binder) (args: list term) (body: term): Tot term (decreases params) =
+  match params, args with
+  | BConst x _ :: ptl, a :: atl ->
+    (match a with
+     | XPure r -> inst_consts ptl atl (psubst x r body)
+     | _       -> inst_consts ptl atl body)
+  | BStream _ :: ptl, _ :: atl  -> inst_consts ptl atl body
+  | _, _                        -> body
+
+let inst_node (params: list binder) (args: list term) (body: term): term =
+  subst_tuple (XTuple (inst_streams params args)) (inst_consts params args body)
+
 let rec infer (env: sigenv) (ctx: list (list PR.typ)) (e: term)
 : Tot (option (list PR.typ)) (decreases e) =
   match e with
@@ -153,7 +171,7 @@ and check_node_args (env: sigenv) (ctx: list (list PR.typ)) (args: list term) (p
   match args, params with
   | [], []                     -> true
   | a :: atl, BStream t :: ptl -> infer env ctx a = Some [t] && check_node_args env ctx atl ptl
-  | a :: atl, BConst t :: ptl  ->
+  | a :: atl, BConst _ t :: ptl  ->
     (match a with XPure v -> PP.pterm_ty PP.ty_empty v = Some t | _ -> false)
     && check_node_args env ctx atl ptl
   | _, _                       -> false

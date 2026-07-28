@@ -68,7 +68,7 @@ type bigstep (env: PES.sigenv) (venv: PP.val_context): list row -> PES.term -> t
       body: PES.term ->
       v: list PR.value ->
       squash (L.assoc nm env.nodes == Some nd /\ nd.body == Some body) ->
-      bigstep env venv streams (PES.subst_tuple (PES.XTuple args) body) v ->
+      bigstep env venv streams (PES.inst_node nd.params args body) v ->
       bigstep env venv streams (PES.XNode nm args) v
 
   | BSProj:
@@ -171,8 +171,9 @@ let rec bigstep_det
   | BSTuple _ _ _ hw1 ->
     let BSTuple _ _ _ hw2 = h2 in
     bigstep_widths_det hw1 hw2
-  | BSNode _ nm _ _ body1 _ _ hb1 ->
-    let BSNode _ _ _ _ body2 _ _ hb2 = h2 in
+  | BSNode _ nm _ nd1 body1 _ _ hb1 ->
+    let BSNode _ _ _ nd2 body2 _ _ hb2 = h2 in
+    assert (nd1 == nd2);
     assert (body1 == body2);
     bigstep_det hb1 hb2
   | BSProj _ _ _ _ _ hb1 ->
